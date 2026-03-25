@@ -40,7 +40,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "apiService.js"
+        "apiService.js",
+        "autoHighlightEngine.js"
       ],
       "matches": [
         "<all_urls>"

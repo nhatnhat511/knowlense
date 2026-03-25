@@ -107,6 +107,72 @@
         gap: 10px;
       }
 
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0 0 16px;
+        padding: 12px;
+        border-radius: 14px;
+        background: rgba(241, 245, 249, 0.85);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+      }
+
+      .toggle-copy strong {
+        display: block;
+        font-size: 14px;
+        margin-bottom: 4px;
+      }
+
+      .toggle-copy span {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .toggle {
+        position: relative;
+        width: 48px;
+        height: 28px;
+        flex: 0 0 auto;
+      }
+
+      .toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .toggle-slider {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: #cbd5e1;
+        transition: background 0.2s ease;
+      }
+
+      .toggle-slider::before {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        background: #ffffff;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+        transition: transform 0.2s ease;
+      }
+
+      .toggle input:checked + .toggle-slider {
+        background: var(--primary);
+      }
+
+      .toggle input:checked + .toggle-slider::before {
+        transform: translateX(20px);
+      }
+
       button {
         width: 100%;
         border: 0;
@@ -142,6 +208,16 @@
           <p class="account-label">Account</p>
           <p id="accountName" class="account-name">Not logged in</p>
           <p id="accountPlan" class="account-plan">Login to sync your Knowlense data.</p>
+        </section>
+        <section class="toggle-row">
+          <div class="toggle-copy">
+            <strong>Enable Auto-Highlight</strong>
+            <span>Premium users can scan pages automatically for important terms.</span>
+          </div>
+          <label class="toggle" for="autoHighlightToggle">
+            <input id="autoHighlightToggle" type="checkbox" />
+            <span class="toggle-slider"></span>
+          </label>
         </section>
         <p id="loginNotice" class="description" style="display: none; margin-top: -4px;">
           Login to access Premium features.

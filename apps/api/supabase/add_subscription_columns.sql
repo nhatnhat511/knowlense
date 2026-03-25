@@ -24,37 +24,86 @@ begin
 end $$;
 
 create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text unique,
-  full_name text,
-  avatar_url text,
-  subscription_plan public.subscription_plan not null default 'free',
-  paddle_customer_id text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  id uuid primary key references auth.users(id) on delete cascade
 );
+
+alter table public.profiles
+  add column if not exists email text,
+  add column if not exists full_name text,
+  add column if not exists avatar_url text,
+  add column if not exists subscription_plan public.subscription_plan not null default 'free',
+  add column if not exists paddle_customer_id text,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'profiles_email_key'
+      and conrelid = 'public.profiles'::regclass
+  ) then
+    alter table public.profiles
+      add constraint profiles_email_key unique (email);
+  end if;
+end $$;
 
 create table if not exists public.subscriptions (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null unique references public.profiles(id) on delete cascade,
-  paddle_subscription_id text,
-  status public.subscription_status not null default 'trialing',
-  trial_ends_at timestamptz,
-  current_period_end timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  id uuid primary key default gen_random_uuid()
 );
 
+alter table public.subscriptions
+  add column if not exists user_id uuid,
+  add column if not exists paddle_subscription_id text,
+  add column if not exists status public.subscription_status not null default 'trialing',
+  add column if not exists trial_ends_at timestamptz,
+  add column if not exists current_period_end timestamptz,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'subscriptions_user_id_fkey'
+      and conrelid = 'public.subscriptions'::regclass
+  ) then
+    alter table public.subscriptions
+      add constraint subscriptions_user_id_fkey
+      foreign key (user_id) references public.profiles(id) on delete cascade;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'subscriptions_user_id_key'
+      and conrelid = 'public.subscriptions'::regclass
+  ) then
+    alter table public.subscriptions
+      add constraint subscriptions_user_id_key unique (user_id);
+  end if;
+end $$;
+
 create table if not exists public.user_settings (
-  user_id uuid primary key references public.profiles(id) on delete cascade,
-  whitelist jsonb not null default '[]'::jsonb,
-  blacklist jsonb not null default '[]'::jsonb,
-  preferred_language text not null default 'en-US',
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint whitelist_is_array check (jsonb_typeof(whitelist) = 'array'),
-  constraint blacklist_is_array check (jsonb_typeof(blacklist) = 'array')
+  user_id uuid primary key references public.profiles(id) on delete cascade
 );
+
+alter table public.user_settings
+  add column if not exists whitelist jsonb not null default '[]'::jsonb,
+  add column if not exists blacklist jsonb not null default '[]'::jsonb,
+  add column if not exists preferred_language text not null default 'en-US',
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
+alter table public.user_settings
+  drop constraint if exists whitelist_is_array,
+  drop constraint if exists blacklist_is_array;
+
+alter table public.user_settings
+  add constraint whitelist_is_array check (jsonb_typeof(whitelist) = 'array'),
+  add constraint blacklist_is_array check (jsonb_typeof(blacklist) = 'array');
 
 create index if not exists profiles_subscription_plan_idx
   on public.profiles (subscription_plan);
@@ -114,7 +163,10 @@ begin
     new.raw_user_meta_data ->> 'avatar_url',
     'free'
   )
-  on conflict (id) do nothing;
+  on conflict (id) do update
+    set email = excluded.email,
+        full_name = coalesce(excluded.full_name, public.profiles.full_name),
+        avatar_url = coalesce(excluded.avatar_url, public.profiles.avatar_url);
 
   insert into public.user_settings (user_id)
   values (new.id)
@@ -134,18 +186,21 @@ alter table public.profiles enable row level security;
 alter table public.subscriptions enable row level security;
 alter table public.user_settings enable row level security;
 
+drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own"
 on public.profiles
 for select
 to authenticated
 using ((select auth.uid()) = id);
 
+drop policy if exists "profiles_insert_own" on public.profiles;
 create policy "profiles_insert_own"
 on public.profiles
 for insert
 to authenticated
 with check ((select auth.uid()) = id);
 
+drop policy if exists "profiles_update_own" on public.profiles;
 create policy "profiles_update_own"
 on public.profiles
 for update
@@ -153,24 +208,28 @@ to authenticated
 using ((select auth.uid()) = id)
 with check ((select auth.uid()) = id);
 
+drop policy if exists "subscriptions_select_own" on public.subscriptions;
 create policy "subscriptions_select_own"
 on public.subscriptions
 for select
 to authenticated
 using ((select auth.uid()) = user_id);
 
+drop policy if exists "user_settings_select_own" on public.user_settings;
 create policy "user_settings_select_own"
 on public.user_settings
 for select
 to authenticated
 using ((select auth.uid()) = user_id);
 
+drop policy if exists "user_settings_insert_own" on public.user_settings;
 create policy "user_settings_insert_own"
 on public.user_settings
 for insert
 to authenticated
 with check ((select auth.uid()) = user_id);
 
+drop policy if exists "user_settings_update_own" on public.user_settings;
 create policy "user_settings_update_own"
 on public.user_settings
 for update
