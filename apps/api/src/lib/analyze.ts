@@ -1,5 +1,5 @@
 const ANALYZE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const ANALYZE_CACHE_VERSION = "v2";
+const ANALYZE_CACHE_VERSION = "v3";
 const OPEN_SEARCH_TIMEOUT_MS = 2500;
 const SUMMARY_TIMEOUT_MS = 3000;
 const MAX_CANDIDATES = 3;
@@ -76,10 +76,12 @@ export async function analyzeEntity(
   }
 
   const cacheKey = await createCacheKey(text, context);
-  const cached = await readCache(cacheKey, kv);
+  if (!debug) {
+    const cached = await readCache(cacheKey, kv);
 
-  if (cached) {
-    return cached;
+    if (cached) {
+      return cached;
+    }
   }
 
   try {
