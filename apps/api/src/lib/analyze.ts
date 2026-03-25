@@ -1,5 +1,5 @@
 const ANALYZE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const ANALYZE_CACHE_VERSION = "v4";
+const ANALYZE_CACHE_VERSION = "v5";
 const OPEN_SEARCH_TIMEOUT_MS = 2500;
 const SUMMARY_TIMEOUT_MS = 3000;
 const MAX_CANDIDATES = 3;
@@ -919,12 +919,20 @@ async function fetchQuerySummary(title: string) {
 function shouldRejectAsCommonWord(inputText: string, context: string, candidate: CandidateScore): boolean {
   const normalizedInput = normalizeForMatch(inputText);
   const normalizedTitle = normalizeForMatch(candidate.title);
+  const normalizedCandidateTitle = normalizeForMatch(candidate.candidateTitle);
+  const normalizedSimplifiedTitle = normalizeForMatch(simplifyEntityTitle(candidate.title));
+  const normalizedSimplifiedCandidateTitle = normalizeForMatch(simplifyEntityTitle(candidate.candidateTitle));
   const lowerCaseSingleWordInput = isSingleWord(normalizedInput) && isMostlyLowercase(inputText);
   const weakContext = !hasStrongEntityContext(context);
   const genericDescription = /topics referred to by the same term|may refer to|concept in/i.test(candidate.description);
   const genericExtract = /\bmay refer to:\b/i.test(candidate.extract);
   const singleWordTitle = isSingleWord(normalizedTitle);
   const acronymMatch = extractAcronym(candidate.title) === normalizedInput;
+  const exactCandidateMatch =
+    normalizedInput === normalizedTitle ||
+    normalizedInput === normalizedCandidateTitle ||
+    normalizedInput === normalizedSimplifiedTitle ||
+    normalizedInput === normalizedSimplifiedCandidateTitle;
   const abstractOrDictionaryLike =
     /concept in|virtue|ethics|philosophy|moral|religion|quality|opposite of evil/i.test(candidate.description) ||
     /\bin most contexts\b|\bdenotes\b|\bthe concept of\b|\bopposite of evil\b|\bright and wrong\b/i.test(candidate.extract);
@@ -939,6 +947,10 @@ function shouldRejectAsCommonWord(inputText: string, context: string, candidate:
 
   if (acronymMatch) {
     return false;
+  }
+
+  if (weakContext && !exactCandidateMatch) {
+    return true;
   }
 
   if (candidate.classificationScore < 0.45) {
