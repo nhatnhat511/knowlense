@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -133,22 +133,25 @@
       <section class="card">
         <div class="brand">
           <h1>Knowlense</h1>
-          <span id="planBadge" class="badge">Miễn phí</span>
+          <span id="planBadge" class="badge">Free</span>
         </div>
         <p class="description">
-          Tóm tắt nhanh đoạn văn bản bạn bôi đen trên web và dẫn nguồn tham khảo.
+          Highlight text on any page and get clean context with source-backed summaries.
         </p>
         <section id="accountPanel" class="account">
-          <p class="account-label">Tài khoản</p>
-          <p id="accountName" class="account-name">Chưa đăng nhập</p>
-          <p id="accountPlan" class="account-plan">Đăng nhập tại Knowlense.com để đồng bộ dữ liệu.</p>
+          <p class="account-label">Account</p>
+          <p id="accountName" class="account-name">Not logged in</p>
+          <p id="accountPlan" class="account-plan">Login to sync your Knowlense data.</p>
         </section>
+        <p id="loginNotice" class="description" style="display: none; margin-top: -4px;">
+          Login to access Premium features.
+        </p>
         <div class="actions">
-          <button id="settingsButton" type="button">Cài đặt</button>
-          <button id="authButton" type="button">Đăng nhập / Đăng ký</button>
+          <button id="settingsButton" type="button">Settings</button>
+          <button id="authButton" type="button">Login / Sign up</button>
         </div>
       </section>
     </main>
-    <script src="popup.js"></script>
+    <script type="module" src="popup.js"></script>
   </body>
 </html>

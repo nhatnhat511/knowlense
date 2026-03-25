@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@paddle/paddle-node-sdk": "^1.4.0",
     "@supabase/supabase-js": "^2.56.0",
     "hono": "^4.9.7"
   },

@@ -9,6 +9,9 @@ Cloudflare Worker API for Knowlense using Hono + TypeScript + Supabase.
 - Supabase Bearer token verification
 - User sync endpoint
 - Subscription status endpoint
+- Wikipedia search endpoint with 24-hour KV cache support
+- User settings sync endpoint
+- Paddle checkout endpoint
 - Paddle webhook endpoint with `Paddle-Signature` verification
 
 ## Routes
@@ -16,6 +19,9 @@ Cloudflare Worker API for Knowlense using Hono + TypeScript + Supabase.
 - `GET /api/health`
 - `POST /api/auth/sync`
 - `GET /api/subscription/status`
+- `GET /api/wiki/search`
+- `POST /api/user/settings`
+- `POST /api/subscription/checkout`
 - `POST /api/webhooks/paddle`
 
 ## Required secrets
@@ -25,11 +31,16 @@ Set these in your Cloudflare Worker project:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `PADDLE_WEBHOOK_SECRET`
+- `PADDLE_API_KEY`
+- `PADDLE_PRICE_ID_MONTHLY`
+- `PADDLE_PRICE_ID_YEARLY`
 
 Optional:
 
 - `SUPABASE_ANON_KEY`
 - `CORS_ORIGIN`
+- `PADDLE_ENVIRONMENT`
+- `CACHE_KV`
 
 ## Local development
 
@@ -60,7 +71,7 @@ The API validates the token with `supabase.auth.getUser(token)` using the servic
 
 ## DB note
 
-The Paddle webhook route expects additional columns on `public.users`. Run:
+The API now expects a unified schema based on `profiles`, `subscriptions`, and `user_settings`. Run:
 
 - [add_subscription_columns.sql](/C:/Users/Administrator/Desktop/Knowlense/apps/api/supabase/add_subscription_columns.sql)
 
@@ -80,6 +91,22 @@ curl -X POST "http://127.0.0.1:8787/api/auth/sync" \
 ```bash
 curl "http://127.0.0.1:8787/api/subscription/status" \
   -H "Authorization: Bearer YOUR_SUPABASE_ACCESS_TOKEN"
+```
+
+### Search Wikipedia
+
+```bash
+curl "http://127.0.0.1:8787/api/wiki/search?term=artificial%20intelligence" \
+  -H "Authorization: Bearer YOUR_SUPABASE_ACCESS_TOKEN"
+```
+
+### Update user settings
+
+```bash
+curl -X POST "http://127.0.0.1:8787/api/user/settings" \
+  -H "Authorization: Bearer YOUR_SUPABASE_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"whitelist":["wikipedia.org"],"blacklist":[],"preferredLanguage":"en-US"}'
 ```
 
 ## Paddle webhook mapping
