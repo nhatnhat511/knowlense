@@ -50,6 +50,7 @@ export type AnalyzeDebugPayload = {
   text: string;
   context: string;
   threshold: number;
+  error?: string;
   candidates: Array<{
     candidateTitle: string;
     title: string;
@@ -154,12 +155,24 @@ export async function analyzeEntity(
     }
     return result;
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("analyzeEntity failed", {
       text,
-      error: error instanceof Error ? error.message : String(error)
+      error: errorMessage
     });
 
-    const result: AnalyzeResult = { type: "common_word" };
+    const result: AnalyzeResult = debug
+      ? {
+          type: "common_word",
+          debug: {
+            text,
+            context,
+            threshold: ENTITY_THRESHOLD,
+            error: errorMessage,
+            candidates: []
+          }
+        }
+      : { type: "common_word" };
     if (!debug) {
       await writeCache(cacheKey, result, kv);
     }
@@ -304,7 +317,8 @@ async function fetchCandidates(text: string): Promise<string[]> {
   const response = await fetchWithTimeout(url, OPEN_SEARCH_TIMEOUT_MS);
 
   if (!response.ok) {
-    throw new Error(`OpenSearch request failed with ${response.status}`);
+    const body = await response.text().catch(() => "");
+    throw new Error(`OpenSearch request failed with ${response.status}: ${body.slice(0, 200)}`);
   }
 
   const data = (await response.json()) as OpenSearchResponse;
@@ -596,9 +610,11 @@ function isExactAliasMatch(inputText: string, candidateTitle: string): boolean {
 
 async function fetchRestSummary(title: string) {
   const url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(title);
-  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS).catch(() => null);
+  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS).catch((error) => {
+    throw new Error(`REST summary fetch failed for "${title}": ${error instanceof Error ? error.message : String(error)}`);
+  });
 
-  if (!response || !response.ok) {
+  if (!response.ok) {
     return null;
   }
 
@@ -624,9 +640,11 @@ async function fetchQuerySummary(title: string) {
   const url =
     "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|info&inprop=url&exintro=1&explaintext=1&redirects=1&titles=" +
     encodeURIComponent(title);
-  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS).catch(() => null);
+  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS).catch((error) => {
+    throw new Error(`Query summary fetch failed for "${title}": ${error instanceof Error ? error.message : String(error)}`);
+  });
 
-  if (!response || !response.ok) {
+  if (!response.ok) {
     return null;
   }
 
