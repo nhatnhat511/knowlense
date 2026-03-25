@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { corsMiddleware } from "./middleware/cors";
 import { requireAuth } from "./middleware/auth";
+import { analyzeEntity } from "./lib/analyze";
 import { checkSubscriptionStatus, getUsageCounterKey } from "./lib/subscription";
 import { getSupabaseAdmin } from "./lib/supabase";
 import { verifyPaddleSignature } from "./lib/paddle";
@@ -42,6 +43,44 @@ app.get("/api/health", (c) =>
     timestamp: new Date().toISOString()
   })
 );
+
+app.post("/analyze", async (c) => {
+  const body: { text?: string; context?: string } = await c.req
+    .json<{
+      text?: string;
+      context?: string;
+    }>()
+    .catch(() => ({} as { text?: string; context?: string }));
+
+  const result = await analyzeEntity(
+    {
+      text: body.text,
+      context: body.context
+    },
+    c.env.CACHE_KV
+  );
+
+  return c.json(result);
+});
+
+app.post("/api/analyze", async (c) => {
+  const body: { text?: string; context?: string } = await c.req
+    .json<{
+      text?: string;
+      context?: string;
+    }>()
+    .catch(() => ({} as { text?: string; context?: string }));
+
+  const result = await analyzeEntity(
+    {
+      text: body.text,
+      context: body.context
+    },
+    c.env.CACHE_KV
+  );
+
+  return c.json(result);
+});
 
 app.post("/api/auth/sync", requireAuth, async (c) => {
   const supabase = getSupabaseAdmin(c.env);

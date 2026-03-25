@@ -117,9 +117,12 @@ function createFloatingBox(pointerX, pointerY, options) {
   summary.style.maxHeight = "300px";
   summary.style.overflowY = "auto";
   summary.style.marginBottom = "16px";
-  summary.style.textAlign = "justify";
-  summary.style.wordBreak = "break-word";
-  summary.style.hyphens = "auto";
+  summary.style.textAlign = "left";
+  summary.style.wordBreak = "normal";
+  summary.style.overflowWrap = "break-word";
+  summary.style.hyphens = "manual";
+  summary.style.lineHeight = "1.65";
+  summary.style.letterSpacing = "0";
 
   if (options.state === "loading") {
     const loadingWrap = document.createElement("div");
