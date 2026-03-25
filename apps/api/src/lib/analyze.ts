@@ -196,7 +196,7 @@ export async function analyzeEntity(
         }
       : undefined;
 
-    const eligibleCandidates = scoredCandidates.filter((candidate) => candidate.classAllowed && !candidate.hardNegative);
+    const eligibleCandidates = scoredCandidates.filter((candidate) => !candidate.hardNegative);
     bestCandidate = eligibleCandidates.sort((left, right) => right.finalScore - left.finalScore)[0] || null;
 
     const shouldReturnEntity = bestCandidate !== null && bestCandidate.finalScore >= ENTITY_THRESHOLD;
@@ -353,7 +353,7 @@ export function computeScore(input: {
     finalScore -= 0.45;
   }
 
-  if (!classification.allowed || classification.hardNegative) {
+  if (classification.hardNegative) {
     finalScore = Math.min(finalScore, 0.49);
   }
 
@@ -1099,7 +1099,7 @@ function classifyCandidateType(title: string, description: string, extract: stri
     if (pattern.regex.test(haystack)) {
       return {
         type: pattern.type,
-        allowed: false,
+        allowed: true,
         score: pattern.score,
         hardNegative: false
       };
@@ -1128,7 +1128,7 @@ function classifyCandidateType(title: string, description: string, extract: stri
 
   return {
     type: "generic_unknown",
-    allowed: false,
+    allowed: true,
     score: 0.25,
     hardNegative: false
   };
