@@ -44,7 +44,9 @@ app.get("/api/health", (c) =>
 app.post("/api/auth/sync", requireAuth, async (c) => {
   const supabase = getSupabaseAdmin(c.env);
   const authUser = c.get("user");
-  const body = await c.req.json<{ fullName?: string; avatarUrl?: string }>().catch(() => ({}));
+  const body: { fullName?: string; avatarUrl?: string } = await c.req
+    .json<{ fullName?: string; avatarUrl?: string }>()
+    .catch(() => ({}));
 
   const fullName = body.fullName || authUser.fullName;
   const avatarUrl = body.avatarUrl || authUser.avatarUrl;

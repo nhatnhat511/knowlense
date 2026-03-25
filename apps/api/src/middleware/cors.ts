@@ -1,9 +1,5 @@
 import { cors } from "hono/cors";
-import type { Bindings } from "../types";
-
-export const corsMiddleware = cors<{
-  Bindings: Bindings;
-}>({
+export const corsMiddleware = cors({
   origin: (origin, c) => c.env.CORS_ORIGIN || origin || "*",
   allowHeaders: ["Content-Type", "Authorization"],
   allowMethods: ["GET", "POST", "OPTIONS"],

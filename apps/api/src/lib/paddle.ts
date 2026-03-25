@@ -23,7 +23,7 @@ function timingSafeEqual(a: Uint8Array, b: Uint8Array) {
   return mismatch === 0;
 }
 
-export function parsePaddleSignature(header: string | null) {
+export function parsePaddleSignature(header: string | null | undefined) {
   if (!header) {
     throw new Error("Missing Paddle-Signature header.");
   }
@@ -39,7 +39,7 @@ export function parsePaddleSignature(header: string | null) {
   return { timestamp, signatures };
 }
 
-export async function verifyPaddleSignature(rawBody: string, header: string | null, secret: string) {
+export async function verifyPaddleSignature(rawBody: string, header: string | null | undefined, secret: string) {
   const { timestamp, signatures } = parsePaddleSignature(header);
   const signedPayload = `${timestamp}:${rawBody}`;
   const encoder = new TextEncoder();
