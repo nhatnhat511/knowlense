@@ -1,5 +1,5 @@
 const ANALYZE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const ANALYZE_CACHE_VERSION = "v5";
+const ANALYZE_CACHE_VERSION = "v6";
 const OPEN_SEARCH_TIMEOUT_MS = 2500;
 const SUMMARY_TIMEOUT_MS = 3000;
 const MAX_CANDIDATES = 3;
@@ -28,6 +28,7 @@ type CandidateScore = {
   url: string;
   entityType: string;
   classificationScore: number;
+  intentAlignmentScore: number;
   finalScore: number;
   titleScore: number;
   contextScore: number;
@@ -61,6 +62,7 @@ export type AnalyzeDebugPayload = {
     description: string;
     entityType: string;
     classificationScore: number;
+    intentAlignmentScore: number;
     finalScore: number;
     titleScore: number;
     contextScore: number;
@@ -119,6 +121,7 @@ export async function analyzeEntity(
               url: "",
               entityType: "unknown",
               classificationScore: 0,
+              intentAlignmentScore: 0,
               finalScore: 0,
               titleScore: 0,
               contextScore: 0,
@@ -153,6 +156,7 @@ export async function analyzeEntity(
             url: "",
             entityType: "error",
             classificationScore: 0,
+            intentAlignmentScore: 0,
             finalScore: 0,
             titleScore: 0,
             contextScore: 0,
@@ -176,6 +180,7 @@ export async function analyzeEntity(
             description: candidate.description,
             entityType: candidate.entityType,
             classificationScore: candidate.classificationScore,
+            intentAlignmentScore: candidate.intentAlignmentScore,
             finalScore: candidate.finalScore,
             titleScore: candidate.titleScore,
             contextScore: candidate.contextScore,
@@ -306,7 +311,9 @@ export function computeScore(input: {
   extract: string;
   url: string;
 }): CandidateScore {
+  const intent = assessQueryIntent(input.inputText, input.context);
   const classification = classifyCandidateType(input.title, input.description, input.extract);
+  const intentAlignmentScore = computeIntentAlignmentScore(intent, classification.type);
   const titleScore = computeTitleScore(input.inputText, input.candidateTitle, input.title);
   const contextScore = computeContextScore(input.context, input.title, input.description, input.extract);
   const penaltyScore = computePenaltyScore(
@@ -334,10 +341,11 @@ export function computeScore(input: {
   qualityScore = Math.min(1, qualityScore);
 
   let finalScore =
-    titleScore * 0.3 +
-    contextScore * 0.3 +
+    titleScore * 0.28 +
+    contextScore * 0.27 +
     qualityScore * 0.15 +
-    classification.score * 0.25 -
+    classification.score * 0.2 +
+    intentAlignmentScore * 0.2 -
     penaltyScore;
 
   if (
@@ -353,7 +361,7 @@ export function computeScore(input: {
     finalScore -= 0.45;
   }
 
-  if (!classification.allowed) {
+  if (!classification.allowed || intentAlignmentScore < 0.25) {
     finalScore = Math.min(finalScore, 0.49);
   }
 
@@ -367,6 +375,7 @@ export function computeScore(input: {
     url: input.url,
     entityType: classification.type,
     classificationScore: classification.score,
+    intentAlignmentScore,
     finalScore,
     titleScore,
     contextScore,
@@ -834,6 +843,77 @@ function hasStrongEntityContext(context: string): boolean {
   return /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/.test(context);
 }
 
+type QueryIntent = {
+  likelyEntity: boolean;
+  isAcronym: boolean;
+  isCapitalized: boolean;
+  domains: Set<string>;
+};
+
+function assessQueryIntent(inputText: string, context: string): QueryIntent {
+  const normalizedInput = normalizeText(inputText);
+  const contextTokens = tokenize(context);
+  const normalizedContext = normalizeForMatch(context);
+  const compactInput = normalizedInput.replace(/[^A-Za-z0-9]/g, "");
+  const isAcronym = /^[A-Z0-9]{2,6}$/.test(compactInput);
+  const isCapitalized = /^[A-Z][\p{L}\p{N}.'-]*(?:\s+[A-Z][\p{L}\p{N}.'-]*)*$/u.test(normalizedInput);
+  const domains = new Set<string>();
+
+  const techBusinessHints = [
+    "iphone",
+    "ipad",
+    "ios",
+    "mac",
+    "macbook",
+    "podcast",
+    "software",
+    "startup",
+    "platform",
+    "cloud",
+    "aws",
+    "release",
+    "released",
+    "launch",
+    "update",
+    "company",
+    "business",
+    "revenue"
+  ];
+  const geographyHints = ["country", "city", "capital", "province", "state", "located", "border"];
+  const personHints = ["born", "died", "actor", "scientist", "president", "ceo", "founder", "writer"];
+  const technicalHints = ["framework", "library", "programming", "language", "protocol", "algorithm", "subscription"];
+
+  if (techBusinessHints.some((hint) => contextTokens.has(hint) || normalizedContext.includes(hint))) {
+    domains.add("tech");
+    domains.add("business");
+  }
+
+  if (geographyHints.some((hint) => contextTokens.has(hint) || normalizedContext.includes(hint))) {
+    domains.add("place");
+  }
+
+  if (personHints.some((hint) => contextTokens.has(hint) || normalizedContext.includes(hint))) {
+    domains.add("person");
+  }
+
+  if (technicalHints.some((hint) => contextTokens.has(hint) || normalizedContext.includes(hint))) {
+    domains.add("technical");
+  }
+
+  const likelyEntity =
+    isAcronym ||
+    isCapitalized ||
+    domains.size > 0 ||
+    /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/.test(context);
+
+  return {
+    likelyEntity,
+    isAcronym,
+    isCapitalized,
+    domains
+  };
+}
+
 function isSingleWord(text: string): boolean {
   return text.trim().split(/\s+/).filter(Boolean).length === 1;
 }
@@ -990,7 +1070,11 @@ function classifyCandidateType(title: string, description: string, extract: stri
       regex: /concept in|virtue|ethics|philosophy|moral|religion|quality|opposite of evil|right and wrong/i,
       score: 0.05
     },
-    { type: "common_noun", regex: /piece of furniture|verb|adjective|common noun|grammatical|word expressing/i, score: 0.05 },
+    {
+      type: "common_noun",
+      regex: /piece of furniture|verb|adjective|common noun|grammatical|word expressing|round, edible fruit|fruit of the apple tree|fruit tree|genus|cultivated worldwide/i,
+      score: 0.05
+    },
     { type: "list_or_history", regex: /history of|list of|discography|filmography|campaign|advertising/i, score: 0.2 }
   ];
 
@@ -1044,4 +1128,57 @@ function classifyCandidateType(title: string, description: string, extract: stri
     allowed: false,
     score: 0.25
   };
+}
+
+function computeIntentAlignmentScore(intent: QueryIntent, candidateType: string): number {
+  if (!intent.likelyEntity) {
+    return candidateType === "company" ||
+      candidateType === "software" ||
+      candidateType === "place" ||
+      candidateType === "person" ||
+      candidateType === "product" ||
+      candidateType === "technical_term"
+      ? 0.55
+      : 0.15;
+  }
+
+  if (intent.isAcronym && (candidateType === "technical_term" || candidateType === "software")) {
+    return 1;
+  }
+
+  if (intent.domains.has("tech") || intent.domains.has("business")) {
+    if (candidateType === "company" || candidateType === "software" || candidateType === "product" || candidateType === "technical_term") {
+      return 1;
+    }
+
+    if (candidateType === "person") {
+      return 0.55;
+    }
+
+    return 0.05;
+  }
+
+  if (intent.domains.has("place")) {
+    return candidateType === "place" ? 1 : 0.1;
+  }
+
+  if (intent.domains.has("person")) {
+    return candidateType === "person" ? 1 : 0.15;
+  }
+
+  if (intent.domains.has("technical")) {
+    return candidateType === "software" || candidateType === "technical_term" || candidateType === "product" ? 0.95 : 0.1;
+  }
+
+  if (intent.isCapitalized) {
+    if (candidateType === "company" || candidateType === "place" || candidateType === "person" || candidateType === "product") {
+      return 0.85;
+    }
+
+    if (candidateType === "software" || candidateType === "technical_term") {
+      return 0.75;
+    }
+  }
+
+  return candidateType === "generic_unknown" || candidateType === "common_noun" || candidateType === "generic_concept" ? 0.1 : 0.45;
 }
