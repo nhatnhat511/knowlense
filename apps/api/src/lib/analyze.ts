@@ -1,5 +1,5 @@
 const ANALYZE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const ANALYZE_CACHE_VERSION = "v9";
+const ANALYZE_CACHE_VERSION = "v10";
 const OPEN_SEARCH_TIMEOUT_MS = 2500;
 const SUMMARY_TIMEOUT_MS = 3000;
 const MAX_CANDIDATES = 3;
@@ -689,6 +689,12 @@ function computeContextScore(context: NormalizedAnalyzeContext, title: string, d
     "iphone",
     "ipad",
     "ios",
+    "gemini",
+    "google",
+    "pixel",
+    "assistant",
+    "ai",
+    "llm",
     "software",
     "browser",
     "startup",
@@ -711,6 +717,10 @@ function computeContextScore(context: NormalizedAnalyzeContext, title: string, d
     "corporation",
     "brand",
     "platform",
+    "chatbot",
+    "assistant",
+    "language model",
+    "multimodal",
     "concept",
     "term"
   ];
@@ -1180,7 +1190,7 @@ function shouldRejectAsCommonWord(inputText: string, context: string, candidate:
     /concept in|virtue|ethics|philosophy|moral|religion|quality|opposite of evil/i.test(candidate.description) ||
     /\bin most contexts\b|\bdenotes\b|\bthe concept of\b|\bopposite of evil\b|\bright and wrong\b/i.test(candidate.extract);
   const clearlyTypedEntity =
-    /technology company|company|corporation|business|country|city|capital|programming language|software|framework|library|scientist|physicist|mathematician|actor|writer|device|operating system|browser|application|protocol|algorithm|service model/i.test(
+    /technology company|company|corporation|business|country|city|capital|programming language|software|framework|library|scientist|physicist|mathematician|actor|writer|device|operating system|browser|application|protocol|algorithm|service model|chatbot|ai assistant|virtual assistant|large language model|language model|multimodal model/i.test(
       candidate.description
     );
 
@@ -1280,9 +1290,13 @@ function classifyCandidateType(title: string, description: string, extract: stri
     { type: "person", regex: /scientist|physicist|mathematician|artist|actor|writer|philosopher|politician|person/i, score: 0.95 },
     { type: "company", regex: /technology company|multinational technology company|company|corporation|organization|business/i, score: 0.95 },
     { type: "place", regex: /country|city|capital|municipality|state|province|region|place/i, score: 0.92 },
-    { type: "software", regex: /software|programming language|framework|library|web framework|javascript library/i, score: 0.92 },
+    {
+      type: "software",
+      regex: /software|programming language|framework|library|web framework|javascript library|chatbot|ai assistant|virtual assistant|large language model|language model|multimodal model/i,
+      score: 0.92
+    },
     { type: "product", regex: /device|smartphone|computer|product|operating system|browser|application|protocol/i, score: 0.9 },
-    { type: "technical_term", regex: /cloud computing|algorithm|service model|technical term|engineering|scientific term|scientific concept/i, score: 0.88 }
+    { type: "technical_term", regex: /cloud computing|algorithm|service model|technical term|engineering|scientific term|scientific concept|artificial intelligence|machine learning/i, score: 0.88 }
   ];
 
   for (const pattern of allowPatterns) {
