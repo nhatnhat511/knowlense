@@ -30,6 +30,7 @@ type CandidateScore = {
   titleScore: number;
   contextScore: number;
   qualityScore: number;
+  error?: string;
 };
 
 export type AnalyzeResult =
@@ -60,6 +61,7 @@ export type AnalyzeDebugPayload = {
     contextScore: number;
     qualityScore: number;
     url: string;
+    error?: string;
   }>;
 };
 
@@ -98,25 +100,56 @@ export async function analyzeEntity(
     const scoredCandidates: CandidateScore[] = [];
 
     for (const candidateTitle of titles) {
-      const summary = await fetchCandidateSummary(candidateTitle);
+      try {
+        const summary = await fetchCandidateSummary(candidateTitle);
 
-      if (!summary) {
+        if (!summary) {
+          if (debug) {
+            scoredCandidates.push({
+              candidateTitle,
+              title: candidateTitle,
+              description: "",
+              extract: "",
+              url: "",
+              finalScore: 0,
+              titleScore: 0,
+              contextScore: 0,
+              qualityScore: 0
+            });
+          }
+          continue;
+        }
+
+        const scored = computeScore({
+          inputText: text,
+          context,
+          candidateTitle,
+          title: summary.title,
+          description: summary.description,
+          extract: summary.extract,
+          url: summary.url
+        });
+        scoredCandidates.push(scored);
+
+        if (!bestCandidate || scored.finalScore > bestCandidate.finalScore) {
+          bestCandidate = scored;
+        }
+      } catch (error) {
+        if (debug) {
+          scoredCandidates.push({
+            candidateTitle,
+            title: candidateTitle,
+            description: "",
+            extract: "",
+            url: "",
+            finalScore: 0,
+            titleScore: 0,
+            contextScore: 0,
+            qualityScore: 0,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
         continue;
-      }
-
-      const scored = computeScore({
-        inputText: text,
-        context,
-        candidateTitle,
-        title: summary.title,
-        description: summary.description,
-        extract: summary.extract,
-        url: summary.url
-      });
-      scoredCandidates.push(scored);
-
-      if (!bestCandidate || scored.finalScore > bestCandidate.finalScore) {
-        bestCandidate = scored;
       }
     }
 
@@ -612,11 +645,9 @@ function isExactAliasMatch(inputText: string, candidateTitle: string): boolean {
 
 async function fetchRestSummary(title: string) {
   const url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(title);
-  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS).catch((error) => {
-    throw new Error(`REST summary fetch failed for "${title}": ${error instanceof Error ? error.message : String(error)}`);
-  });
+  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS).catch(() => null);
 
-  if (!response.ok) {
+  if (!response || !response.ok) {
     return null;
   }
 
@@ -642,11 +673,9 @@ async function fetchQuerySummary(title: string) {
   const url =
     "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|info&inprop=url&exintro=1&explaintext=1&redirects=1&titles=" +
     encodeURIComponent(title);
-  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS).catch((error) => {
-    throw new Error(`Query summary fetch failed for "${title}": ${error instanceof Error ? error.message : String(error)}`);
-  });
+  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS).catch(() => null);
 
-  if (!response.ok) {
+  if (!response || !response.ok) {
     return null;
   }
 
