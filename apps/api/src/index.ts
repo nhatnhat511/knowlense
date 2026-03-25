@@ -46,12 +46,45 @@ app.get("/api/health", (c) =>
 
 app.post("/analyze", async (c) => {
   const debug = c.req.query("debug") === "1" || c.req.query("debug") === "true";
-  const body: { text?: string; context?: string } = await c.req
+  const body: {
+    text?: string;
+    context?:
+      | string
+      | {
+          sentence?: string;
+          paragraph?: string;
+          heading?: string;
+          pageTitle?: string;
+          metaDescription?: string;
+          hostname?: string;
+        };
+  } = await c.req
     .json<{
       text?: string;
-      context?: string;
+      context?:
+        | string
+        | {
+            sentence?: string;
+            paragraph?: string;
+            heading?: string;
+            pageTitle?: string;
+            metaDescription?: string;
+            hostname?: string;
+          };
     }>()
-    .catch(() => ({} as { text?: string; context?: string }));
+    .catch(() => ({} as {
+      text?: string;
+      context?:
+        | string
+        | {
+            sentence?: string;
+            paragraph?: string;
+            heading?: string;
+            pageTitle?: string;
+            metaDescription?: string;
+            hostname?: string;
+          };
+    }));
 
   const result = await analyzeEntity(
     {
@@ -67,12 +100,45 @@ app.post("/analyze", async (c) => {
 
 app.post("/api/analyze", async (c) => {
   const debug = c.req.query("debug") === "1" || c.req.query("debug") === "true";
-  const body: { text?: string; context?: string } = await c.req
+  const body: {
+    text?: string;
+    context?:
+      | string
+      | {
+          sentence?: string;
+          paragraph?: string;
+          heading?: string;
+          pageTitle?: string;
+          metaDescription?: string;
+          hostname?: string;
+        };
+  } = await c.req
     .json<{
       text?: string;
-      context?: string;
+      context?:
+        | string
+        | {
+            sentence?: string;
+            paragraph?: string;
+            heading?: string;
+            pageTitle?: string;
+            metaDescription?: string;
+            hostname?: string;
+          };
     }>()
-    .catch(() => ({} as { text?: string; context?: string }));
+    .catch(() => ({} as {
+      text?: string;
+      context?:
+        | string
+        | {
+            sentence?: string;
+            paragraph?: string;
+            heading?: string;
+            pageTitle?: string;
+            metaDescription?: string;
+            hostname?: string;
+          };
+    }));
 
   const result = await analyzeEntity(
     {

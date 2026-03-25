@@ -20,7 +20,17 @@ const EXCLUDED_HOST_PATTERNS = [
 
 async function analyzeSelectedEntity(keyword, context) {
   const normalizedKeyword = String(keyword || "").trim();
-  const normalizedContext = String(context || "").replace(/\s+/g, " ").trim();
+  const normalizedContext =
+    typeof context === "string"
+      ? String(context || "").replace(/\s+/g, " ").trim()
+      : {
+          sentence: String(context?.sentence || "").replace(/\s+/g, " ").trim(),
+          paragraph: String(context?.paragraph || "").replace(/\s+/g, " ").trim(),
+          heading: String(context?.heading || "").replace(/\s+/g, " ").trim(),
+          pageTitle: String(context?.pageTitle || "").replace(/\s+/g, " ").trim(),
+          metaDescription: String(context?.metaDescription || "").replace(/\s+/g, " ").trim(),
+          hostname: String(context?.hostname || "").replace(/\s+/g, " ").trim()
+        };
 
   if (!normalizedKeyword) {
     throw new Error("Keyword is empty.");

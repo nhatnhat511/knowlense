@@ -56,40 +56,114 @@ function formatSummary(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
+function getTextNodeContent(node) {
+  if (!node) {
+    return "";
+  }
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.textContent || "";
+  }
+
+  if (node instanceof Element) {
+    return node.textContent || "";
+  }
+
+  return "";
+}
+
+function getClosestBlockElement(node) {
+  const element = node instanceof Element ? node : node?.parentElement;
+  return element?.closest("p, li, blockquote, article, section, div") || element || null;
+}
+
+function extractSentenceFromText(text, selectedText) {
+  const normalizedText = formatSummary(text);
+  const normalizedSelection = formatSummary(selectedText);
+
+  if (!normalizedText) {
+    return "";
+  }
+
+  if (!normalizedSelection) {
+    return normalizedText.slice(0, 260);
+  }
+
+  const index = normalizedText.toLowerCase().indexOf(normalizedSelection.toLowerCase());
+  if (index === -1) {
+    return normalizedText.slice(0, 260);
+  }
+
+  const before = normalizedText.slice(0, index);
+  const after = normalizedText.slice(index + normalizedSelection.length);
+  const sentenceStart = Math.max(before.lastIndexOf("."), before.lastIndexOf("!"), before.lastIndexOf("?"));
+  const nearestEndOffsets = [after.indexOf("."), after.indexOf("!"), after.indexOf("?")].filter((value) => value >= 0);
+  const sentenceEnd = nearestEndOffsets.length > 0 ? Math.min(...nearestEndOffsets) : after.length - 1;
+
+  return normalizedText
+    .slice(Math.max(0, sentenceStart + 1), index + normalizedSelection.length + sentenceEnd + 1)
+    .trim();
+}
+
+function getNearestHeadingText(node) {
+  const element = node instanceof Element ? node : node?.parentElement;
+  if (!element) {
+    return "";
+  }
+
+  const directHeading = element.closest("h1, h2, h3, h4, h5, h6");
+  if (directHeading) {
+    return formatSummary(directHeading.textContent || "");
+  }
+
+  const headings = Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6"));
+  let bestHeading = "";
+
+  for (const heading of headings) {
+    const position = heading.compareDocumentPosition(element);
+    if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+      bestHeading = formatSummary(heading.textContent || "");
+    }
+  }
+
+  return bestHeading;
+}
+
+function getMetaDescription() {
+  return formatSummary(
+    document.querySelector('meta[name="description"]')?.getAttribute("content") ||
+      document.querySelector('meta[property="og:description"]')?.getAttribute("content") ||
+      ""
+  );
+}
+
 function getSelectionContext() {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) {
-    return "";
+    return {
+      sentence: "",
+      paragraph: "",
+      heading: "",
+      pageTitle: document.title || "",
+      metaDescription: getMetaDescription(),
+      hostname: window.location.hostname || ""
+    };
   }
 
   const anchorNode = selection.anchorNode;
-  const baseText =
-    anchorNode?.nodeType === Node.TEXT_NODE
-      ? anchorNode.textContent || ""
-      : anchorNode instanceof Element
-        ? anchorNode.textContent || ""
-        : "";
+  const blockElement = getClosestBlockElement(anchorNode);
+  const paragraphText = formatSummary(getTextNodeContent(blockElement)).slice(0, 700);
+  const sentenceText = extractSentenceFromText(paragraphText, currentSelection).slice(0, 320);
+  const headingText = getNearestHeadingText(blockElement);
 
-  const normalizedBaseText = formatSummary(baseText);
-  if (!normalizedBaseText) {
-    return "";
-  }
-
-  if (!currentSelection) {
-    return normalizedBaseText.slice(0, 280);
-  }
-
-  const normalizedSelection = formatSummary(currentSelection);
-  const selectionIndex = normalizedBaseText.toLowerCase().indexOf(normalizedSelection.toLowerCase());
-
-  if (selectionIndex === -1) {
-    return normalizedBaseText.slice(0, 280);
-  }
-
-  const contextRadius = 140;
-  const start = Math.max(0, selectionIndex - contextRadius);
-  const end = Math.min(normalizedBaseText.length, selectionIndex + normalizedSelection.length + contextRadius);
-  return normalizedBaseText.slice(start, end).trim();
+  return {
+    sentence: sentenceText,
+    paragraph: paragraphText,
+    heading: headingText,
+    pageTitle: formatSummary(document.title || ""),
+    metaDescription: getMetaDescription(),
+    hostname: window.location.hostname || ""
+  };
 }
 
 function ensurePopoverStyles() {

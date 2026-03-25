@@ -1,9 +1,11 @@
 const ANALYZE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const ANALYZE_CACHE_VERSION = "v8";
+const ANALYZE_CACHE_VERSION = "v9";
 const OPEN_SEARCH_TIMEOUT_MS = 2500;
 const SUMMARY_TIMEOUT_MS = 3000;
 const MAX_CANDIDATES = 3;
 const ENTITY_THRESHOLD = 0.6;
+const MAX_MAY_REFER_LINKS = 8;
+const MAY_REFER_ALLOWED_TYPES = new Set(["person", "company", "place", "software", "product", "technical_term"]);
 
 const memoryCache = new Map<string, { expiresAt: number; value: AnalyzeResult }>();
 
@@ -18,6 +20,26 @@ type WikiSummaryResponse = {
       page?: string;
     };
   };
+};
+
+type RawAnalyzeContext =
+  | string
+  | {
+      sentence?: string;
+      paragraph?: string;
+      heading?: string;
+      pageTitle?: string;
+      metaDescription?: string;
+      hostname?: string;
+    };
+
+type NormalizedAnalyzeContext = {
+  sentence: string;
+  paragraph: string;
+  heading: string;
+  pageTitle: string;
+  metaDescription: string;
+  hostname: string;
 };
 
 type CandidateScore = {
@@ -76,12 +98,13 @@ export type AnalyzeDebugPayload = {
 };
 
 export async function analyzeEntity(
-  input: { text?: string; context?: string },
+  input: { text?: string; context?: RawAnalyzeContext },
   kv?: KVNamespace,
   options?: { debug?: boolean }
 ): Promise<AnalyzeResult> {
   const text = normalizeText(input.text || "");
-  const context = normalizeText(input.context || "");
+  const contextData = normalizeAnalyzeContext(input.context);
+  const context = flattenAnalyzeContext(contextData);
   const debug = Boolean(options?.debug);
 
   if (!text) {
@@ -107,6 +130,7 @@ export async function analyzeEntity(
     }
 
     const scoredCandidates: CandidateScore[] = [];
+    const seenTitles = new Set<string>();
 
     for (const candidateTitle of titles) {
       try {
@@ -136,7 +160,7 @@ export async function analyzeEntity(
 
         const scored = computeScore({
           inputText: text,
-          context,
+          context: contextData,
           candidateTitle,
           title: summary.title,
           description: summary.description,
@@ -144,6 +168,21 @@ export async function analyzeEntity(
           url: summary.url
         });
         scoredCandidates.push(scored);
+        seenTitles.add(normalizeForMatch(scored.title));
+
+        if (shouldResolveMayReferCandidate(text, scored)) {
+          const expandedCandidates = await fetchMayReferEntityCandidates({
+            inputText: text,
+            context: contextData,
+            title: scored.title,
+            seenTitles
+          });
+
+          scoredCandidates.push(...expandedCandidates);
+          for (const expandedCandidate of expandedCandidates) {
+            seenTitles.add(normalizeForMatch(expandedCandidate.title));
+          }
+        }
       } catch (error) {
         if (debug) {
           scoredCandidates.push({
@@ -304,7 +343,7 @@ export function keywordOverlapScore(context: string, extract: string): number {
 
 export function computeScore(input: {
   inputText: string;
-  context: string;
+  context: NormalizedAnalyzeContext;
   candidateTitle: string;
   title: string;
   description: string;
@@ -316,7 +355,7 @@ export function computeScore(input: {
   const contextScore = computeContextScore(input.context, input.title, input.description, input.extract);
   const penaltyScore = computePenaltyScore(
     input.inputText,
-    input.context,
+    flattenAnalyzeContext(input.context),
     input.candidateTitle,
     input.title,
     input.description,
@@ -422,6 +461,35 @@ function normalizeSummary(text: string): string {
   }
 
   return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
+}
+
+function normalizeAnalyzeContext(context: RawAnalyzeContext | undefined): NormalizedAnalyzeContext {
+  if (typeof context === "string") {
+    const normalized = normalizeText(context);
+    return {
+      sentence: normalized,
+      paragraph: normalized,
+      heading: "",
+      pageTitle: "",
+      metaDescription: "",
+      hostname: ""
+    };
+  }
+
+  return {
+    sentence: normalizeText(context?.sentence || ""),
+    paragraph: normalizeText(context?.paragraph || ""),
+    heading: normalizeText(context?.heading || ""),
+    pageTitle: normalizeText(context?.pageTitle || ""),
+    metaDescription: normalizeText(context?.metaDescription || ""),
+    hostname: normalizeText(context?.hostname || "")
+  };
+}
+
+function flattenAnalyzeContext(context: NormalizedAnalyzeContext): string {
+  return [context.sentence, context.paragraph, context.heading, context.pageTitle, context.metaDescription, context.hostname]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function tokenize(text: string): Set<string> {
@@ -580,20 +648,40 @@ function computeTitleScore(inputText: string, candidateTitle: string, title: str
   return Math.min(1, score);
 }
 
-function computeContextScore(context: string, title: string, description: string, extract: string): number {
+function computeContextScore(context: NormalizedAnalyzeContext, title: string, description: string, extract: string): number {
   const haystack = `${title} ${description} ${extract}`;
-  const baseScore = keywordOverlapScore(context, haystack);
-  const contextTokens = tokenize(context);
+  const sentenceScore = keywordOverlapScore(context.sentence, haystack);
+  const paragraphScore = keywordOverlapScore(context.paragraph, haystack);
+  const headingScore = keywordOverlapScore(context.heading, haystack);
+  const pageTitleScore = keywordOverlapScore(context.pageTitle, haystack);
+  const metaScore = keywordOverlapScore(context.metaDescription, haystack);
+  const hostnameScore = keywordOverlapScore(context.hostname, haystack);
+  const combinedContext = flattenAnalyzeContext(context);
+  const contextTokens = tokenize(combinedContext);
   const haystackTokens = tokenize(haystack);
 
-  let score = baseScore;
+  let score =
+    sentenceScore * 0.35 +
+    paragraphScore * 0.25 +
+    headingScore * 0.18 +
+    pageTitleScore * 0.15 +
+    metaScore * 0.05 +
+    hostnameScore * 0.02;
 
   const titleTokens = normalizeForMatch(simplifyEntityTitle(title))
     .split(/\s+/)
     .filter(Boolean);
 
-  if (titleTokens.some((token) => contextTokens.has(token))) {
-    score += 0.15;
+  if (titleTokens.some((token) => tokenize(context.sentence).has(token))) {
+    score += 0.18;
+  }
+
+  if (titleTokens.some((token) => tokenize(context.paragraph).has(token))) {
+    score += 0.1;
+  }
+
+  if (titleTokens.some((token) => tokenize(`${context.heading} ${context.pageTitle}`).has(token))) {
+    score += 0.14;
   }
 
   const contextHints = [
@@ -635,7 +723,7 @@ function computeContextScore(context: string, title: string, description: string
   }
 
   const titleAcronym = extractAcronym(title);
-  const contextNormalized = normalizeForMatch(context);
+  const contextNormalized = normalizeForMatch(combinedContext);
   if (titleAcronym && contextNormalized.includes(titleAcronym)) {
     score += 0.12;
   }
@@ -982,6 +1070,93 @@ async function fetchQuerySummary(title: string) {
     extract,
     url: page.fullurl || ""
   };
+}
+
+async function fetchMayReferEntityCandidates(input: {
+  inputText: string;
+  context: NormalizedAnalyzeContext;
+  title: string;
+  seenTitles: Set<string>;
+}): Promise<CandidateScore[]> {
+  const linkedTitles = await fetchLinkedTitlesFromDisambiguation(input.title);
+  const candidates: CandidateScore[] = [];
+
+  for (const linkedTitle of linkedTitles) {
+    const normalizedLinkedTitle = normalizeForMatch(linkedTitle);
+    if (!normalizedLinkedTitle || input.seenTitles.has(normalizedLinkedTitle)) {
+      continue;
+    }
+
+    const summary = await fetchCandidateSummary(linkedTitle).catch(() => null);
+    if (!summary) {
+      continue;
+    }
+
+    const scored = computeScore({
+      inputText: input.inputText,
+      context: input.context,
+      candidateTitle: linkedTitle,
+      title: summary.title,
+      description: summary.description,
+      extract: summary.extract,
+      url: summary.url
+    });
+
+    if (MAY_REFER_ALLOWED_TYPES.has(scored.entityType) && !scored.hardNegative) {
+      candidates.push(scored);
+    }
+  }
+
+  return candidates;
+}
+
+async function fetchLinkedTitlesFromDisambiguation(title: string): Promise<string[]> {
+  const url =
+    "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=links&pllimit=" +
+    String(MAX_MAY_REFER_LINKS) +
+    "&redirects=1&titles=" +
+    encodeURIComponent(title);
+  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS).catch(() => null);
+
+  if (!response || !response.ok) {
+    return [];
+  }
+
+  const data = (await response.json()) as {
+    query?: {
+      pages?: Record<
+        string,
+        {
+          links?: Array<{
+            title?: string;
+          }>;
+        }
+      >;
+    };
+  };
+
+  const page = Object.values(data.query?.pages || {}).find((entry) => Array.isArray(entry?.links));
+  const linkedTitles = (page?.links || [])
+    .map((link) => normalizeText(link.title || ""))
+    .filter(Boolean);
+
+  return Array.from(new Set(linkedTitles)).slice(0, MAX_MAY_REFER_LINKS);
+}
+
+function shouldResolveMayReferCandidate(inputText: string, candidate: CandidateScore): boolean {
+  if (!candidate.hardNegative || !/disambiguation|dictionary_like/i.test(candidate.entityType)) {
+    return false;
+  }
+
+  const normalizedInput = normalizeForMatch(inputText);
+  const aliases = [
+    normalizeForMatch(candidate.candidateTitle),
+    normalizeForMatch(candidate.title),
+    normalizeForMatch(simplifyEntityTitle(candidate.candidateTitle)),
+    normalizeForMatch(simplifyEntityTitle(candidate.title))
+  ].filter(Boolean);
+
+  return aliases.includes(normalizedInput) || candidate.titleScore >= 0.9;
 }
 
 function shouldRejectAsCommonWord(inputText: string, context: string, candidate: CandidateScore): boolean {
