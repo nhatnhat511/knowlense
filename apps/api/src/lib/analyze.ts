@@ -1,5 +1,5 @@
 const ANALYZE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const ANALYZE_CACHE_VERSION = "v10";
+const ANALYZE_CACHE_VERSION = "v11";
 const OPEN_SEARCH_TIMEOUT_MS = 2500;
 const SUMMARY_TIMEOUT_MS = 3000;
 const MAX_CANDIDATES = 3;
@@ -607,7 +607,7 @@ function computeTitleScore(inputText: string, candidateTitle: string, title: str
   }
 
   if (normalizedInput && normalizedInput === normalizedSimplifiedCandidateTitle) {
-    score = Math.max(score, 0.98);
+    score = Math.max(score, 1);
   }
 
   if (normalizedInput && normalizedInput === normalizedTitle) {
@@ -615,7 +615,7 @@ function computeTitleScore(inputText: string, candidateTitle: string, title: str
   }
 
   if (normalizedInput && normalizedInput === normalizedSimplifiedTitle) {
-    score = Math.max(score, 0.97);
+    score = Math.max(score, 1);
   }
 
   if (normalizedTitle.startsWith(`${normalizedInput} `) || normalizedTitle.includes(` ${normalizedInput} `)) {
@@ -685,6 +685,7 @@ function computeContextScore(context: NormalizedAnalyzeContext, title: string, d
   }
 
   const contextHints = [
+    "android",
     "macbook",
     "iphone",
     "ipad",
@@ -695,6 +696,12 @@ function computeContextScore(context: NormalizedAnalyzeContext, title: string, d
     "assistant",
     "ai",
     "llm",
+    "mobile",
+    "phone",
+    "app",
+    "apps",
+    "device",
+    "devices",
     "software",
     "browser",
     "startup",
@@ -717,6 +724,9 @@ function computeContextScore(context: NormalizedAnalyzeContext, title: string, d
     "corporation",
     "brand",
     "platform",
+    "operating system",
+    "mobile",
+    "smartphone",
     "chatbot",
     "assistant",
     "language model",
@@ -803,16 +813,19 @@ function computePenaltyScore(
   const candidateRemainder = getTitleRemainder(normalizedInput, normalizedCandidate);
   const resolvedRemainder = getTitleRemainder(normalizedInput, normalizedResolved);
   const remainder = candidateRemainder || resolvedRemainder;
+  const exactSimplifiedMatch =
+    normalizedInput === normalizeForMatch(simplifyEntityTitle(candidateTitle)) ||
+    normalizedInput === normalizeForMatch(simplifyEntityTitle(resolvedTitle));
 
   if (normalizedInput && remainder) {
-    penalty += 0.16;
+    penalty += exactSimplifiedMatch ? 0.06 : 0.16;
 
     const remainderTokens = remainder.split(/\s+/).filter(Boolean);
     const contextMentionsRemainder = remainderTokens.some(
       (token) => token.length > 2 && normalizedContext.includes(token)
     );
 
-    if (!contextMentionsRemainder) {
+    if (!contextMentionsRemainder && !exactSimplifiedMatch) {
       penalty += 0.1;
     }
   }
