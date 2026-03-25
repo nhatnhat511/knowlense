@@ -6,6 +6,18 @@ type WikiResult = {
   pageurl: string;
 };
 
+type WikipediaSummaryResponse = {
+  extract?: string;
+  content_urls?: {
+    desktop?: {
+      page?: string;
+    };
+    mobile?: {
+      page?: string;
+    };
+  };
+};
+
 const usageMemory = new Map<string, number>();
 
 export async function getWikiSummary(term: string, cache?: KVNamespace) {
@@ -38,7 +50,7 @@ export async function getWikiSummary(term: string, cache?: KVNamespace) {
     throw new Error(`Wikipedia request failed with status ${response.status}.`);
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as WikipediaSummaryResponse;
   const extract = trimToTwoSentences(data.extract || "");
 
   if (!extract) {
