@@ -6,10 +6,12 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "alarms"
   ],
   "host_permissions": [
-    "https://en.wikipedia.org/*"
+    "https://en.wikipedia.org/*",
+    "https://api.knowlense.com/*"
   ],
   "background": {
     "service_worker": "background.js"

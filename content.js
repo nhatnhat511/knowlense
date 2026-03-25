@@ -1,10 +1,41 @@
 const FLOATING_BOX_ID = "knowlense-floating-box";
 const LOOKUP_ICON_ID = "knowlense-lookup-icon";
+const AUTO_HIGHLIGHT_STYLE_ID = "knowlense-auto-highlight-style";
+const SUBSCRIPTION_STORAGE_KEY = "knowlenseSubscription";
 
 let latestPointer = { x: 0, y: 0 };
 let currentSelection = "";
-let subscriptionState = "free";
+let subscriptionSnapshot = {
+  isPremium: false,
+  plan: "free",
+  expiresAt: null
+};
 let apiServicePromise = null;
+
+const STOP_WORDS = new Set([
+  "about",
+  "after",
+  "before",
+  "being",
+  "browser",
+  "chrome",
+  "could",
+  "extension",
+  "first",
+  "found",
+  "highlight",
+  "however",
+  "knowlense",
+  "other",
+  "their",
+  "there",
+  "these",
+  "those",
+  "through",
+  "using",
+  "which",
+  "without"
+]);
 
 function loadApiService() {
   if (!apiServicePromise) {
@@ -53,11 +84,46 @@ function getSafePosition(pointerX, pointerY, boxWidth, boxHeight) {
 
 function formatSummary(text) {
   const normalized = String(text || "").replace(/\s+/g, " ").trim();
-  return normalized.length > 320 ? `${normalized.slice(0, 317)}...` : normalized;
+  return normalized.length > 420 ? `${normalized.slice(0, 417)}...` : normalized;
 }
 
-function createFloatingBox(pointerX, pointerY, summaryText, sourceUrl) {
+function ensureAutoHighlightStyle() {
+  if (document.getElementById(AUTO_HIGHLIGHT_STYLE_ID)) {
+    return;
+  }
+
+  const style = document.createElement("style");
+  style.id = AUTO_HIGHLIGHT_STYLE_ID;
+  style.textContent = `
+    .knowlense-spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(8, 145, 178, 0.18);
+      border-top-color: #0891b2;
+      border-radius: 999px;
+      animation: knowlense-spin 0.8s linear infinite;
+    }
+
+    .knowlense-auto-highlight {
+      background: linear-gradient(180deg, rgba(8, 145, 178, 0.05) 0%, rgba(8, 145, 178, 0.22) 100%);
+      border-radius: 4px;
+      padding: 0 2px;
+      box-shadow: inset 0 -1px 0 rgba(8, 145, 178, 0.18);
+    }
+
+    @keyframes knowlense-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  `;
+
+  document.documentElement.appendChild(style);
+}
+
+function createFloatingBox(pointerX, pointerY, options) {
   removeFloatingBox();
+  ensureAutoHighlightStyle();
 
   const box = document.createElement("div");
   box.id = FLOATING_BOX_ID;
@@ -84,22 +150,47 @@ function createFloatingBox(pointerX, pointerY, summaryText, sourceUrl) {
   title.style.marginBottom = "10px";
 
   const summary = document.createElement("div");
-  summary.textContent = formatSummary(summaryText);
   summary.style.fontSize = "13px";
   summary.style.color = "#111827";
   summary.style.maxHeight = "300px";
   summary.style.overflowY = "auto";
   summary.style.marginBottom = "12px";
 
-  const source = sourceUrl ? document.createElement("a") : document.createElement("span");
-  source.textContent = sourceUrl ? "Source" : "No source available";
+  if (options.state === "loading") {
+    const loadingWrap = document.createElement("div");
+    loadingWrap.style.display = "flex";
+    loadingWrap.style.alignItems = "center";
+    loadingWrap.style.gap = "10px";
+
+    const spinner = document.createElement("div");
+    spinner.className = "knowlense-spinner";
+
+    const text = document.createElement("span");
+    text.textContent = "Searching Wikipedia...";
+    text.style.color = "#475569";
+
+    loadingWrap.append(spinner, text);
+    summary.appendChild(loadingWrap);
+  } else {
+    summary.textContent = formatSummary(options.summary || "No definition found");
+
+    if (options.state === "empty") {
+      summary.style.color = "#64748b";
+    }
+  }
+
+  const source = options.source
+    ? document.createElement("a")
+    : document.createElement("span");
+
+  source.textContent = options.source ? "Source" : options.state === "empty" ? "Try another term" : "No source available";
   source.style.fontSize = "12px";
   source.style.fontWeight = "600";
-  source.style.color = sourceUrl ? "#2563eb" : "#6b7280";
+  source.style.color = options.source ? "#2563eb" : "#6b7280";
   source.style.textDecoration = "none";
 
-  if (sourceUrl) {
-    source.href = sourceUrl;
+  if (options.source) {
+    source.href = options.source;
     source.target = "_blank";
     source.rel = "noreferrer noopener";
   }
@@ -143,20 +234,35 @@ function createLookupIcon(pointerX, pointerY) {
   document.body.appendChild(button);
 }
 
-async function updateSubscriptionState() {
-  try {
-    const api = await loadApiService();
-    const result = await api.checkSubscriptionStatus();
+function getStoredSubscriptionState() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(
+      {
+        [SUBSCRIPTION_STORAGE_KEY]: {
+          isPremium: false,
+          plan: "free",
+          expiresAt: null
+        }
+      },
+      (result) => resolve(result[SUBSCRIPTION_STORAGE_KEY])
+    );
+  });
+}
 
-    if (result?.ok && result?.subscription?.state) {
-      subscriptionState = result.subscription.state;
-      return;
-    }
-  } catch (error) {
-    console.error("Failed to load subscription state:", error);
+async function updateSubscriptionState() {
+  const nextState = await getStoredSubscriptionState();
+  subscriptionSnapshot = {
+    isPremium: Boolean(nextState?.isPremium),
+    plan: nextState?.plan || "free",
+    expiresAt: nextState?.expiresAt || null
+  };
+
+  if (subscriptionSnapshot.isPremium) {
+    runAutoHighlight();
+    return;
   }
 
-  subscriptionState = "free";
+  clearAutoHighlights();
 }
 
 async function lookupSelectedTerm() {
@@ -165,30 +271,35 @@ async function lookupSelectedTerm() {
   }
 
   removeLookupIcon();
-  createFloatingBox(latestPointer.x, latestPointer.y, "Loading definition...", "");
+  createFloatingBox(latestPointer.x, latestPointer.y, {
+    state: "loading"
+  });
 
   try {
     const api = await loadApiService();
     const result = await api.getTermDefinition(currentSelection);
 
     if (!result?.ok) {
-      createFloatingBox(latestPointer.x, latestPointer.y, result?.error || "Unable to load definition.", "");
+      createFloatingBox(latestPointer.x, latestPointer.y, {
+        state: "empty",
+        summary: result?.error?.includes("No Wikipedia result") ? "No definition found" : result?.error || "No definition found",
+        source: ""
+      });
       return;
     }
 
-    createFloatingBox(
-      latestPointer.x,
-      latestPointer.y,
-      result.summary || result.extract || "No summary available.",
-      result.source || result.sourceUrl || ""
-    );
+    const summary = result.summary || result.extract || "";
+    createFloatingBox(latestPointer.x, latestPointer.y, {
+      state: summary ? "success" : "empty",
+      summary: summary || "No definition found",
+      source: result.source || result.sourceUrl || ""
+    });
   } catch (error) {
-    createFloatingBox(
-      latestPointer.x,
-      latestPointer.y,
-      error instanceof Error ? error.message : "Unable to load definition.",
-      ""
-    );
+    createFloatingBox(latestPointer.x, latestPointer.y, {
+      state: "empty",
+      summary: "No definition found",
+      source: ""
+    });
   }
 }
 
@@ -205,8 +316,121 @@ function handleSelection(event) {
   console.log("Knowlense selected text:", currentSelection);
   createLookupIcon(event.clientX, event.clientY);
 
-  if (subscriptionState === "premium" || subscriptionState === "trial") {
+  if (subscriptionSnapshot.isPremium) {
     void lookupSelectedTerm();
+  }
+}
+
+function extractImportantKeywords() {
+  const paragraphs = Array.from(document.querySelectorAll("p"));
+  const counts = new Map();
+
+  for (const paragraph of paragraphs) {
+    const words = paragraph.textContent?.match(/[A-Za-z][A-Za-z-]{5,}/g) || [];
+
+    for (const word of words) {
+      const normalized = word.toLowerCase();
+
+      if (STOP_WORDS.has(normalized)) {
+        continue;
+      }
+
+      counts.set(normalized, (counts.get(normalized) || 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([word]) => word);
+}
+
+function replaceMatchesInTextNode(textNode, regex) {
+  const text = textNode.nodeValue || "";
+  const match = regex.exec(text);
+
+  if (!match) {
+    return false;
+  }
+
+  const matchedText = match[0];
+  const before = text.slice(0, match.index);
+  const after = text.slice(match.index + matchedText.length);
+  const mark = document.createElement("mark");
+  mark.className = "knowlense-auto-highlight";
+  mark.textContent = matchedText;
+
+  const fragment = document.createDocumentFragment();
+
+  if (before) {
+    fragment.appendChild(document.createTextNode(before));
+  }
+
+  fragment.appendChild(mark);
+
+  if (after) {
+    fragment.appendChild(document.createTextNode(after));
+  }
+
+  textNode.parentNode?.replaceChild(fragment, textNode);
+  return true;
+}
+
+function highlightKeywordInParagraph(paragraph, keyword, budget) {
+  const regex = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+  const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+  let textNode = walker.nextNode();
+
+  while (textNode && budget.count < budget.max) {
+    const parentElement = textNode.parentElement;
+    if (parentElement && !parentElement.closest("mark.knowlense-auto-highlight")) {
+      if (replaceMatchesInTextNode(textNode, regex)) {
+        budget.count += 1;
+        return;
+      }
+    }
+
+    textNode = walker.nextNode();
+  }
+}
+
+function clearAutoHighlights() {
+  document.querySelectorAll("mark.knowlense-auto-highlight").forEach((mark) => {
+    const parent = mark.parentNode;
+    if (!parent) {
+      return;
+    }
+
+    parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
+    parent.normalize();
+  });
+}
+
+function runAutoHighlight() {
+  if (!subscriptionSnapshot.isPremium) {
+    return;
+  }
+
+  ensureAutoHighlightStyle();
+  clearAutoHighlights();
+
+  const keywords = extractImportantKeywords();
+  if (!keywords.length) {
+    return;
+  }
+
+  const paragraphs = Array.from(document.querySelectorAll("p"));
+  const budget = { count: 0, max: 24 };
+
+  for (const paragraph of paragraphs) {
+    for (const keyword of keywords) {
+      if (budget.count >= budget.max) {
+        return;
+      }
+
+      highlightKeywordInParagraph(paragraph, keyword, budget);
+    }
   }
 }
 
@@ -234,9 +458,19 @@ window.addEventListener("resize", () => {
   removeFloatingBox();
 });
 
-window.addEventListener("scroll", () => {
-  removeLookupIcon();
-  removeFloatingBox();
-}, true);
+window.addEventListener(
+  "scroll",
+  () => {
+    removeLookupIcon();
+    removeFloatingBox();
+  },
+  true
+);
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "local" && changes[SUBSCRIPTION_STORAGE_KEY]) {
+    void updateSubscriptionState();
+  }
+});
 
 void updateSubscriptionState();
