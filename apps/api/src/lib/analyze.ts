@@ -4,6 +4,8 @@ const OPEN_SEARCH_TIMEOUT_MS = 2500;
 const SUMMARY_TIMEOUT_MS = 3000;
 const MAX_CANDIDATES = 3;
 const ENTITY_THRESHOLD = 0.6;
+const MAX_MAY_REFER_LINKS = 8;
+const MAY_REFER_ENTITY_TYPES = new Set(["person", "company", "place", "software", "product", "technical_term"]);
 
 const memoryCache = new Map<string, { expiresAt: number; value: AnalyzeResult }>();
 
@@ -106,8 +108,8 @@ export async function analyzeEntity(
       return result;
     }
 
-    let bestCandidate: CandidateScore | null = null;
     const scoredCandidates: CandidateScore[] = [];
+    const seenTitles = new Set<string>();
 
     for (const candidateTitle of titles) {
       try {
@@ -145,9 +147,20 @@ export async function analyzeEntity(
           url: summary.url
         });
         scoredCandidates.push(scored);
+        seenTitles.add(normalizeForMatch(scored.title));
 
-        if (!bestCandidate || scored.finalScore > bestCandidate.finalScore) {
-          bestCandidate = scored;
+        if (shouldExpandMayReferCandidate(scored)) {
+          const mayReferCandidates = await fetchMayReferEntityCandidates({
+            inputText: text,
+            context,
+            title: summary.title,
+            seenTitles
+          });
+
+          scoredCandidates.push(...mayReferCandidates);
+          for (const expandedCandidate of mayReferCandidates) {
+            seenTitles.add(normalizeForMatch(expandedCandidate.title));
+          }
         }
       } catch (error) {
         if (debug) {
@@ -197,7 +210,7 @@ export async function analyzeEntity(
       : undefined;
 
     const eligibleCandidates = scoredCandidates.filter((candidate) => !candidate.hardNegative);
-    bestCandidate = eligibleCandidates.sort((left, right) => right.finalScore - left.finalScore)[0] || null;
+    const bestCandidate = eligibleCandidates.sort((left, right) => right.finalScore - left.finalScore)[0] || null;
 
     const shouldReturnEntity = bestCandidate !== null && bestCandidate.finalScore >= ENTITY_THRESHOLD;
 
@@ -987,6 +1000,81 @@ async function fetchQuerySummary(title: string) {
     extract,
     url: page.fullurl || ""
   };
+}
+
+async function fetchMayReferEntityCandidates(input: {
+  inputText: string;
+  context: string;
+  title: string;
+  seenTitles: Set<string>;
+}): Promise<CandidateScore[]> {
+  const linkedTitles = await fetchLinkedTitlesFromDisambiguation(input.title);
+  const results: CandidateScore[] = [];
+
+  for (const linkedTitle of linkedTitles) {
+    const normalizedLinkedTitle = normalizeForMatch(linkedTitle);
+    if (input.seenTitles.has(normalizedLinkedTitle)) {
+      continue;
+    }
+
+    const summary = await fetchCandidateSummary(linkedTitle).catch(() => null);
+    if (!summary) {
+      continue;
+    }
+
+    const scored = computeScore({
+      inputText: input.inputText,
+      context: input.context,
+      candidateTitle: linkedTitle,
+      title: summary.title,
+      description: summary.description,
+      extract: summary.extract,
+      url: summary.url
+    });
+
+    if (MAY_REFER_ENTITY_TYPES.has(scored.entityType) && !scored.hardNegative) {
+      results.push(scored);
+    }
+  }
+
+  return results;
+}
+
+async function fetchLinkedTitlesFromDisambiguation(title: string): Promise<string[]> {
+  const url =
+    "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=links&pllimit=" +
+    String(MAX_MAY_REFER_LINKS) +
+    "&redirects=1&titles=" +
+    encodeURIComponent(title);
+  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS).catch(() => null);
+
+  if (!response || !response.ok) {
+    return [];
+  }
+
+  const data = (await response.json()) as {
+    query?: {
+      pages?: Record<
+        string,
+        {
+          links?: Array<{
+            title?: string;
+          }>;
+        }
+      >;
+    };
+  };
+
+  const page = Object.values(data.query?.pages || {}).find((entry) => Array.isArray(entry?.links));
+  const linkedTitles = (page?.links || [])
+    .map((link) => normalizeText(link.title || ""))
+    .filter(Boolean);
+
+  return Array.from(new Set(linkedTitles)).slice(0, MAX_MAY_REFER_LINKS);
+}
+
+function shouldExpandMayReferCandidate(candidate: CandidateScore): boolean {
+  return candidate.hardNegative && /disambiguation|dictionary_like/i.test(candidate.entityType);
 }
 
 function shouldRejectAsCommonWord(inputText: string, context: string, candidate: CandidateScore): boolean {
