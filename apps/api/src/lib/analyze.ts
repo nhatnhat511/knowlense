@@ -1,5 +1,5 @@
 const ANALYZE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const ANALYZE_CACHE_VERSION = "v3";
+const ANALYZE_CACHE_VERSION = "v4";
 const OPEN_SEARCH_TIMEOUT_MS = 2500;
 const SUMMARY_TIMEOUT_MS = 3000;
 const MAX_CANDIDATES = 3;
@@ -925,6 +925,13 @@ function shouldRejectAsCommonWord(inputText: string, context: string, candidate:
   const genericExtract = /\bmay refer to:\b/i.test(candidate.extract);
   const singleWordTitle = isSingleWord(normalizedTitle);
   const acronymMatch = extractAcronym(candidate.title) === normalizedInput;
+  const abstractOrDictionaryLike =
+    /concept in|virtue|ethics|philosophy|moral|religion|quality|opposite of evil/i.test(candidate.description) ||
+    /\bin most contexts\b|\bdenotes\b|\bthe concept of\b|\bopposite of evil\b|\bright and wrong\b/i.test(candidate.extract);
+  const clearlyTypedEntity =
+    /technology company|company|corporation|business|country|city|capital|programming language|software|framework|library|scientist|physicist|mathematician|actor|writer|device|operating system|browser|application|protocol|algorithm|service model/i.test(
+      candidate.description
+    );
 
   if (!lowerCaseSingleWordInput) {
     return candidate.classificationScore < 0.35;
@@ -942,15 +949,15 @@ function shouldRejectAsCommonWord(inputText: string, context: string, candidate:
     return true;
   }
 
+  if (weakContext && singleWordTitle && abstractOrDictionaryLike) {
+    return true;
+  }
+
   if (singleWordTitle && weakContext && candidate.contextScore < 0.65) {
     return true;
   }
 
-  if (
-    weakContext &&
-    singleWordTitle &&
-    !/technology|company|country|city|programming language|software|framework|library/i.test(candidate.description)
-  ) {
+  if (weakContext && singleWordTitle && !clearlyTypedEntity) {
     return true;
   }
 
@@ -966,8 +973,12 @@ function classifyCandidateType(title: string, description: string, extract: stri
 
   const denyPatterns: Array<{ type: string; regex: RegExp; score: number }> = [
     { type: "disambiguation", regex: /topics referred to by the same term|may refer to/i, score: 0.05 },
-    { type: "generic_concept", regex: /concept in|virtue|ethics|philosophy|moral/i, score: 0.15 },
-    { type: "common_noun", regex: /piece of furniture|verb|adjective|common noun|grammatical/i, score: 0.1 },
+    {
+      type: "generic_concept",
+      regex: /concept in|virtue|ethics|philosophy|moral|religion|quality|opposite of evil|right and wrong/i,
+      score: 0.05
+    },
+    { type: "common_noun", regex: /piece of furniture|verb|adjective|common noun|grammatical|word expressing/i, score: 0.05 },
     { type: "list_or_history", regex: /history of|list of|discography|filmography|campaign|advertising/i, score: 0.2 }
   ];
 
