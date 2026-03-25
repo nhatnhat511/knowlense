@@ -292,7 +292,14 @@ export function computeScore(input: {
 }): CandidateScore {
   const titleScore = computeTitleScore(input.inputText, input.candidateTitle, input.title);
   const contextScore = computeContextScore(input.context, input.title, input.description, input.extract);
-  const penaltyScore = computePenaltyScore(input.inputText, input.context, input.candidateTitle, input.title);
+  const penaltyScore = computePenaltyScore(
+    input.inputText,
+    input.context,
+    input.candidateTitle,
+    input.title,
+    input.description,
+    input.extract
+  );
 
   let qualityScore = 0;
   if (input.extract.length > 100) {
@@ -311,7 +318,12 @@ export function computeScore(input: {
 
   let finalScore = titleScore * 0.4 + contextScore * 0.4 + qualityScore * 0.2 - penaltyScore;
 
-  if (isExactAliasMatch(input.inputText, input.candidateTitle) && contextScore >= 0.2 && qualityScore >= 0.35) {
+  if (
+    isExactAliasMatch(input.inputText, input.candidateTitle) &&
+    contextScore >= 0.2 &&
+    qualityScore >= 0.35 &&
+    canUseExactAliasBoost(input.inputText, input.context, input.candidateTitle, input.title, input.description)
+  ) {
     finalScore = Math.max(finalScore, 0.8);
   }
 
@@ -655,7 +667,9 @@ function computePenaltyScore(
   inputText: string,
   context: string,
   candidateTitle: string,
-  resolvedTitle: string
+  resolvedTitle: string,
+  description = "",
+  extract = ""
 ): number {
   const normalizedInput = normalizeForMatch(inputText);
   const normalizedCandidate = normalizeForMatch(candidateTitle);
@@ -688,6 +702,24 @@ function computePenaltyScore(
     penalty += 0.12;
   }
 
+  const singleWordInput = isSingleWord(normalizedInput);
+  const singleWordTitle = isSingleWord(normalizedResolved) || isSingleWord(normalizedCandidate);
+  const genericDescription = /topics referred to by the same term|may refer to|concept in/i.test(description) ||
+    /\bmay refer to:\b/i.test(extract);
+  const weakContext = !hasStrongEntityContext(context);
+
+  if (singleWordInput && singleWordTitle && isMostlyLowercase(inputText) && weakContext) {
+    penalty += 0.22;
+  }
+
+  if (genericDescription) {
+    penalty += 0.28;
+  }
+
+  if (/^concept in\b/i.test(description) && weakContext) {
+    penalty += 0.18;
+  }
+
   return Math.min(0.45, penalty);
 }
 
@@ -701,6 +733,90 @@ function getTitleRemainder(inputText: string, titleText: string): string {
   }
 
   return "";
+}
+
+function canUseExactAliasBoost(
+  inputText: string,
+  context: string,
+  candidateTitle: string,
+  resolvedTitle: string,
+  description: string
+): boolean {
+  if (!isMostlyLowercase(inputText)) {
+    return true;
+  }
+
+  if (!isSingleWord(normalizeForMatch(inputText))) {
+    return true;
+  }
+
+  if (!isSingleWord(normalizeForMatch(candidateTitle)) || !isSingleWord(normalizeForMatch(resolvedTitle))) {
+    return true;
+  }
+
+  if (extractAcronym(candidateTitle) === normalizeForMatch(inputText)) {
+    return true;
+  }
+
+  if (hasStrongEntityContext(context)) {
+    return true;
+  }
+
+  if (/technology|company|country|city|programming language|software|framework|library/i.test(description)) {
+    return true;
+  }
+
+  return false;
+}
+
+function hasStrongEntityContext(context: string): boolean {
+  const normalizedContext = normalizeForMatch(context);
+  const tokens = tokenize(context);
+
+  const entityHints = [
+    "released",
+    "founded",
+    "capital",
+    "country",
+    "city",
+    "company",
+    "corporation",
+    "technology",
+    "software",
+    "framework",
+    "library",
+    "programming",
+    "language",
+    "scientist",
+    "president",
+    "ceo",
+    "iphone",
+    "macbook",
+    "android",
+    "aws",
+    "cloud",
+    "subscription",
+    "browser"
+  ];
+
+  if (entityHints.some((hint) => tokens.has(hint) || normalizedContext.includes(hint))) {
+    return true;
+  }
+
+  return /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/.test(context);
+}
+
+function isSingleWord(text: string): boolean {
+  return text.trim().split(/\s+/).filter(Boolean).length === 1;
+}
+
+function isMostlyLowercase(text: string): boolean {
+  const letters = text.replace(/[^A-Za-z]/g, "");
+  if (!letters) {
+    return false;
+  }
+
+  return letters === letters.toLowerCase();
 }
 
 async function fetchRestSummary(title: string) {
