@@ -1,4 +1,5 @@
 const ANALYZE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const ANALYZE_CACHE_VERSION = "v2";
 const OPEN_SEARCH_TIMEOUT_MS = 2500;
 const SUMMARY_TIMEOUT_MS = 3000;
 const MAX_CANDIDATES = 3;
@@ -187,8 +188,8 @@ export function computeScore(input: {
   extract: string;
   url: string;
 }): CandidateScore {
-  const titleScore = levenshteinSimilarity(input.inputText, input.title);
-  const contextScore = keywordOverlapScore(input.context, `${input.description} ${input.extract}`);
+  const titleScore = computeTitleScore(input.inputText, input.title);
+  const contextScore = computeContextScore(input.context, input.title, input.description, input.extract);
 
   let qualityScore = 0;
   if (input.extract.length > 100) {
@@ -327,7 +328,7 @@ function tokenize(text: string): Set<string> {
 }
 
 async function createCacheKey(text: string, context: string): Promise<string> {
-  const payload = `${text}::${context}`;
+  const payload = `${ANALYZE_CACHE_VERSION}::${text}::${context}`;
   const bytes = new TextEncoder().encode(payload);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const hash = Array.from(new Uint8Array(digest))
@@ -380,4 +381,137 @@ async function writeCache(key: string, value: AnalyzeResult, kv?: KVNamespace) {
   await kv.put(key, JSON.stringify(value), {
     expirationTtl: ANALYZE_CACHE_TTL_MS / 1000
   });
+}
+
+function computeTitleScore(inputText: string, title: string): number {
+  const normalizedInput = normalizeForMatch(inputText);
+  const normalizedTitle = normalizeForMatch(title);
+  const simplifiedTitle = simplifyEntityTitle(title);
+  const normalizedSimplifiedTitle = normalizeForMatch(simplifiedTitle);
+  const titleAcronym = extractAcronym(title);
+  const inputAcronym = extractAcronym(inputText);
+
+  let score = Math.max(
+    levenshteinSimilarity(normalizedInput, normalizedTitle),
+    levenshteinSimilarity(normalizedInput, normalizedSimplifiedTitle)
+  );
+
+  if (normalizedInput && normalizedInput === normalizedTitle) {
+    score = Math.max(score, 1);
+  }
+
+  if (normalizedInput && normalizedInput === normalizedSimplifiedTitle) {
+    score = Math.max(score, 0.97);
+  }
+
+  if (normalizedTitle.startsWith(`${normalizedInput} `) || normalizedTitle.includes(` ${normalizedInput} `)) {
+    score = Math.max(score, 0.92);
+  }
+
+  if (titleAcronym && normalizedInput === titleAcronym) {
+    score = Math.max(score, 0.98);
+  }
+
+  if (titleAcronym && inputAcronym && titleAcronym === inputAcronym) {
+    score = Math.max(score, 0.96);
+  }
+
+  return Math.min(1, score);
+}
+
+function computeContextScore(context: string, title: string, description: string, extract: string): number {
+  const haystack = `${title} ${description} ${extract}`;
+  const baseScore = keywordOverlapScore(context, haystack);
+  const contextTokens = tokenize(context);
+  const haystackTokens = tokenize(haystack);
+
+  let score = baseScore;
+
+  const titleTokens = normalizeForMatch(simplifyEntityTitle(title))
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (titleTokens.some((token) => contextTokens.has(token))) {
+    score += 0.15;
+  }
+
+  const contextHints = [
+    "macbook",
+    "iphone",
+    "ipad",
+    "ios",
+    "software",
+    "browser",
+    "startup",
+    "subscription",
+    "product",
+    "released",
+    "launch",
+    "technology",
+    "tech",
+    "platform",
+    "cloud"
+  ];
+
+  const entityHints = [
+    "company",
+    "software",
+    "service",
+    "technology",
+    "business",
+    "corporation",
+    "brand",
+    "platform",
+    "concept",
+    "term"
+  ];
+
+  const hasContextHint = contextHints.some((hint) => contextTokens.has(hint));
+  const hasEntityHint = entityHints.some((hint) => haystackTokens.has(hint));
+
+  if (hasContextHint && hasEntityHint) {
+    score += 0.22;
+  }
+
+  const titleAcronym = extractAcronym(title);
+  const contextNormalized = normalizeForMatch(context);
+  if (titleAcronym && contextNormalized.includes(titleAcronym)) {
+    score += 0.12;
+  }
+
+  return Math.min(1, score);
+}
+
+function normalizeForMatch(text: string): string {
+  return normalizeText(text)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function simplifyEntityTitle(text: string): string {
+  return normalizeText(text)
+    .replace(/\s*\([^)]*\)\s*/g, " ")
+    .replace(/\b(inc|incorporated|corp|corporation|co|company|ltd|limited)\b\.?/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractAcronym(text: string): string {
+  const words = normalizeText(text)
+    .split(/[\s-]+/)
+    .map((word) => word.replace(/[^\p{L}\p{N}]/gu, ""))
+    .filter(Boolean);
+
+  if (words.length === 1) {
+    const value = words[0];
+    return /^[A-Z0-9]{2,}$/i.test(value) && value.length <= 6 ? value.toLowerCase() : "";
+  }
+
+  return words
+    .filter((word) => word.length > 0)
+    .map((word) => word[0])
+    .join("")
+    .toLowerCase();
 }
