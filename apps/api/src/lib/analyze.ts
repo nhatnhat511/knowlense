@@ -30,6 +30,7 @@ type CandidateScore = {
   titleScore: number;
   contextScore: number;
   qualityScore: number;
+  penaltyScore: number;
   error?: string;
 };
 
@@ -60,6 +61,7 @@ export type AnalyzeDebugPayload = {
     titleScore: number;
     contextScore: number;
     qualityScore: number;
+    penaltyScore: number;
     url: string;
     error?: string;
   }>;
@@ -115,6 +117,8 @@ export async function analyzeEntity(
               titleScore: 0,
               contextScore: 0,
               qualityScore: 0
+              ,
+              penaltyScore: 0
             });
           }
           continue;
@@ -146,6 +150,7 @@ export async function analyzeEntity(
             titleScore: 0,
             contextScore: 0,
             qualityScore: 0,
+            penaltyScore: 0,
             error: error instanceof Error ? error.message : String(error)
           });
         }
@@ -166,6 +171,7 @@ export async function analyzeEntity(
             titleScore: candidate.titleScore,
             contextScore: candidate.contextScore,
             qualityScore: candidate.qualityScore,
+            penaltyScore: candidate.penaltyScore,
             url: candidate.url
           }))
         }
@@ -286,6 +292,7 @@ export function computeScore(input: {
 }): CandidateScore {
   const titleScore = computeTitleScore(input.inputText, input.candidateTitle, input.title);
   const contextScore = computeContextScore(input.context, input.title, input.description, input.extract);
+  const penaltyScore = computePenaltyScore(input.inputText, input.context, input.candidateTitle, input.title);
 
   let qualityScore = 0;
   if (input.extract.length > 100) {
@@ -302,7 +309,7 @@ export function computeScore(input: {
 
   qualityScore = Math.min(1, qualityScore);
 
-  let finalScore = titleScore * 0.4 + contextScore * 0.4 + qualityScore * 0.2;
+  let finalScore = titleScore * 0.4 + contextScore * 0.4 + qualityScore * 0.2 - penaltyScore;
 
   if (isExactAliasMatch(input.inputText, input.candidateTitle) && contextScore >= 0.2 && qualityScore >= 0.35) {
     finalScore = Math.max(finalScore, 0.8);
@@ -323,7 +330,8 @@ export function computeScore(input: {
     finalScore,
     titleScore,
     contextScore,
-    qualityScore
+    qualityScore,
+    penaltyScore
   };
 }
 
@@ -641,6 +649,58 @@ function isExactAliasMatch(inputText: string, candidateTitle: string): boolean {
   ].filter(Boolean);
 
   return aliases.includes(normalizedInput);
+}
+
+function computePenaltyScore(
+  inputText: string,
+  context: string,
+  candidateTitle: string,
+  resolvedTitle: string
+): number {
+  const normalizedInput = normalizeForMatch(inputText);
+  const normalizedCandidate = normalizeForMatch(candidateTitle);
+  const normalizedResolved = normalizeForMatch(resolvedTitle);
+  const normalizedContext = normalizeForMatch(context);
+  let penalty = 0;
+
+  const candidateRemainder = getTitleRemainder(normalizedInput, normalizedCandidate);
+  const resolvedRemainder = getTitleRemainder(normalizedInput, normalizedResolved);
+  const remainder = candidateRemainder || resolvedRemainder;
+
+  if (normalizedInput && remainder) {
+    penalty += 0.16;
+
+    const remainderTokens = remainder.split(/\s+/).filter(Boolean);
+    const contextMentionsRemainder = remainderTokens.some(
+      (token) => token.length > 2 && normalizedContext.includes(token)
+    );
+
+    if (!contextMentionsRemainder) {
+      penalty += 0.1;
+    }
+  }
+
+  if (/\b(v|versus)\b/.test(normalizedCandidate) || /\b(case|lawsuit|litigation)\b/.test(normalizedResolved)) {
+    penalty += 0.12;
+  }
+
+  if (/\b(advertising|campaign|history|discography|filmography|list)\b/.test(normalizedCandidate)) {
+    penalty += 0.12;
+  }
+
+  return Math.min(0.45, penalty);
+}
+
+function getTitleRemainder(inputText: string, titleText: string): string {
+  if (!inputText || !titleText || inputText === titleText) {
+    return "";
+  }
+
+  if (titleText.startsWith(`${inputText} `)) {
+    return titleText.slice(inputText.length).trim();
+  }
+
+  return "";
 }
 
 async function fetchRestSummary(title: string) {
