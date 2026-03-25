@@ -302,7 +302,9 @@ export async function fetchWithTimeout(url: string, timeoutMs: number): Promise<
     return await fetch(url, {
       signal: controller.signal,
       headers: {
-        Accept: "application/json"
+        Accept: "application/json",
+        "Api-User-Agent": "Knowlense/1.0 (https://knowlense.com)",
+        "User-Agent": "Knowlense/1.0 (https://knowlense.com)"
       }
     });
   } finally {
