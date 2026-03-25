@@ -11,7 +11,7 @@ Next.js App Router project for the Knowlense website.
 - Tailwind CSS
 - shadcn/ui-style local components
 - Supabase client-side auth provider
-- Cloudflare Pages build script with `@cloudflare/next-on-pages`
+- Cloudflare Pages-ready static export
 
 ## Local setup
 
@@ -26,10 +26,5 @@ Pages settings:
 
 - Framework preset: `None`
 - Build command: `npm run pages:build`
-- Build output directory: `.vercel/output/static`
+- Build output directory: `out`
 - Node.js version: `22`
-
-Environment variables:
-
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
