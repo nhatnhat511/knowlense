@@ -1,5 +1,5 @@
 const ANALYZE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const ANALYZE_CACHE_VERSION = "v6";
+const ANALYZE_CACHE_VERSION = "v7";
 const OPEN_SEARCH_TIMEOUT_MS = 2500;
 const SUMMARY_TIMEOUT_MS = 3000;
 const MAX_CANDIDATES = 3;
@@ -28,7 +28,8 @@ type CandidateScore = {
   url: string;
   entityType: string;
   classificationScore: number;
-  intentAlignmentScore: number;
+  classAllowed: boolean;
+  hardNegative: boolean;
   finalScore: number;
   titleScore: number;
   contextScore: number;
@@ -62,7 +63,8 @@ export type AnalyzeDebugPayload = {
     description: string;
     entityType: string;
     classificationScore: number;
-    intentAlignmentScore: number;
+    classAllowed: boolean;
+    hardNegative: boolean;
     finalScore: number;
     titleScore: number;
     contextScore: number;
@@ -121,7 +123,8 @@ export async function analyzeEntity(
               url: "",
               entityType: "unknown",
               classificationScore: 0,
-              intentAlignmentScore: 0,
+              classAllowed: false,
+              hardNegative: false,
               finalScore: 0,
               titleScore: 0,
               contextScore: 0,
@@ -156,7 +159,8 @@ export async function analyzeEntity(
             url: "",
             entityType: "error",
             classificationScore: 0,
-            intentAlignmentScore: 0,
+            classAllowed: false,
+            hardNegative: false,
             finalScore: 0,
             titleScore: 0,
             contextScore: 0,
@@ -180,7 +184,8 @@ export async function analyzeEntity(
             description: candidate.description,
             entityType: candidate.entityType,
             classificationScore: candidate.classificationScore,
-            intentAlignmentScore: candidate.intentAlignmentScore,
+            classAllowed: candidate.classAllowed,
+            hardNegative: candidate.hardNegative,
             finalScore: candidate.finalScore,
             titleScore: candidate.titleScore,
             contextScore: candidate.contextScore,
@@ -191,10 +196,10 @@ export async function analyzeEntity(
         }
       : undefined;
 
-    const shouldReturnEntity =
-      bestCandidate !== null &&
-      bestCandidate.finalScore >= ENTITY_THRESHOLD &&
-      !shouldRejectAsCommonWord(text, context, bestCandidate);
+    const eligibleCandidates = scoredCandidates.filter((candidate) => candidate.classAllowed && !candidate.hardNegative);
+    bestCandidate = eligibleCandidates.sort((left, right) => right.finalScore - left.finalScore)[0] || null;
+
+    const shouldReturnEntity = bestCandidate !== null && bestCandidate.finalScore >= ENTITY_THRESHOLD;
 
     let result: AnalyzeResult;
     if (shouldReturnEntity && bestCandidate) {
@@ -311,9 +316,7 @@ export function computeScore(input: {
   extract: string;
   url: string;
 }): CandidateScore {
-  const intent = assessQueryIntent(input.inputText, input.context);
   const classification = classifyCandidateType(input.title, input.description, input.extract);
-  const intentAlignmentScore = computeIntentAlignmentScore(intent, classification.type);
   const titleScore = computeTitleScore(input.inputText, input.candidateTitle, input.title);
   const contextScore = computeContextScore(input.context, input.title, input.description, input.extract);
   const penaltyScore = computePenaltyScore(
@@ -341,27 +344,16 @@ export function computeScore(input: {
   qualityScore = Math.min(1, qualityScore);
 
   let finalScore =
-    titleScore * 0.28 +
-    contextScore * 0.27 +
-    qualityScore * 0.15 +
-    classification.score * 0.2 +
-    intentAlignmentScore * 0.2 -
+    titleScore * 0.4 +
+    contextScore * 0.4 +
+    qualityScore * 0.2 -
     penaltyScore;
-
-  if (
-    isExactAliasMatch(input.inputText, input.candidateTitle) &&
-    contextScore >= 0.2 &&
-    qualityScore >= 0.35 &&
-    canUseExactAliasBoost(input.inputText, input.context, input.candidateTitle, input.title, input.description)
-  ) {
-    finalScore = Math.max(finalScore, 0.8);
-  }
 
   if (/\(disambiguation\)/i.test(input.title)) {
     finalScore -= 0.45;
   }
 
-  if (!classification.allowed || intentAlignmentScore < 0.25) {
+  if (!classification.allowed || classification.hardNegative) {
     finalScore = Math.min(finalScore, 0.49);
   }
 
@@ -375,7 +367,8 @@ export function computeScore(input: {
     url: input.url,
     entityType: classification.type,
     classificationScore: classification.score,
-    intentAlignmentScore,
+    classAllowed: classification.allowed,
+    hardNegative: classification.hardNegative,
     finalScore,
     titleScore,
     contextScore,
@@ -1060,41 +1053,66 @@ function classifyCandidateType(title: string, description: string, extract: stri
   type: string;
   allowed: boolean;
   score: number;
+  hardNegative: boolean;
 } {
   const haystack = `${title} ${description} ${extract}`.toLowerCase();
 
-  const denyPatterns: Array<{ type: string; regex: RegExp; score: number }> = [
-    { type: "disambiguation", regex: /topics referred to by the same term|may refer to/i, score: 0.05 },
+  const hardNegativePatterns: Array<{ type: string; regex: RegExp; score: number }> = [
+    {
+      type: "disambiguation",
+      regex: /topics referred to by the same term|may refer to|disambiguation/i,
+      score: 0.05
+    },
     {
       type: "generic_concept",
-      regex: /concept in|virtue|ethics|philosophy|moral|religion|quality|opposite of evil|right and wrong/i,
+      regex: /concept in|virtue|ethics|philosophy|moral|religion|quality|opposite of evil|right and wrong|abstract idea/i,
       score: 0.05
     },
     {
-      type: "common_noun",
-      regex: /piece of furniture|verb|adjective|common noun|grammatical|word expressing|round, edible fruit|fruit of the apple tree|fruit tree|genus|cultivated worldwide/i,
+      type: "generic_noun",
+      regex: /piece of furniture|verb|adjective|common noun|grammatical|word expressing|round, edible fruit|fruit of the apple tree|fruit tree|genus|cultivated worldwide|dictionary|lexical/i,
       score: 0.05
     },
-    { type: "list_or_history", regex: /history of|list of|discography|filmography|campaign|advertising/i, score: 0.2 }
+    {
+      type: "dictionary_like",
+      regex: /may refer to:|definition of|term for|word used to|dictionary/i,
+      score: 0.05
+    }
   ];
 
-  for (const pattern of denyPatterns) {
+  for (const pattern of hardNegativePatterns) {
     if (pattern.regex.test(haystack)) {
       return {
         type: pattern.type,
         allowed: false,
-        score: pattern.score
+        score: pattern.score,
+        hardNegative: true
+      };
+    }
+  }
+
+  const softNegativePatterns: Array<{ type: string; regex: RegExp; score: number }> = [
+    { type: "subtopic_page", regex: /history of|list of|discography|filmography|campaign|advertising/i, score: 0.2 }
+  ];
+
+  for (const pattern of softNegativePatterns) {
+    if (pattern.regex.test(haystack)) {
+      return {
+        type: pattern.type,
+        allowed: false,
+        score: pattern.score,
+        hardNegative: false
       };
     }
   }
 
   const allowPatterns: Array<{ type: string; regex: RegExp; score: number }> = [
-    { type: "company", regex: /technology company|multinational technology company|company|corporation|business/i, score: 0.95 },
+    { type: "person", regex: /scientist|physicist|mathematician|artist|actor|writer|philosopher|politician|person/i, score: 0.95 },
+    { type: "company", regex: /technology company|multinational technology company|company|corporation|organization|business/i, score: 0.95 },
+    { type: "place", regex: /country|city|capital|municipality|state|province|region|place/i, score: 0.92 },
     { type: "software", regex: /software|programming language|framework|library|web framework|javascript library/i, score: 0.92 },
-    { type: "place", regex: /country|city|capital|municipality|state|province|region/i, score: 0.9 },
-    { type: "person", regex: /scientist|physicist|mathematician|artist|actor|writer|philosopher|person/i, score: 0.9 },
-    { type: "product", regex: /device|smartphone|computer|product|operating system|browser|application/i, score: 0.86 },
-    { type: "technical_term", regex: /cloud computing|protocol|algorithm|service model|technical term|engineering/i, score: 0.82 }
+    { type: "product", regex: /device|smartphone|computer|product|operating system|browser|application|protocol/i, score: 0.9 },
+    { type: "technical_term", regex: /cloud computing|algorithm|service model|technical term|engineering|scientific term|scientific concept/i, score: 0.88 }
   ];
 
   for (const pattern of allowPatterns) {
@@ -1102,83 +1120,16 @@ function classifyCandidateType(title: string, description: string, extract: stri
       return {
         type: pattern.type,
         allowed: true,
-        score: pattern.score
+        score: pattern.score,
+        hardNegative: false
       };
     }
-  }
-
-  if (extractAcronym(title)) {
-    return {
-      type: "acronym_candidate",
-      allowed: true,
-      score: 0.72
-    };
-  }
-
-  if (!isSingleWord(normalizeForMatch(title))) {
-    return {
-      type: "named_entity_candidate",
-      allowed: true,
-      score: 0.68
-    };
   }
 
   return {
     type: "generic_unknown",
     allowed: false,
-    score: 0.25
+    score: 0.25,
+    hardNegative: false
   };
-}
-
-function computeIntentAlignmentScore(intent: QueryIntent, candidateType: string): number {
-  if (!intent.likelyEntity) {
-    return candidateType === "company" ||
-      candidateType === "software" ||
-      candidateType === "place" ||
-      candidateType === "person" ||
-      candidateType === "product" ||
-      candidateType === "technical_term"
-      ? 0.55
-      : 0.15;
-  }
-
-  if (intent.isAcronym && (candidateType === "technical_term" || candidateType === "software")) {
-    return 1;
-  }
-
-  if (intent.domains.has("tech") || intent.domains.has("business")) {
-    if (candidateType === "company" || candidateType === "software" || candidateType === "product" || candidateType === "technical_term") {
-      return 1;
-    }
-
-    if (candidateType === "person") {
-      return 0.55;
-    }
-
-    return 0.05;
-  }
-
-  if (intent.domains.has("place")) {
-    return candidateType === "place" ? 1 : 0.1;
-  }
-
-  if (intent.domains.has("person")) {
-    return candidateType === "person" ? 1 : 0.15;
-  }
-
-  if (intent.domains.has("technical")) {
-    return candidateType === "software" || candidateType === "technical_term" || candidateType === "product" ? 0.95 : 0.1;
-  }
-
-  if (intent.isCapitalized) {
-    if (candidateType === "company" || candidateType === "place" || candidateType === "person" || candidateType === "product") {
-      return 0.85;
-    }
-
-    if (candidateType === "software" || candidateType === "technical_term") {
-      return 0.75;
-    }
-  }
-
-  return candidateType === "generic_unknown" || candidateType === "common_noun" || candidateType === "generic_concept" ? 0.1 : 0.45;
 }

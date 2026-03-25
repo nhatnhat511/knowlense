@@ -56,6 +56,42 @@ function formatSummary(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
+function getSelectionContext() {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return "";
+  }
+
+  const anchorNode = selection.anchorNode;
+  const baseText =
+    anchorNode?.nodeType === Node.TEXT_NODE
+      ? anchorNode.textContent || ""
+      : anchorNode instanceof Element
+        ? anchorNode.textContent || ""
+        : "";
+
+  const normalizedBaseText = formatSummary(baseText);
+  if (!normalizedBaseText) {
+    return "";
+  }
+
+  if (!currentSelection) {
+    return normalizedBaseText.slice(0, 280);
+  }
+
+  const normalizedSelection = formatSummary(currentSelection);
+  const selectionIndex = normalizedBaseText.toLowerCase().indexOf(normalizedSelection.toLowerCase());
+
+  if (selectionIndex === -1) {
+    return normalizedBaseText.slice(0, 280);
+  }
+
+  const contextRadius = 140;
+  const start = Math.max(0, selectionIndex - contextRadius);
+  const end = Math.min(normalizedBaseText.length, selectionIndex + normalizedSelection.length + contextRadius);
+  return normalizedBaseText.slice(start, end).trim();
+}
+
 function ensurePopoverStyles() {
   if (document.getElementById("knowlense-popover-style")) {
     return;
@@ -175,28 +211,40 @@ async function lookupSelectedTerm() {
     return;
   }
 
+  const context = getSelectionContext();
+
   createFloatingBox(latestPointer.x, latestPointer.y, {
     state: "loading"
   });
 
   chrome.runtime.sendMessage(
     {
-      type: "FETCH_WIKIPEDIA_SUMMARY",
-      keyword: currentSelection
+      type: "ANALYZE_SELECTED_TERM",
+      keyword: currentSelection,
+      context
     },
     (response) => {
       if (chrome.runtime.lastError || !response?.ok) {
         createFloatingBox(latestPointer.x, latestPointer.y, {
           state: "empty",
-          summary: "No definition found",
+          summary: "No information found for this term.",
+          source: ""
+        });
+        return;
+      }
+
+      if (response.data?.type !== "entity" || !response.data?.extract) {
+        createFloatingBox(latestPointer.x, latestPointer.y, {
+          state: "empty",
+          summary: response.data?.extract || "No information found for this term.",
           source: ""
         });
         return;
       }
 
       createFloatingBox(latestPointer.x, latestPointer.y, {
-        state: response.data?.extract ? "success" : "empty",
-        summary: response.data?.extract || "No definition found",
+        state: "success",
+        summary: response.data.extract,
         source: response.data?.source || ""
       });
     }

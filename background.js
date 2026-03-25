@@ -1,4 +1,3 @@
-const WIKIPEDIA_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary/";
 const API_BASE_URL = "https://api.knowlense.com";
 const AUTH_STORAGE_KEY = "knowlenseAuth";
 const SUBSCRIPTION_STORAGE_KEY = "knowlenseSubscription";
@@ -6,8 +5,6 @@ const AUTO_HIGHLIGHT_KEY = "knowlenseAutoHighlightEnabled";
 const RELLOGIN_FLAG_KEY = "knowlenseReloginRequired";
 const SUBSCRIPTION_ALARM_NAME = "knowlense-sync-subscription";
 const TWELVE_HOURS_IN_MINUTES = 60 * 12;
-const SUMMARY_CHARACTER_LIMIT = 420;
-
 const EXCLUDED_HOST_PATTERNS = [
   /paypal\./i,
   /stripe\./i,
@@ -21,94 +18,48 @@ const EXCLUDED_HOST_PATTERNS = [
   /revolut\./i
 ];
 
-async function fetchWikipediaSummary(keyword) {
+async function analyzeSelectedEntity(keyword, context) {
   const normalizedKeyword = String(keyword || "").trim();
+  const normalizedContext = String(context || "").replace(/\s+/g, " ").trim();
 
   if (!normalizedKeyword) {
     throw new Error("Keyword is empty.");
   }
 
-  const response = await fetch(`${WIKIPEDIA_SUMMARY_URL}${encodeURIComponent(normalizedKeyword)}`, {
+  const response = await fetch(`${API_BASE_URL}/api/analyze`, {
+    method: "POST",
     headers: {
-      Accept: "application/json"
-    }
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      text: normalizedKeyword,
+      context: normalizedContext
+    })
   });
 
-  if (response.status === 404) {
-    throw new Error(`No Wikipedia page found for "${normalizedKeyword}".`);
-  }
-
   if (!response.ok) {
-    throw new Error(`Wikipedia request failed with status ${response.status}.`);
+    throw new Error(`Analyze request failed with status ${response.status}.`);
   }
 
   const data = await response.json();
 
-  if (!data.extract) {
-    throw new Error(`No summary available for "${normalizedKeyword}".`);
+  if (!data || data.type !== "entity") {
+    return {
+      keyword: normalizedKeyword,
+      type: "common_word",
+      extract: "No information found for this term.",
+      source: ""
+    };
   }
 
   return {
     keyword: normalizedKeyword,
-    extract: buildCompleteSummary(data.extract, SUMMARY_CHARACTER_LIMIT),
-    source: data.content_urls?.desktop?.page || ""
+    type: "entity",
+    title: data.title || normalizedKeyword,
+    extract: String(data.extract || "").trim(),
+    source: data.url || ""
   };
-}
-
-function trimToTwoSentences(text) {
-  const normalized = String(text || "").replace(/\s+/g, " ").trim();
-
-  if (!normalized) {
-    return "";
-  }
-
-  const sentences = normalized.match(/[^.!?]+[.!?]+/g) || [normalized];
-  return sentences.slice(0, 2).join(" ").trim();
-}
-
-function buildCompleteSummary(text, limit = SUMMARY_CHARACTER_LIMIT) {
-  const normalized = String(text || "").replace(/\s+/g, " ").trim();
-
-  if (!normalized) {
-    return "";
-  }
-
-  const twoSentenceSummary = trimToTwoSentences(normalized);
-  if (twoSentenceSummary.length <= limit) {
-    return cleanSentenceEnding(twoSentenceSummary);
-  }
-
-  const candidate = twoSentenceSummary.slice(0, limit);
-  const lastSentenceBoundary = Math.max(
-    candidate.lastIndexOf("."),
-    candidate.lastIndexOf("!"),
-    candidate.lastIndexOf("?")
-  );
-
-  if (lastSentenceBoundary > Math.floor(limit * 0.45)) {
-    return cleanSentenceEnding(candidate.slice(0, lastSentenceBoundary + 1));
-  }
-
-  const lastWordBoundary = candidate.lastIndexOf(" ");
-  const safeSlice = lastWordBoundary > 0 ? candidate.slice(0, lastWordBoundary) : candidate;
-
-  return cleanSentenceEnding(safeSlice);
-}
-
-function cleanSentenceEnding(text) {
-  let cleaned = String(text || "").replace(/\s+/g, " ").trim();
-  cleaned = cleaned.replace(/\.{3,}\s*$/, "");
-  cleaned = cleaned.replace(/[,;:]\s*$/, "");
-
-  if (!cleaned) {
-    return "";
-  }
-
-  if (!/[.!?]$/.test(cleaned)) {
-    cleaned += ".";
-  }
-
-  return cleaned;
 }
 
 function normalizeAuthPayload(payload) {
@@ -329,8 +280,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === "FETCH_WIKIPEDIA_SUMMARY") {
-    fetchWikipediaSummary(message.keyword)
+  if (message?.type === "ANALYZE_SELECTED_TERM") {
+    analyzeSelectedEntity(message.keyword, message.context)
       .then((result) => sendResponse({ ok: true, data: result }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
 
