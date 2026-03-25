@@ -177,17 +177,24 @@ export async function analyzeEntity(
         }
       : undefined;
 
-    const result: AnalyzeResult =
-      bestCandidate && bestCandidate.finalScore >= ENTITY_THRESHOLD
-        ? {
-            type: "entity",
-            title: bestCandidate.title,
-            description: bestCandidate.description,
-            extract: bestCandidate.extract,
-            url: bestCandidate.url,
-            debug: debugPayload
-          }
-        : { type: "common_word", debug: debugPayload };
+    const shouldReturnEntity =
+      bestCandidate !== null &&
+      bestCandidate.finalScore >= ENTITY_THRESHOLD &&
+      !shouldRejectAsCommonWord(text, context, bestCandidate);
+
+    let result: AnalyzeResult;
+    if (shouldReturnEntity && bestCandidate) {
+      result = {
+        type: "entity",
+        title: bestCandidate.title,
+        description: bestCandidate.description,
+        extract: bestCandidate.extract,
+        url: bestCandidate.url,
+        debug: debugPayload
+      };
+    } else {
+      result = { type: "common_word", debug: debugPayload };
+    }
 
     if (!debug) {
       await writeCache(cacheKey, result, kv);
@@ -886,4 +893,41 @@ async function fetchQuerySummary(title: string) {
     extract,
     url: page.fullurl || ""
   };
+}
+
+function shouldRejectAsCommonWord(inputText: string, context: string, candidate: CandidateScore): boolean {
+  const normalizedInput = normalizeForMatch(inputText);
+  const normalizedTitle = normalizeForMatch(candidate.title);
+  const lowerCaseSingleWordInput = isSingleWord(normalizedInput) && isMostlyLowercase(inputText);
+  const weakContext = !hasStrongEntityContext(context);
+  const genericDescription = /topics referred to by the same term|may refer to|concept in/i.test(candidate.description);
+  const genericExtract = /\bmay refer to:\b/i.test(candidate.extract);
+  const singleWordTitle = isSingleWord(normalizedTitle);
+  const acronymMatch = extractAcronym(candidate.title) === normalizedInput;
+
+  if (!lowerCaseSingleWordInput) {
+    return false;
+  }
+
+  if (acronymMatch) {
+    return false;
+  }
+
+  if (genericDescription || genericExtract) {
+    return true;
+  }
+
+  if (singleWordTitle && weakContext && candidate.contextScore < 0.65) {
+    return true;
+  }
+
+  if (
+    weakContext &&
+    singleWordTitle &&
+    !/technology|company|country|city|programming language|software|framework|library/i.test(candidate.description)
+  ) {
+    return true;
+  }
+
+  return false;
 }
