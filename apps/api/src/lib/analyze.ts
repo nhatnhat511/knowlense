@@ -26,6 +26,8 @@ type CandidateScore = {
   description: string;
   extract: string;
   url: string;
+  entityType: string;
+  classificationScore: number;
   finalScore: number;
   titleScore: number;
   contextScore: number;
@@ -57,6 +59,8 @@ export type AnalyzeDebugPayload = {
     candidateTitle: string;
     title: string;
     description: string;
+    entityType: string;
+    classificationScore: number;
     finalScore: number;
     titleScore: number;
     contextScore: number;
@@ -113,11 +117,12 @@ export async function analyzeEntity(
               description: "",
               extract: "",
               url: "",
+              entityType: "unknown",
+              classificationScore: 0,
               finalScore: 0,
               titleScore: 0,
               contextScore: 0,
-              qualityScore: 0
-              ,
+              qualityScore: 0,
               penaltyScore: 0
             });
           }
@@ -146,6 +151,8 @@ export async function analyzeEntity(
             description: "",
             extract: "",
             url: "",
+            entityType: "error",
+            classificationScore: 0,
             finalScore: 0,
             titleScore: 0,
             contextScore: 0,
@@ -167,6 +174,8 @@ export async function analyzeEntity(
             candidateTitle: candidate.candidateTitle,
             title: candidate.title,
             description: candidate.description,
+            entityType: candidate.entityType,
+            classificationScore: candidate.classificationScore,
             finalScore: candidate.finalScore,
             titleScore: candidate.titleScore,
             contextScore: candidate.contextScore,
@@ -297,6 +306,7 @@ export function computeScore(input: {
   extract: string;
   url: string;
 }): CandidateScore {
+  const classification = classifyCandidateType(input.title, input.description, input.extract);
   const titleScore = computeTitleScore(input.inputText, input.candidateTitle, input.title);
   const contextScore = computeContextScore(input.context, input.title, input.description, input.extract);
   const penaltyScore = computePenaltyScore(
@@ -323,7 +333,12 @@ export function computeScore(input: {
 
   qualityScore = Math.min(1, qualityScore);
 
-  let finalScore = titleScore * 0.4 + contextScore * 0.4 + qualityScore * 0.2 - penaltyScore;
+  let finalScore =
+    titleScore * 0.3 +
+    contextScore * 0.3 +
+    qualityScore * 0.15 +
+    classification.score * 0.25 -
+    penaltyScore;
 
   if (
     isExactAliasMatch(input.inputText, input.candidateTitle) &&
@@ -338,6 +353,10 @@ export function computeScore(input: {
     finalScore -= 0.45;
   }
 
+  if (!classification.allowed) {
+    finalScore = Math.min(finalScore, 0.49);
+  }
+
   finalScore = Math.max(0, Math.min(1, finalScore));
 
   return {
@@ -346,6 +365,8 @@ export function computeScore(input: {
     description: input.description,
     extract: input.extract,
     url: input.url,
+    entityType: classification.type,
+    classificationScore: classification.score,
     finalScore,
     titleScore,
     contextScore,
@@ -906,11 +927,15 @@ function shouldRejectAsCommonWord(inputText: string, context: string, candidate:
   const acronymMatch = extractAcronym(candidate.title) === normalizedInput;
 
   if (!lowerCaseSingleWordInput) {
-    return false;
+    return candidate.classificationScore < 0.35;
   }
 
   if (acronymMatch) {
     return false;
+  }
+
+  if (candidate.classificationScore < 0.45) {
+    return true;
   }
 
   if (genericDescription || genericExtract) {
@@ -930,4 +955,70 @@ function shouldRejectAsCommonWord(inputText: string, context: string, candidate:
   }
 
   return false;
+}
+
+function classifyCandidateType(title: string, description: string, extract: string): {
+  type: string;
+  allowed: boolean;
+  score: number;
+} {
+  const haystack = `${title} ${description} ${extract}`.toLowerCase();
+
+  const denyPatterns: Array<{ type: string; regex: RegExp; score: number }> = [
+    { type: "disambiguation", regex: /topics referred to by the same term|may refer to/i, score: 0.05 },
+    { type: "generic_concept", regex: /concept in|virtue|ethics|philosophy|moral/i, score: 0.15 },
+    { type: "common_noun", regex: /piece of furniture|verb|adjective|common noun|grammatical/i, score: 0.1 },
+    { type: "list_or_history", regex: /history of|list of|discography|filmography|campaign|advertising/i, score: 0.2 }
+  ];
+
+  for (const pattern of denyPatterns) {
+    if (pattern.regex.test(haystack)) {
+      return {
+        type: pattern.type,
+        allowed: false,
+        score: pattern.score
+      };
+    }
+  }
+
+  const allowPatterns: Array<{ type: string; regex: RegExp; score: number }> = [
+    { type: "company", regex: /technology company|multinational technology company|company|corporation|business/i, score: 0.95 },
+    { type: "software", regex: /software|programming language|framework|library|web framework|javascript library/i, score: 0.92 },
+    { type: "place", regex: /country|city|capital|municipality|state|province|region/i, score: 0.9 },
+    { type: "person", regex: /scientist|physicist|mathematician|artist|actor|writer|philosopher|person/i, score: 0.9 },
+    { type: "product", regex: /device|smartphone|computer|product|operating system|browser|application/i, score: 0.86 },
+    { type: "technical_term", regex: /cloud computing|protocol|algorithm|service model|technical term|engineering/i, score: 0.82 }
+  ];
+
+  for (const pattern of allowPatterns) {
+    if (pattern.regex.test(haystack)) {
+      return {
+        type: pattern.type,
+        allowed: true,
+        score: pattern.score
+      };
+    }
+  }
+
+  if (extractAcronym(title)) {
+    return {
+      type: "acronym_candidate",
+      allowed: true,
+      score: 0.72
+    };
+  }
+
+  if (!isSingleWord(normalizeForMatch(title))) {
+    return {
+      type: "named_entity_candidate",
+      allowed: true,
+      score: 0.68
+    };
+  }
+
+  return {
+    type: "generic_unknown",
+    allowed: false,
+    score: 0.25
+  };
 }
