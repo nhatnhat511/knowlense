@@ -21,6 +21,7 @@ type WikiSummaryResponse = {
 };
 
 type CandidateScore = {
+  candidateTitle: string;
   title: string;
   description: string;
   extract: string;
@@ -38,17 +39,37 @@ export type AnalyzeResult =
       description: string;
       extract: string;
       url: string;
+      debug?: AnalyzeDebugPayload;
     }
   | {
       type: "common_word";
+      debug?: AnalyzeDebugPayload;
     };
+
+export type AnalyzeDebugPayload = {
+  text: string;
+  context: string;
+  threshold: number;
+  candidates: Array<{
+    candidateTitle: string;
+    title: string;
+    description: string;
+    finalScore: number;
+    titleScore: number;
+    contextScore: number;
+    qualityScore: number;
+    url: string;
+  }>;
+};
 
 export async function analyzeEntity(
   input: { text?: string; context?: string },
-  kv?: KVNamespace
+  kv?: KVNamespace,
+  options?: { debug?: boolean }
 ): Promise<AnalyzeResult> {
   const text = normalizeText(input.text || "");
   const context = normalizeText(input.context || "");
+  const debug = Boolean(options?.debug);
 
   if (!text) {
     return { type: "common_word" };
@@ -71,9 +92,10 @@ export async function analyzeEntity(
     }
 
     let bestCandidate: CandidateScore | null = null;
+    const scoredCandidates: CandidateScore[] = [];
 
-    for (const title of titles) {
-      const summary = await fetchCandidateSummary(title);
+    for (const candidateTitle of titles) {
+      const summary = await fetchCandidateSummary(candidateTitle);
 
       if (!summary) {
         continue;
@@ -82,16 +104,36 @@ export async function analyzeEntity(
       const scored = computeScore({
         inputText: text,
         context,
+        candidateTitle,
         title: summary.title,
         description: summary.description,
         extract: summary.extract,
         url: summary.url
       });
+      scoredCandidates.push(scored);
 
       if (!bestCandidate || scored.finalScore > bestCandidate.finalScore) {
         bestCandidate = scored;
       }
     }
+
+    const debugPayload: AnalyzeDebugPayload | undefined = debug
+      ? {
+          text,
+          context,
+          threshold: ENTITY_THRESHOLD,
+          candidates: scoredCandidates.map((candidate) => ({
+            candidateTitle: candidate.candidateTitle,
+            title: candidate.title,
+            description: candidate.description,
+            finalScore: candidate.finalScore,
+            titleScore: candidate.titleScore,
+            contextScore: candidate.contextScore,
+            qualityScore: candidate.qualityScore,
+            url: candidate.url
+          }))
+        }
+      : undefined;
 
     const result: AnalyzeResult =
       bestCandidate && bestCandidate.finalScore >= ENTITY_THRESHOLD
@@ -100,11 +142,14 @@ export async function analyzeEntity(
             title: bestCandidate.title,
             description: bestCandidate.description,
             extract: bestCandidate.extract,
-            url: bestCandidate.url
+            url: bestCandidate.url,
+            debug: debugPayload
           }
-        : { type: "common_word" };
+        : { type: "common_word", debug: debugPayload };
 
-    await writeCache(cacheKey, result, kv);
+    if (!debug) {
+      await writeCache(cacheKey, result, kv);
+    }
     return result;
   } catch (error) {
     console.error("analyzeEntity failed", {
@@ -113,7 +158,9 @@ export async function analyzeEntity(
     });
 
     const result: AnalyzeResult = { type: "common_word" };
-    await writeCache(cacheKey, result, kv);
+    if (!debug) {
+      await writeCache(cacheKey, result, kv);
+    }
     return result;
   }
 }
@@ -183,12 +230,13 @@ export function keywordOverlapScore(context: string, extract: string): number {
 export function computeScore(input: {
   inputText: string;
   context: string;
+  candidateTitle: string;
   title: string;
   description: string;
   extract: string;
   url: string;
 }): CandidateScore {
-  const titleScore = computeTitleScore(input.inputText, input.title);
+  const titleScore = computeTitleScore(input.inputText, input.candidateTitle, input.title);
   const contextScore = computeContextScore(input.context, input.title, input.description, input.extract);
 
   let qualityScore = 0;
@@ -208,6 +256,10 @@ export function computeScore(input: {
 
   let finalScore = titleScore * 0.4 + contextScore * 0.4 + qualityScore * 0.2;
 
+  if (isExactAliasMatch(input.inputText, input.candidateTitle) && contextScore >= 0.2 && qualityScore >= 0.35) {
+    finalScore = Math.max(finalScore, 0.8);
+  }
+
   if (/\(disambiguation\)/i.test(input.title)) {
     finalScore -= 0.45;
   }
@@ -215,6 +267,7 @@ export function computeScore(input: {
   finalScore = Math.max(0, Math.min(1, finalScore));
 
   return {
+    candidateTitle: input.candidateTitle,
     title: input.title,
     description: input.description,
     extract: input.extract,
@@ -257,29 +310,12 @@ async function fetchCandidates(text: string): Promise<string[]> {
 }
 
 async function fetchCandidateSummary(title: string) {
-  const url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(title);
-  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS);
-
-  if (!response.ok) {
-    return null;
+  const primary = await fetchRestSummary(title);
+  if (primary) {
+    return primary;
   }
 
-  const data = (await response.json()) as WikiSummaryResponse;
-  const extract = normalizeSummary(data.extract || "");
-  const resolvedTitle = normalizeText(data.title || title);
-  const description = normalizeText(data.description || "");
-  const pageUrl = data.content_urls?.desktop?.page || "";
-
-  if (!resolvedTitle || !extract) {
-    return null;
-  }
-
-  return {
-    title: resolvedTitle,
-    description,
-    extract,
-    url: pageUrl
-  };
+  return fetchQuerySummary(title);
 }
 
 function normalizeSummary(text: string): string {
@@ -383,18 +419,32 @@ async function writeCache(key: string, value: AnalyzeResult, kv?: KVNamespace) {
   });
 }
 
-function computeTitleScore(inputText: string, title: string): number {
+function computeTitleScore(inputText: string, candidateTitle: string, title: string): number {
   const normalizedInput = normalizeForMatch(inputText);
+  const normalizedCandidateTitle = normalizeForMatch(candidateTitle);
   const normalizedTitle = normalizeForMatch(title);
   const simplifiedTitle = simplifyEntityTitle(title);
   const normalizedSimplifiedTitle = normalizeForMatch(simplifiedTitle);
+  const simplifiedCandidateTitle = simplifyEntityTitle(candidateTitle);
+  const normalizedSimplifiedCandidateTitle = normalizeForMatch(simplifiedCandidateTitle);
   const titleAcronym = extractAcronym(title);
+  const candidateAcronym = extractAcronym(candidateTitle);
   const inputAcronym = extractAcronym(inputText);
 
   let score = Math.max(
+    levenshteinSimilarity(normalizedInput, normalizedCandidateTitle),
+    levenshteinSimilarity(normalizedInput, normalizedSimplifiedCandidateTitle),
     levenshteinSimilarity(normalizedInput, normalizedTitle),
     levenshteinSimilarity(normalizedInput, normalizedSimplifiedTitle)
   );
+
+  if (normalizedInput && normalizedInput === normalizedCandidateTitle) {
+    score = Math.max(score, 1);
+  }
+
+  if (normalizedInput && normalizedInput === normalizedSimplifiedCandidateTitle) {
+    score = Math.max(score, 0.98);
+  }
 
   if (normalizedInput && normalizedInput === normalizedTitle) {
     score = Math.max(score, 1);
@@ -408,12 +458,27 @@ function computeTitleScore(inputText: string, title: string): number {
     score = Math.max(score, 0.92);
   }
 
+  if (
+    normalizedCandidateTitle.startsWith(`${normalizedInput} `) ||
+    normalizedCandidateTitle.includes(` ${normalizedInput} `)
+  ) {
+    score = Math.max(score, 0.95);
+  }
+
   if (titleAcronym && normalizedInput === titleAcronym) {
     score = Math.max(score, 0.98);
   }
 
+  if (candidateAcronym && normalizedInput === candidateAcronym) {
+    score = Math.max(score, 1);
+  }
+
   if (titleAcronym && inputAcronym && titleAcronym === inputAcronym) {
     score = Math.max(score, 0.96);
+  }
+
+  if (candidateAcronym && inputAcronym && candidateAcronym === inputAcronym) {
+    score = Math.max(score, 0.98);
   }
 
   return Math.min(1, score);
@@ -514,4 +579,84 @@ function extractAcronym(text: string): string {
     .map((word) => word[0])
     .join("")
     .toLowerCase();
+}
+
+function isExactAliasMatch(inputText: string, candidateTitle: string): boolean {
+  const normalizedInput = normalizeForMatch(inputText);
+  const aliases = [
+    normalizeForMatch(candidateTitle),
+    normalizeForMatch(simplifyEntityTitle(candidateTitle)),
+    extractAcronym(candidateTitle)
+  ].filter(Boolean);
+
+  return aliases.includes(normalizedInput);
+}
+
+async function fetchRestSummary(title: string) {
+  const url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(title);
+  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS).catch(() => null);
+
+  if (!response || !response.ok) {
+    return null;
+  }
+
+  const data = (await response.json()) as WikiSummaryResponse;
+  const extract = normalizeSummary(data.extract || "");
+  const resolvedTitle = normalizeText(data.title || title);
+  const description = normalizeText(data.description || "");
+  const pageUrl = data.content_urls?.desktop?.page || "";
+
+  if (!resolvedTitle || !extract) {
+    return null;
+  }
+
+  return {
+    title: resolvedTitle,
+    description,
+    extract,
+    url: pageUrl
+  };
+}
+
+async function fetchQuerySummary(title: string) {
+  const url =
+    "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|info&inprop=url&exintro=1&explaintext=1&redirects=1&titles=" +
+    encodeURIComponent(title);
+  const response = await fetchWithTimeout(url, SUMMARY_TIMEOUT_MS).catch(() => null);
+
+  if (!response || !response.ok) {
+    return null;
+  }
+
+  const data = (await response.json()) as {
+    query?: {
+      pages?: Record<
+        string,
+        {
+          title?: string;
+          extract?: string;
+          fullurl?: string;
+        }
+      >;
+    };
+  };
+
+  const page = Object.values(data.query?.pages || {}).find((entry) => entry?.title && entry?.extract);
+  if (!page) {
+    return null;
+  }
+
+  const extract = normalizeSummary(page.extract || "");
+  const resolvedTitle = normalizeText(page.title || title);
+
+  if (!resolvedTitle || !extract) {
+    return null;
+  }
+
+  return {
+    title: resolvedTitle,
+    description: "",
+    extract,
+    url: page.fullurl || ""
+  };
 }

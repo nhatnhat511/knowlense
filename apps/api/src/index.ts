@@ -45,6 +45,7 @@ app.get("/api/health", (c) =>
 );
 
 app.post("/analyze", async (c) => {
+  const debug = c.req.query("debug") === "1" || c.req.query("debug") === "true";
   const body: { text?: string; context?: string } = await c.req
     .json<{
       text?: string;
@@ -57,13 +58,15 @@ app.post("/analyze", async (c) => {
       text: body.text,
       context: body.context
     },
-    c.env.CACHE_KV
+    c.env.CACHE_KV,
+    { debug }
   );
 
   return c.json(result);
 });
 
 app.post("/api/analyze", async (c) => {
+  const debug = c.req.query("debug") === "1" || c.req.query("debug") === "true";
   const body: { text?: string; context?: string } = await c.req
     .json<{
       text?: string;
@@ -76,7 +79,8 @@ app.post("/api/analyze", async (c) => {
       text: body.text,
       context: body.context
     },
-    c.env.CACHE_KV
+    c.env.CACHE_KV,
+    { debug }
   );
 
   return c.json(result);
