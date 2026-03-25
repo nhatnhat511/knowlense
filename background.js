@@ -2,9 +2,24 @@ const WIKIPEDIA_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary
 const API_BASE_URL = "https://api.knowlense.com";
 const AUTH_STORAGE_KEY = "knowlenseAuth";
 const SUBSCRIPTION_STORAGE_KEY = "knowlenseSubscription";
+const AUTO_HIGHLIGHT_KEY = "knowlenseAutoHighlightEnabled";
 const RELLOGIN_FLAG_KEY = "knowlenseReloginRequired";
 const SUBSCRIPTION_ALARM_NAME = "knowlense-sync-subscription";
-const SIX_HOURS_IN_MINUTES = 60 * 6;
+const TWELVE_HOURS_IN_MINUTES = 60 * 12;
+const SUMMARY_CHARACTER_LIMIT = 420;
+
+const EXCLUDED_HOST_PATTERNS = [
+  /paypal\./i,
+  /stripe\./i,
+  /bank/i,
+  /banking/i,
+  /finance/i,
+  /payment/i,
+  /checkout/i,
+  /wallet/i,
+  /wise\.com$/i,
+  /revolut\./i
+];
 
 async function fetchWikipediaSummary(keyword) {
   const normalizedKeyword = String(keyword || "").trim();
@@ -35,9 +50,65 @@ async function fetchWikipediaSummary(keyword) {
 
   return {
     keyword: normalizedKeyword,
-    extract: data.extract,
-    source: data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(normalizedKeyword)}`
+    extract: buildCompleteSummary(data.extract, SUMMARY_CHARACTER_LIMIT),
+    source: data.content_urls?.desktop?.page || ""
   };
+}
+
+function trimToTwoSentences(text) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+
+  if (!normalized) {
+    return "";
+  }
+
+  const sentences = normalized.match(/[^.!?]+[.!?]+/g) || [normalized];
+  return sentences.slice(0, 2).join(" ").trim();
+}
+
+function buildCompleteSummary(text, limit = SUMMARY_CHARACTER_LIMIT) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+
+  if (!normalized) {
+    return "";
+  }
+
+  const twoSentenceSummary = trimToTwoSentences(normalized);
+  if (twoSentenceSummary.length <= limit) {
+    return cleanSentenceEnding(twoSentenceSummary);
+  }
+
+  const candidate = twoSentenceSummary.slice(0, limit);
+  const lastSentenceBoundary = Math.max(
+    candidate.lastIndexOf("."),
+    candidate.lastIndexOf("!"),
+    candidate.lastIndexOf("?")
+  );
+
+  if (lastSentenceBoundary > Math.floor(limit * 0.45)) {
+    return cleanSentenceEnding(candidate.slice(0, lastSentenceBoundary + 1));
+  }
+
+  const lastWordBoundary = candidate.lastIndexOf(" ");
+  const safeSlice = lastWordBoundary > 0 ? candidate.slice(0, lastWordBoundary) : candidate;
+
+  return cleanSentenceEnding(safeSlice);
+}
+
+function cleanSentenceEnding(text) {
+  let cleaned = String(text || "").replace(/\s+/g, " ").trim();
+  cleaned = cleaned.replace(/\.{3,}\s*$/, "");
+  cleaned = cleaned.replace(/[,;:]\s*$/, "");
+
+  if (!cleaned) {
+    return "";
+  }
+
+  if (!/[.!?]$/.test(cleaned)) {
+    cleaned += ".";
+  }
+
+  return cleaned;
 }
 
 function normalizeAuthPayload(payload) {
@@ -63,11 +134,9 @@ function normalizeAuthPayload(payload) {
   };
 }
 
-function getStoredAuth() {
+function getStorage(defaults) {
   return new Promise((resolve) => {
-    chrome.storage.local.get({ [AUTH_STORAGE_KEY]: null }, (result) => {
-      resolve(result[AUTH_STORAGE_KEY]);
-    });
+    chrome.storage.local.get(defaults, (result) => resolve(result));
   });
 }
 
@@ -110,12 +179,25 @@ function buildSubscriptionSnapshot(payload) {
   };
 }
 
+function isExcludedUrl(url) {
+  try {
+    const { hostname } = new URL(url);
+    return EXCLUDED_HOST_PATTERNS.some((pattern) => pattern.test(hostname));
+  } catch (error) {
+    return true;
+  }
+}
+
+async function getStoredAuth() {
+  const result = await getStorage({ [AUTH_STORAGE_KEY]: null });
+  return result[AUTH_STORAGE_KEY];
+}
+
 async function syncSubscriptionState() {
   const auth = await getStoredAuth();
   const accessToken = auth?.accessToken || auth?.session?.access_token || "";
 
   if (!accessToken) {
-    console.error("User not logged in");
     await setStorage({
       [SUBSCRIPTION_STORAGE_KEY]: {
         isPremium: false,
@@ -123,6 +205,7 @@ async function syncSubscriptionState() {
         expiresAt: null
       }
     });
+
     return {
       ok: false,
       error: "User not logged in"
@@ -168,10 +251,64 @@ async function syncSubscriptionState() {
   }
 }
 
+async function checkUserPermission() {
+  const [{ [AUTO_HIGHLIGHT_KEY]: autoHighlightEnabled }, { [SUBSCRIPTION_STORAGE_KEY]: subscription }] = await Promise.all([
+    getStorage({ [AUTO_HIGHLIGHT_KEY]: false }),
+    getStorage({
+      [SUBSCRIPTION_STORAGE_KEY]: {
+        isPremium: false,
+        plan: "free",
+        expiresAt: null
+      }
+    })
+  ]);
+
+  if (!autoHighlightEnabled) {
+    return { allowed: false, reason: "Auto-Highlight disabled" };
+  }
+
+  const syncResult = await syncSubscriptionState();
+  const latestSubscription = syncResult?.subscription || subscription;
+
+  if (!latestSubscription?.isPremium) {
+    return { allowed: false, reason: "Upgrade to Premium for Auto-Highlight" };
+  }
+
+  return { allowed: true, subscription: latestSubscription };
+}
+
+async function injectAutoHighlightOnActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  if (!tab?.id || !tab.url) {
+    return { ok: false, error: "No active tab available." };
+  }
+
+  if (isExcludedUrl(tab.url)) {
+    return { ok: false, error: "Auto-Highlight is disabled on banking and finance pages." };
+  }
+
+  const permission = await checkUserPermission();
+
+  if (!permission.allowed) {
+    return { ok: false, error: permission.reason };
+  }
+
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["autoHighlightEngine.js"]
+  });
+
+  return {
+    ok: true,
+    subscription: permission.subscription
+  };
+}
+
 function ensureSubscriptionAlarm() {
   chrome.alarms.create(SUBSCRIPTION_ALARM_NAME, {
     delayInMinutes: 1,
-    periodInMinutes: SIX_HOURS_IN_MINUTES
+    periodInMinutes: TWELVE_HOURS_IN_MINUTES
   });
 }
 
@@ -205,6 +342,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "ENABLE_AUTO_HIGHLIGHT") {
+    injectAutoHighlightOnActiveTab().then(sendResponse);
+    return true;
+  }
+
   return false;
 });
 
@@ -228,7 +370,7 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
   }
 
   if (message?.type === "AUTH_LOGOUT") {
-    removeStorage([AUTH_STORAGE_KEY, SUBSCRIPTION_STORAGE_KEY])
+    removeStorage([AUTH_STORAGE_KEY, SUBSCRIPTION_STORAGE_KEY, AUTO_HIGHLIGHT_KEY])
       .then(() =>
         setStorage({
           [RELLOGIN_FLAG_KEY]: false

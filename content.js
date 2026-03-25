@@ -1,48 +1,22 @@
 const FLOATING_BOX_ID = "knowlense-floating-box";
-const LOOKUP_ICON_ID = "knowlense-lookup-icon";
-const AUTO_HIGHLIGHT_STYLE_ID = "knowlense-auto-highlight-style";
-const SUBSCRIPTION_STORAGE_KEY = "knowlenseSubscription";
+const EXCLUDED_HOST_PATTERNS = [
+  /paypal\./i,
+  /stripe\./i,
+  /bank/i,
+  /banking/i,
+  /finance/i,
+  /payment/i,
+  /checkout/i,
+  /wallet/i,
+  /wise\.com$/i,
+  /revolut\./i
+];
 
 let latestPointer = { x: 0, y: 0 };
 let currentSelection = "";
-let subscriptionSnapshot = {
-  isPremium: false,
-  plan: "free",
-  expiresAt: null
-};
-let apiServicePromise = null;
 
-const STOP_WORDS = new Set([
-  "about",
-  "after",
-  "before",
-  "being",
-  "browser",
-  "chrome",
-  "could",
-  "extension",
-  "first",
-  "found",
-  "highlight",
-  "however",
-  "knowlense",
-  "other",
-  "their",
-  "there",
-  "these",
-  "those",
-  "through",
-  "using",
-  "which",
-  "without"
-]);
-
-function loadApiService() {
-  if (!apiServicePromise) {
-    apiServicePromise = import(chrome.runtime.getURL("apiService.js"));
-  }
-
-  return apiServicePromise;
+function isExcludedPage() {
+  return EXCLUDED_HOST_PATTERNS.some((pattern) => pattern.test(window.location.hostname));
 }
 
 function removeElementById(id) {
@@ -54,10 +28,6 @@ function removeElementById(id) {
 
 function removeFloatingBox() {
   removeElementById(FLOATING_BOX_ID);
-}
-
-function removeLookupIcon() {
-  removeElementById(LOOKUP_ICON_ID);
 }
 
 function getSafePosition(pointerX, pointerY, boxWidth, boxHeight) {
@@ -83,17 +53,16 @@ function getSafePosition(pointerX, pointerY, boxWidth, boxHeight) {
 }
 
 function formatSummary(text) {
-  const normalized = String(text || "").replace(/\s+/g, " ").trim();
-  return normalized.length > 420 ? `${normalized.slice(0, 417)}...` : normalized;
+  return String(text || "").replace(/\s+/g, " ").trim();
 }
 
-function ensureAutoHighlightStyle() {
-  if (document.getElementById(AUTO_HIGHLIGHT_STYLE_ID)) {
+function ensurePopoverStyles() {
+  if (document.getElementById("knowlense-popover-style")) {
     return;
   }
 
   const style = document.createElement("style");
-  style.id = AUTO_HIGHLIGHT_STYLE_ID;
+  style.id = "knowlense-popover-style";
   style.textContent = `
     .knowlense-spinner {
       width: 18px;
@@ -102,13 +71,6 @@ function ensureAutoHighlightStyle() {
       border-top-color: #0891b2;
       border-radius: 999px;
       animation: knowlense-spin 0.8s linear infinite;
-    }
-
-    .knowlense-auto-highlight {
-      background: linear-gradient(180deg, rgba(8, 145, 178, 0.05) 0%, rgba(8, 145, 178, 0.22) 100%);
-      border-radius: 4px;
-      padding: 0 2px;
-      box-shadow: inset 0 -1px 0 rgba(8, 145, 178, 0.18);
     }
 
     @keyframes knowlense-spin {
@@ -123,7 +85,7 @@ function ensureAutoHighlightStyle() {
 
 function createFloatingBox(pointerX, pointerY, options) {
   removeFloatingBox();
-  ensureAutoHighlightStyle();
+  ensurePopoverStyles();
 
   const box = document.createElement("div");
   box.id = FLOATING_BOX_ID;
@@ -154,7 +116,10 @@ function createFloatingBox(pointerX, pointerY, options) {
   summary.style.color = "#111827";
   summary.style.maxHeight = "300px";
   summary.style.overflowY = "auto";
-  summary.style.marginBottom = "12px";
+  summary.style.marginBottom = "16px";
+  summary.style.textAlign = "justify";
+  summary.style.wordBreak = "break-word";
+  summary.style.hyphens = "auto";
 
   if (options.state === "loading") {
     const loadingWrap = document.createElement("div");
@@ -166,7 +131,7 @@ function createFloatingBox(pointerX, pointerY, options) {
     spinner.className = "knowlense-spinner";
 
     const text = document.createElement("span");
-    text.textContent = "Searching Wikipedia...";
+    text.textContent = "Looking up the term...";
     text.style.color = "#475569";
 
     loadingWrap.append(spinner, text);
@@ -179,17 +144,15 @@ function createFloatingBox(pointerX, pointerY, options) {
     }
   }
 
-  const source = options.source
-    ? document.createElement("a")
-    : document.createElement("span");
-
-  source.textContent = options.source ? "Source" : options.state === "empty" ? "Try another term" : "No source available";
+  const hasValidSource = isValidSourceUrl(options.source);
+  const source = hasValidSource ? document.createElement("a") : document.createElement("span");
+  source.textContent = hasValidSource ? "Source" : options.state === "empty" ? "Try another term" : "Wikipedia source unavailable";
   source.style.fontSize = "12px";
   source.style.fontWeight = "600";
-  source.style.color = options.source ? "#2563eb" : "#6b7280";
+  source.style.color = hasValidSource ? "#2563eb" : "#6b7280";
   source.style.textDecoration = "none";
 
-  if (options.source) {
+  if (hasValidSource) {
     source.href = options.source;
     source.target = "_blank";
     source.rel = "noreferrer noopener";
@@ -204,234 +167,57 @@ function createFloatingBox(pointerX, pointerY, options) {
   box.style.top = `${top}px`;
 }
 
-function createLookupIcon(pointerX, pointerY) {
-  removeLookupIcon();
-
-  const button = document.createElement("button");
-  button.id = LOOKUP_ICON_ID;
-  button.type = "button";
-  button.textContent = "K";
-  button.setAttribute("aria-label", "Look up with Knowlense");
-  button.style.position = "fixed";
-  button.style.left = `${pointerX + 8}px`;
-  button.style.top = `${pointerY + 8}px`;
-  button.style.zIndex = "2147483647";
-  button.style.width = "28px";
-  button.style.height = "28px";
-  button.style.border = "0";
-  button.style.borderRadius = "999px";
-  button.style.background = "#0891b2";
-  button.style.boxShadow = "0 10px 24px rgba(8, 145, 178, 0.35)";
-  button.style.color = "#ffffff";
-  button.style.fontFamily = "Inter, \"Segoe UI\", sans-serif";
-  button.style.fontSize = "13px";
-  button.style.fontWeight = "700";
-
-  button.addEventListener("click", () => {
-    void lookupSelectedTerm();
-  });
-
-  document.body.appendChild(button);
-}
-
-function getStoredSubscriptionState() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(
-      {
-        [SUBSCRIPTION_STORAGE_KEY]: {
-          isPremium: false,
-          plan: "free",
-          expiresAt: null
-        }
-      },
-      (result) => resolve(result[SUBSCRIPTION_STORAGE_KEY])
-    );
-  });
-}
-
-async function updateSubscriptionState() {
-  const nextState = await getStoredSubscriptionState();
-  subscriptionSnapshot = {
-    isPremium: Boolean(nextState?.isPremium),
-    plan: nextState?.plan || "free",
-    expiresAt: nextState?.expiresAt || null
-  };
-
-  if (subscriptionSnapshot.isPremium) {
-    runAutoHighlight();
-    return;
-  }
-
-  clearAutoHighlights();
-}
-
 async function lookupSelectedTerm() {
   if (!currentSelection) {
     return;
   }
 
-  removeLookupIcon();
   createFloatingBox(latestPointer.x, latestPointer.y, {
     state: "loading"
   });
 
-  try {
-    const api = await loadApiService();
-    const result = await api.getTermDefinition(currentSelection);
+  chrome.runtime.sendMessage(
+    {
+      type: "FETCH_WIKIPEDIA_SUMMARY",
+      keyword: currentSelection
+    },
+    (response) => {
+      if (chrome.runtime.lastError || !response?.ok) {
+        createFloatingBox(latestPointer.x, latestPointer.y, {
+          state: "empty",
+          summary: "No definition found",
+          source: ""
+        });
+        return;
+      }
 
-    if (!result?.ok) {
       createFloatingBox(latestPointer.x, latestPointer.y, {
-        state: "empty",
-        summary: result?.error?.includes("No Wikipedia result") ? "No definition found" : result?.error || "No definition found",
-        source: ""
+        state: response.data?.extract ? "success" : "empty",
+        summary: response.data?.extract || "No definition found",
+        source: response.data?.source || ""
       });
-      return;
     }
-
-    const summary = result.summary || result.extract || "";
-    createFloatingBox(latestPointer.x, latestPointer.y, {
-      state: summary ? "success" : "empty",
-      summary: summary || "No definition found",
-      source: result.source || result.sourceUrl || ""
-    });
-  } catch (error) {
-    createFloatingBox(latestPointer.x, latestPointer.y, {
-      state: "empty",
-      summary: "No definition found",
-      source: ""
-    });
-  }
+  );
 }
 
 function handleSelection(event) {
+  if (isExcludedPage()) {
+    return;
+  }
+
+  if (event.target instanceof Element && event.target.closest(`#${FLOATING_BOX_ID}`)) {
+    return;
+  }
+
   currentSelection = window.getSelection()?.toString().trim() || "";
   latestPointer = { x: event.clientX, y: event.clientY };
 
   if (!currentSelection) {
-    removeLookupIcon();
     removeFloatingBox();
     return;
   }
 
-  console.log("Knowlense selected text:", currentSelection);
-  createLookupIcon(event.clientX, event.clientY);
-
-  if (subscriptionSnapshot.isPremium) {
-    void lookupSelectedTerm();
-  }
-}
-
-function extractImportantKeywords() {
-  const paragraphs = Array.from(document.querySelectorAll("p"));
-  const counts = new Map();
-
-  for (const paragraph of paragraphs) {
-    const words = paragraph.textContent?.match(/[A-Za-z][A-Za-z-]{5,}/g) || [];
-
-    for (const word of words) {
-      const normalized = word.toLowerCase();
-
-      if (STOP_WORDS.has(normalized)) {
-        continue;
-      }
-
-      counts.set(normalized, (counts.get(normalized) || 0) + 1);
-    }
-  }
-
-  return [...counts.entries()]
-    .filter(([, count]) => count >= 2)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([word]) => word);
-}
-
-function replaceMatchesInTextNode(textNode, regex) {
-  const text = textNode.nodeValue || "";
-  const match = regex.exec(text);
-
-  if (!match) {
-    return false;
-  }
-
-  const matchedText = match[0];
-  const before = text.slice(0, match.index);
-  const after = text.slice(match.index + matchedText.length);
-  const mark = document.createElement("mark");
-  mark.className = "knowlense-auto-highlight";
-  mark.textContent = matchedText;
-
-  const fragment = document.createDocumentFragment();
-
-  if (before) {
-    fragment.appendChild(document.createTextNode(before));
-  }
-
-  fragment.appendChild(mark);
-
-  if (after) {
-    fragment.appendChild(document.createTextNode(after));
-  }
-
-  textNode.parentNode?.replaceChild(fragment, textNode);
-  return true;
-}
-
-function highlightKeywordInParagraph(paragraph, keyword, budget) {
-  const regex = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-  const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
-  let textNode = walker.nextNode();
-
-  while (textNode && budget.count < budget.max) {
-    const parentElement = textNode.parentElement;
-    if (parentElement && !parentElement.closest("mark.knowlense-auto-highlight")) {
-      if (replaceMatchesInTextNode(textNode, regex)) {
-        budget.count += 1;
-        return;
-      }
-    }
-
-    textNode = walker.nextNode();
-  }
-}
-
-function clearAutoHighlights() {
-  document.querySelectorAll("mark.knowlense-auto-highlight").forEach((mark) => {
-    const parent = mark.parentNode;
-    if (!parent) {
-      return;
-    }
-
-    parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
-    parent.normalize();
-  });
-}
-
-function runAutoHighlight() {
-  if (!subscriptionSnapshot.isPremium) {
-    return;
-  }
-
-  ensureAutoHighlightStyle();
-  clearAutoHighlights();
-
-  const keywords = extractImportantKeywords();
-  if (!keywords.length) {
-    return;
-  }
-
-  const paragraphs = Array.from(document.querySelectorAll("p"));
-  const budget = { count: 0, max: 24 };
-
-  for (const paragraph of paragraphs) {
-    for (const keyword of keywords) {
-      if (budget.count >= budget.max) {
-        return;
-      }
-
-      highlightKeywordInParagraph(paragraph, keyword, budget);
-    }
-  }
+  void lookupSelectedTerm();
 }
 
 document.addEventListener("mouseup", (event) => {
@@ -442,35 +228,33 @@ document.addEventListener("mouseup", (event) => {
 
 document.addEventListener("mousedown", (event) => {
   const box = document.getElementById(FLOATING_BOX_ID);
-  const icon = document.getElementById(LOOKUP_ICON_ID);
 
-  if (box && !box.contains(event.target)) {
+  if (box && event.target instanceof Node && !box.contains(event.target)) {
     removeFloatingBox();
-  }
-
-  if (icon && !icon.contains(event.target)) {
-    removeLookupIcon();
   }
 });
 
 window.addEventListener("resize", () => {
-  removeLookupIcon();
   removeFloatingBox();
 });
 
 window.addEventListener(
   "scroll",
   () => {
-    removeLookupIcon();
     removeFloatingBox();
   },
   true
 );
 
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && changes[SUBSCRIPTION_STORAGE_KEY]) {
-    void updateSubscriptionState();
+function isValidSourceUrl(value) {
+  if (!value) {
+    return false;
   }
-});
 
-void updateSubscriptionState();
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch (error) {
+    return false;
+  }
+}
