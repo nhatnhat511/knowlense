@@ -37,7 +37,7 @@ export default function HomePage() {
             <a className="nav-link" href="#modules">
               Modules
             </a>
-            <Link className="nav-link" href="/auth">
+            <Link className="nav-link" href="/auth/sign-in">
               Sign in
             </Link>
             <Link className="primary-button" href="/dashboard">
@@ -56,7 +56,7 @@ export default function HomePage() {
             Workers, and extension sessions that connect securely after web sign-in.
           </p>
           <div className="stack-row">
-            <Link className="primary-button" href="/auth">
+            <Link className="primary-button" href="/auth/sign-up">
               Create account
             </Link>
             <Link className="secondary-button" href="/dashboard">

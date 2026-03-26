@@ -148,7 +148,8 @@ input {
 .auth-surface,
 .connect-surface,
 .dashboard-surface,
-.modules-section {
+.modules-section,
+.auth-index-surface {
   padding: 48px 0 72px;
 }
 
@@ -295,6 +296,15 @@ input {
 .auth-surface {
   grid-template-columns: 1fr 440px;
   align-items: start;
+}
+
+.auth-surface.single-card {
+  grid-template-columns: minmax(0, 520px);
+  justify-content: center;
+}
+
+.auth-route-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .auth-intro {

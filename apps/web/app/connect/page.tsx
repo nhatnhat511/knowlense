@@ -39,7 +39,7 @@ function ConnectPageContent() {
       }
 
       if (!session?.access_token) {
-        router.replace(`/auth?next=${encodeURIComponent(`/connect?request=${requestId}`)}`);
+        router.replace(`/auth/sign-in?next=${encodeURIComponent(`/connect?request=${requestId}`)}`);
         return;
       }
 
@@ -68,7 +68,7 @@ function ConnectPageContent() {
       } = await supabase.auth.getSession();
 
       if (!session?.access_token) {
-        router.replace(`/auth?next=${encodeURIComponent(`/connect?request=${requestId}`)}`);
+        router.replace(`/auth/sign-in?next=${encodeURIComponent(`/connect?request=${requestId}`)}`);
         return;
       }
 
