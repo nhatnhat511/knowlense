@@ -1,3 +1,5 @@
+import { COMMON_WORDS } from "./commonWords";
+
 const ANALYZE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const ANALYZE_CACHE_VERSION = "v11";
 const OPEN_SEARCH_TIMEOUT_MS = 2500;
@@ -106,9 +108,25 @@ export async function analyzeEntity(
   const contextData = normalizeAnalyzeContext(input.context);
   const context = flattenAnalyzeContext(contextData);
   const debug = Boolean(options?.debug);
+  const normalizedLookupText = normalizeForMatch(text);
 
   if (!text) {
     return { type: "common_word" };
+  }
+
+  if (normalizedLookupText && COMMON_WORDS.has(normalizedLookupText)) {
+    return debug
+      ? {
+          type: "common_word",
+          debug: {
+            text,
+            context,
+            threshold: ENTITY_THRESHOLD,
+            candidates: [],
+            error: "Matched common word pre-check list."
+          }
+        }
+      : { type: "common_word" };
   }
 
   const cacheKey = await createCacheKey(text, context);
