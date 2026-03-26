@@ -50,14 +50,15 @@ app.post("/analyze", async (c) => {
     text?: string;
     context?:
       | string
-      | {
-          sentence?: string;
-          paragraph?: string;
-          heading?: string;
-          pageTitle?: string;
-          metaDescription?: string;
-          hostname?: string;
-        };
+        | {
+            sentence?: string;
+            paragraph?: string;
+            heading?: string;
+            pageTitle?: string;
+            metaDescription?: string;
+            hostname?: string;
+            partialWordSelection?: boolean;
+          };
   } = await c.req
     .json<{
       text?: string;
@@ -70,6 +71,7 @@ app.post("/analyze", async (c) => {
             pageTitle?: string;
             metaDescription?: string;
             hostname?: string;
+            partialWordSelection?: boolean;
           };
     }>()
     .catch(() => ({} as {
@@ -83,6 +85,7 @@ app.post("/analyze", async (c) => {
             pageTitle?: string;
             metaDescription?: string;
             hostname?: string;
+            partialWordSelection?: boolean;
           };
     }));
 
@@ -104,14 +107,15 @@ app.post("/api/analyze", async (c) => {
     text?: string;
     context?:
       | string
-      | {
-          sentence?: string;
-          paragraph?: string;
-          heading?: string;
-          pageTitle?: string;
-          metaDescription?: string;
-          hostname?: string;
-        };
+        | {
+            sentence?: string;
+            paragraph?: string;
+            heading?: string;
+            pageTitle?: string;
+            metaDescription?: string;
+            hostname?: string;
+            partialWordSelection?: boolean;
+          };
   } = await c.req
     .json<{
       text?: string;
@@ -124,6 +128,7 @@ app.post("/api/analyze", async (c) => {
             pageTitle?: string;
             metaDescription?: string;
             hostname?: string;
+            partialWordSelection?: boolean;
           };
     }>()
     .catch(() => ({} as {
@@ -137,6 +142,7 @@ app.post("/api/analyze", async (c) => {
             pageTitle?: string;
             metaDescription?: string;
             hostname?: string;
+            partialWordSelection?: boolean;
           };
     }));
 

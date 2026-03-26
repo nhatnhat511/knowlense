@@ -1,7 +1,7 @@
 import { COMMON_WORDS } from "./commonWords";
 
 const ANALYZE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const ANALYZE_CACHE_VERSION = "v11";
+const ANALYZE_CACHE_VERSION = "v12";
 const OPEN_SEARCH_TIMEOUT_MS = 2500;
 const SUMMARY_TIMEOUT_MS = 3000;
 const MAX_CANDIDATES = 3;
@@ -33,6 +33,7 @@ type RawAnalyzeContext =
       pageTitle?: string;
       metaDescription?: string;
       hostname?: string;
+      partialWordSelection?: boolean;
     };
 
 type NormalizedAnalyzeContext = {
@@ -42,6 +43,7 @@ type NormalizedAnalyzeContext = {
   pageTitle: string;
   metaDescription: string;
   hostname: string;
+  partialWordSelection: boolean;
 };
 
 type CandidateScore = {
@@ -112,6 +114,21 @@ export async function analyzeEntity(
 
   if (!text) {
     return { type: "common_word" };
+  }
+
+  if (contextData.partialWordSelection) {
+    return debug
+      ? {
+          type: "common_word",
+          debug: {
+            text,
+            context,
+            threshold: ENTITY_THRESHOLD,
+            candidates: [],
+            error: "Rejected partial word selection."
+          }
+        }
+      : { type: "common_word" };
   }
 
   if (normalizedLookupText && COMMON_WORDS.has(normalizedLookupText)) {
@@ -490,7 +507,8 @@ function normalizeAnalyzeContext(context: RawAnalyzeContext | undefined): Normal
       heading: "",
       pageTitle: "",
       metaDescription: "",
-      hostname: ""
+      hostname: "",
+      partialWordSelection: false
     };
   }
 
@@ -500,7 +518,8 @@ function normalizeAnalyzeContext(context: RawAnalyzeContext | undefined): Normal
     heading: normalizeText(context?.heading || ""),
     pageTitle: normalizeText(context?.pageTitle || ""),
     metaDescription: normalizeText(context?.metaDescription || ""),
-    hostname: normalizeText(context?.hostname || "")
+    hostname: normalizeText(context?.hostname || ""),
+    partialWordSelection: Boolean(context?.partialWordSelection)
   };
 }
 

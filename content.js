@@ -137,6 +137,92 @@ function getMetaDescription() {
   );
 }
 
+function isWordCharacter(value) {
+  return /[\p{L}\p{N}_'-]/u.test(value || "");
+}
+
+function getDeepestTextCharacter(node, direction) {
+  if (!node) {
+    return "";
+  }
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent || "";
+    return direction === "backward" ? text.slice(-1) : text.slice(0, 1);
+  }
+
+  if (!(node instanceof Element || node instanceof DocumentFragment)) {
+    return "";
+  }
+
+  const children = Array.from(node.childNodes);
+  const orderedChildren = direction === "backward" ? children.reverse() : children;
+
+  for (const child of orderedChildren) {
+    const character = getDeepestTextCharacter(child, direction);
+    if (character) {
+      return character;
+    }
+  }
+
+  return "";
+}
+
+function getAdjacentCharacter(node, offset, direction) {
+  if (!node) {
+    return "";
+  }
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent || "";
+
+    if (direction === "backward" && offset > 0) {
+      return text[offset - 1] || "";
+    }
+
+    if (direction === "forward" && offset < text.length) {
+      return text[offset] || "";
+    }
+  } else if (node instanceof Element || node instanceof DocumentFragment) {
+    const childNodes = Array.from(node.childNodes);
+
+    if (direction === "backward" && offset > 0) {
+      return getDeepestTextCharacter(childNodes[offset - 1], "backward");
+    }
+
+    if (direction === "forward" && offset < childNodes.length) {
+      return getDeepestTextCharacter(childNodes[offset], "forward");
+    }
+  }
+
+  let current = node;
+  while (current) {
+    const sibling = direction === "backward" ? current.previousSibling : current.nextSibling;
+    if (sibling) {
+      return getDeepestTextCharacter(sibling, direction);
+    }
+    current = current.parentNode;
+  }
+
+  return "";
+}
+
+function isPartialWordSelection(selection, selectedText) {
+  if (!selection || selection.rangeCount === 0 || !selectedText) {
+    return false;
+  }
+
+  const range = selection.getRangeAt(0);
+  const firstSelectedCharacter = selectedText[0] || "";
+  const lastSelectedCharacter = selectedText[selectedText.length - 1] || "";
+  const characterBefore = getAdjacentCharacter(range.startContainer, range.startOffset, "backward");
+  const characterAfter = getAdjacentCharacter(range.endContainer, range.endOffset, "forward");
+  const startsInsideWord = isWordCharacter(characterBefore) && isWordCharacter(firstSelectedCharacter);
+  const endsInsideWord = isWordCharacter(lastSelectedCharacter) && isWordCharacter(characterAfter);
+
+  return startsInsideWord || endsInsideWord;
+}
+
 function getSelectionContext() {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) {
@@ -146,7 +232,8 @@ function getSelectionContext() {
       heading: "",
       pageTitle: document.title || "",
       metaDescription: getMetaDescription(),
-      hostname: window.location.hostname || ""
+      hostname: window.location.hostname || "",
+      partialWordSelection: false
     };
   }
 
@@ -162,7 +249,8 @@ function getSelectionContext() {
     heading: headingText,
     pageTitle: formatSummary(document.title || ""),
     metaDescription: getMetaDescription(),
-    hostname: window.location.hostname || ""
+    hostname: window.location.hostname || "",
+    partialWordSelection: isPartialWordSelection(selection, currentSelection)
   };
 }
 
