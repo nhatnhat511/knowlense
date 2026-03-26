@@ -5,6 +5,7 @@ import { analyzeKeywordSnapshot, type SearchSnapshot } from "./lib/keywordFinder
 
 type Bindings = {
   CORS_ORIGIN?: string;
+  DB: D1Database;
   PADDLE_ENVIRONMENT?: "sandbox" | "production";
   PADDLE_API_KEY?: string;
   PADDLE_PRICE_ID_MONTHLY?: string;
@@ -21,6 +22,34 @@ type Variables = {
   };
 };
 
+type StoredKeywordRun = {
+  id: string;
+  query_text: string;
+  summary: {
+    query: string;
+    normalizedQuery: string;
+    totalResults: number;
+    capturedAt: string;
+    dominantTerms: string[];
+    adjacentModifiers: string[];
+    saturatedPhrases: string[];
+  };
+  keywords: Array<{
+    phrase: string;
+    opportunityScore: number;
+    frequency: number;
+    saturationLevel: "low" | "medium" | "high";
+    reason: string;
+  }>;
+  opportunities: Array<{
+    phrase: string;
+    score: number;
+    type: "adjacent" | "underserved";
+    reason: string;
+  }>;
+  created_at: string;
+};
+
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 function createAdminClient(env: Bindings) {
@@ -29,6 +58,33 @@ function createAdminClient(env: Bindings) {
       persistSession: false
     }
   });
+}
+
+async function authenticateRequest(c: {
+  req: { header: (name: string) => string | undefined };
+  env: Bindings;
+  set: (key: "user", value: Variables["user"]) => void;
+}) {
+  const authHeader = c.req.header("Authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+
+  if (!token) {
+    return { error: "Missing bearer token.", status: 401 as const };
+  }
+
+  const supabase = createAdminClient(c.env);
+  const { data, error } = await supabase.auth.getUser(token);
+
+  if (error || !data.user) {
+    return { error: "Invalid session.", status: 401 as const };
+  }
+
+  c.set("user", {
+    email: data.user.email ?? null,
+    id: data.user.id
+  });
+
+  return null;
 }
 
 app.use(
@@ -68,25 +124,10 @@ app.get("/v1/public/config", (c) =>
 );
 
 app.use("/v1/me", async (c, next) => {
-  const authHeader = c.req.header("Authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-
-  if (!token) {
-    return c.json({ error: "Missing bearer token." }, 401);
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
   }
-
-  const supabase = createAdminClient(c.env);
-
-  const { data, error } = await supabase.auth.getUser(token);
-
-  if (error || !data.user) {
-    return c.json({ error: "Invalid session." }, 401);
-  }
-
-  c.set("user", {
-    email: data.user.email ?? null,
-    id: data.user.id
-  });
 
   await next();
 });
@@ -98,24 +139,10 @@ app.get("/v1/me", (c) =>
 );
 
 app.use("/v1/keyword-finder/*", async (c, next) => {
-  const authHeader = c.req.header("Authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-
-  if (!token) {
-    return c.json({ error: "Missing bearer token." }, 401);
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
   }
-
-  const supabase = createAdminClient(c.env);
-  const { data, error } = await supabase.auth.getUser(token);
-
-  if (error || !data.user) {
-    return c.json({ error: "Invalid session." }, 401);
-  }
-
-  c.set("user", {
-    email: data.user.email ?? null,
-    id: data.user.id
-  });
 
   await next();
 });
@@ -129,53 +156,49 @@ app.post("/v1/keyword-finder/analyze", async (c) => {
 
   const user = c.get("user");
   const analysis = analyzeKeywordSnapshot(body);
-  const supabase = createAdminClient(c.env);
+  const snapshotId = crypto.randomUUID();
+  const runId = crypto.randomUUID();
+  const capturedAt = body.capturedAt ?? new Date().toISOString();
   let persisted = false;
   let warning: string | null = null;
 
-  const snapshotInsert = await supabase
-    .from("search_snapshots")
-    .insert({
-      user_id: user.id,
-      query_text: body.query,
-      page_url: body.pageUrl,
-      result_count: body.results.length,
-      captured_at: body.capturedAt ?? new Date().toISOString()
-    })
-    .select("id")
-    .maybeSingle();
+  try {
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO search_snapshots (id, user_id, query_text, page_url, result_count, captured_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+      ).bind(snapshotId, user.id, body.query, body.pageUrl, body.results.length, capturedAt),
+      ...body.results.map((result) =>
+        c.env.DB.prepare(
+          `INSERT INTO search_results (snapshot_id, position, title, product_url, shop_name, price_text, snippet)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+        ).bind(
+          snapshotId,
+          result.position,
+          result.title,
+          result.productUrl ?? null,
+          result.shopName ?? null,
+          result.priceText ?? null,
+          result.snippet ?? null
+        )
+      ),
+      c.env.DB.prepare(
+        `INSERT INTO keyword_runs (id, user_id, snapshot_id, query_text, summary_json, keywords_json, opportunities_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+      ).bind(
+        runId,
+        user.id,
+        snapshotId,
+        body.query,
+        JSON.stringify(analysis.summary),
+        JSON.stringify(analysis.keywords),
+        JSON.stringify(analysis.opportunities)
+      )
+    ]);
 
-  if (snapshotInsert.error || !snapshotInsert.data?.id) {
-    warning = "Analysis succeeded, but search snapshot could not be stored. Apply the SQL schema first.";
-  } else {
-    const snapshotId = snapshotInsert.data.id;
-
-    const resultsInsert = await supabase.from("search_results").insert(
-      body.results.map((result) => ({
-        snapshot_id: snapshotId,
-        position: result.position,
-        title: result.title,
-        product_url: result.productUrl ?? null,
-        shop_name: result.shopName ?? null,
-        price_text: result.priceText ?? null,
-        snippet: result.snippet ?? null
-      }))
-    );
-
-    const runInsert = await supabase.from("keyword_runs").insert({
-      user_id: user.id,
-      snapshot_id: snapshotId,
-      query_text: body.query,
-      summary: analysis.summary,
-      keywords: analysis.keywords,
-      opportunities: analysis.opportunities
-    });
-
-    if (resultsInsert.error || runInsert.error) {
-      warning = "Analysis succeeded, but persistence is incomplete. Confirm the SQL schema exists in Supabase.";
-    } else {
-      persisted = true;
-    }
+    persisted = true;
+  } catch {
+    warning = "Analysis succeeded, but persistence failed. Confirm the D1 binding and migration are applied.";
   }
 
   return c.json({
@@ -187,24 +210,41 @@ app.post("/v1/keyword-finder/analyze", async (c) => {
 
 app.get("/v1/keyword-finder/runs", async (c) => {
   const user = c.get("user");
-  const supabase = createAdminClient(c.env);
-  const { data, error } = await supabase
-    .from("keyword_runs")
-    .select("id, query_text, summary, keywords, opportunities, created_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(8);
 
-  if (error) {
+  try {
+    const result = await c.env.DB.prepare(
+      `SELECT id, query_text, summary_json, keywords_json, opportunities_json, created_at
+       FROM keyword_runs
+       WHERE user_id = ?1
+       ORDER BY datetime(created_at) DESC
+       LIMIT 8`
+    )
+      .bind(user.id)
+      .all<{
+        id: string;
+        query_text: string;
+        summary_json: string;
+        keywords_json: string;
+        opportunities_json: string;
+        created_at: string;
+      }>();
+
+    const runs: StoredKeywordRun[] = (result.results ?? []).map((row) => ({
+      id: row.id,
+      query_text: row.query_text,
+      summary: JSON.parse(row.summary_json),
+      keywords: JSON.parse(row.keywords_json),
+      opportunities: JSON.parse(row.opportunities_json),
+      created_at: row.created_at
+    }));
+
+    return c.json({ runs });
+  } catch {
     return c.json({
       runs: [],
-      warning: "Keyword Finder history is unavailable until the SQL schema is applied."
+      warning: "Keyword Finder history is unavailable until the D1 database is bound and migrated."
     });
   }
-
-  return c.json({
-    runs: data ?? []
-  });
 });
 
 app.post("/v1/billing/checkout", async (c) => {

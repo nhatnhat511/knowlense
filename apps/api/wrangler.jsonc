@@ -1,9 +1,18 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "knowlense-api",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-03-26",
-  "observability": {
-    "enabled": true
-  }
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "knowlense-api",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-03-26",
+	// Replace these placeholders with your real D1 database id and name.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "knowlense-db",
+			"database_id": "f41180d0-210c-4552-930a-85c60ed605d4",
+			"remote": true
+		}
+	],
+	"observability": {
+		"enabled": true
+	}
 }
