@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { mapSignInError } from "@/lib/auth/errors";
 import { fetchApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -62,7 +63,8 @@ function SignInContent() {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
-        setStatus(mapSignInError(error.message));
+        const mappedMessage = mapSignInError(error.message);
+        setStatus(mappedMessage);
         setStatusKind("error");
         return;
       }
@@ -89,17 +91,7 @@ function SignInContent() {
 
   return (
     <main className="app-shell">
-      <header className="site-header">
-        <div className="shell topbar">
-          <Link href="/" className="brand-lockup">
-            <span className="brand-mark">K</span>
-            <span className="brand">
-              <span className="brand-name">Knowlense</span>
-              <span className="brand-tag">Sign in</span>
-            </span>
-          </Link>
-        </div>
-      </header>
+      <SiteHeader tag="Sign in" navItems={[{ href: "/pricing", label: "Pricing" }, { href: "/auth/sign-up", label: "Create account" }]} />
 
       <section className="shell auth-surface single-card">
         <section className="auth-card">
@@ -124,12 +116,16 @@ function SignInContent() {
             <Link className="nav-link" href="/auth/sign-up">
               Create account
             </Link>
+            <Link className="nav-link" href={`/auth/verify-email${email ? `?email=${encodeURIComponent(email)}` : ""}`}>
+              Verify email
+            </Link>
             <Link className="nav-link" href="/auth/forgot-password">
               Forgot password
             </Link>
           </div>
         </section>
       </section>
+      <SiteFooter />
     </main>
   );
 }

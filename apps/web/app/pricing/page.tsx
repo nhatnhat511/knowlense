@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { createCheckout, type BillingInterval } from "@/lib/api/billing";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -10,19 +11,22 @@ const plans = [
   {
     title: "Free",
     price: "$0",
-    subtitle: "Explore the extension connection flow and core dashboard."
+    subtitle: "Explore the extension connection flow and core dashboard.",
+    bullets: ["Website account access", "Extension connection", "Basic Keyword Finder history"]
   },
   {
     title: "Monthly",
     price: "$4.99",
     subtitle: "Flexible access billed every month.",
-    interval: "monthly" as BillingInterval
+    interval: "monthly" as BillingInterval,
+    bullets: ["Full Keyword Finder usage", "Ongoing extension sessions", "Account and billing support"]
   },
   {
     title: "Yearly",
     price: "$41.9",
     subtitle: "Save 30% compared to paying monthly for a full year.",
-    interval: "yearly" as BillingInterval
+    interval: "yearly" as BillingInterval,
+    bullets: ["Everything in Monthly", "Annual savings built in", "Best fit for active sellers"]
   }
 ];
 
@@ -88,28 +92,14 @@ export default function PricingPage() {
 
   return (
     <main className="app-shell">
-      <header className="site-header">
-        <div className="shell topbar">
-          <Link href="/" className="brand-lockup">
-            <span className="brand-mark">K</span>
-            <span className="brand">
-              <span className="brand-name">Knowlense</span>
-              <span className="brand-tag">Pricing</span>
-            </span>
-          </Link>
-          <nav className="nav">
-            <Link className="nav-link" href="/about">
-              About
-            </Link>
-            <Link className="nav-link" href="/contact">
-              Contact
-            </Link>
-            <Link className="primary-button" href="/account">
-              Account
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader
+        tag="Pricing"
+        navItems={[
+          { href: "/about", label: "About" },
+          { href: "/contact", label: "Contact" },
+          { href: "/account", label: "Account" }
+        ]}
+      />
 
       <section className="shell marketing-surface">
         <div className="section-heading">
@@ -128,6 +118,11 @@ export default function PricingPage() {
               <h2>{plan.title}</h2>
               <div className="pricing-amount">{plan.price}</div>
               <p>{plan.subtitle}</p>
+              <ul className="clean-list compact-list">
+                {plan.bullets.map((bullet) => (
+                  <li key={bullet}>{bullet}</li>
+                ))}
+              </ul>
               {plan.interval ? (
                 <button className="primary-button wide-button" disabled={loadingPlan === plan.interval} onClick={() => handleCheckout(plan.interval)} type="button">
                   {loadingPlan === plan.interval ? "Redirecting..." : `Choose ${plan.title}`}
@@ -140,7 +135,16 @@ export default function PricingPage() {
             </article>
           ))}
         </div>
+
+        <div className="faq-card">
+          <h2>Billing notes</h2>
+          <p className="page-copy">
+            Monthly and yearly checkout are created on Cloudflare Workers and sent to Paddle. The yearly price reflects a
+            30% savings relative to the monthly plan over twelve months.
+          </p>
+        </div>
       </section>
+      <SiteFooter />
     </main>
   );
 }

@@ -2,21 +2,20 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { fetchKeywordRuns, type KeywordRun } from "@/lib/api/keyword-finder";
-import { fetchApiProfile, getApiBaseUrl, type ApiProfile } from "@/lib/api/profile";
+import { fetchApiProfile, type ApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function DashboardPage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [sessionState, setSessionState] = useState<ApiProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [apiStatus, setApiStatus] = useState("Checking website session");
   const [keywordRuns, setKeywordRuns] = useState<KeywordRun[]>([]);
   const [keywordWarning, setKeywordWarning] = useState("");
 
   useEffect(() => {
     if (!supabase) {
-      setApiStatus("Missing Supabase configuration");
       setLoading(false);
       return;
     }
@@ -35,7 +34,6 @@ export default function DashboardPage() {
 
       if (!session?.access_token) {
         setSessionState(null);
-        setApiStatus("No active website session");
         setLoading(false);
         return;
       }
@@ -53,7 +51,6 @@ export default function DashboardPage() {
         setSessionState(profile);
         setKeywordRuns(keywordData.runs);
         setKeywordWarning(keywordData.warning ?? "");
-        setApiStatus("Session validated through the Worker");
       } catch (error) {
         if (!active) {
           return;
@@ -61,7 +58,7 @@ export default function DashboardPage() {
 
         setSessionState(null);
         setKeywordRuns([]);
-        setApiStatus(error instanceof Error ? error.message : "Unable to validate the current session");
+        setKeywordWarning(error instanceof Error ? error.message : "Unable to validate the current session");
       } finally {
         if (active) {
           setLoading(false);
@@ -95,31 +92,15 @@ export default function DashboardPage() {
 
   return (
     <main className="app-shell">
-      <header className="site-header">
-        <div className="shell topbar">
-          <Link href="/" className="brand-lockup">
-            <span className="brand-mark">K</span>
-            <span className="brand">
-              <span className="brand-name">Knowlense</span>
-              <span className="brand-tag">Dashboard</span>
-            </span>
-          </Link>
-          <nav className="nav">
-            <Link className="nav-link" href="/">
-              Home
-            </Link>
-            <Link className="nav-link" href="/account">
-              Account
-            </Link>
-            <Link className="nav-link" href="/connect">
-              Connect extension
-            </Link>
-            <button className="secondary-button" onClick={handleSignOut} type="button">
-              Sign out
-            </button>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader
+        tag="Dashboard"
+        navItems={[
+          { href: "/", label: "Home" },
+          { href: "/account", label: "Account" },
+          { href: "/pricing", label: "Pricing" },
+          { href: "/connect", label: "Connect extension" }
+        ]}
+      />
 
       <section className="shell dashboard-surface">
         <div className="section-heading">
@@ -132,7 +113,7 @@ export default function DashboardPage() {
 
         <div className="dashboard-layout">
           <article className="dashboard-panel">
-            <h2>Account</h2>
+            <h2>Workspace overview</h2>
             <div className="data-list">
               <div className="data-item">
                 <span>Status</span>
@@ -143,12 +124,12 @@ export default function DashboardPage() {
                 <strong>{sessionState?.email ?? "No active session"}</strong>
               </div>
               <div className="data-item">
-                <span>API validation</span>
-                <strong>{apiStatus}</strong>
+                <span>Keyword Finder runs</span>
+                <strong>{keywordRuns.length}</strong>
               </div>
               <div className="data-item">
-                <span>API origin</span>
-                <strong>{getApiBaseUrl()}</strong>
+                <span>Connection model</span>
+                <strong>Website auth + Worker session</strong>
               </div>
             </div>
           </article>
@@ -163,9 +144,8 @@ export default function DashboardPage() {
               <Link className="primary-button" href="/connect">
                 Open connect page
               </Link>
-              <Link className="secondary-button" href="/auth">
-                Manage account
-              </Link>
+              <Link className="secondary-button" href="/account">Manage account</Link>
+              <button className="secondary-button" onClick={handleSignOut} type="button">Sign out</button>
             </div>
           </article>
         </div>
@@ -206,6 +186,7 @@ export default function DashboardPage() {
           )}
         </section>
       </section>
+      <SiteFooter />
     </main>
   );
 }

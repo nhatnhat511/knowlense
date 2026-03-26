@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function AuthCallbackPage() {
@@ -46,17 +47,7 @@ export default function AuthCallbackPage() {
 
   return (
     <main className="app-shell">
-      <header className="site-header">
-        <div className="shell topbar">
-          <Link href="/" className="brand-lockup">
-            <span className="brand-mark">K</span>
-            <span className="brand">
-              <span className="brand-name">Knowlense</span>
-              <span className="brand-tag">Auth callback</span>
-            </span>
-          </Link>
-        </div>
-      </header>
+      <SiteHeader tag="Auth callback" navItems={[{ href: "/auth/sign-in", label: "Sign in" }]} />
 
       <section className="shell auth-surface single-card">
         <section className="auth-card">
@@ -70,6 +61,7 @@ export default function AuthCallbackPage() {
           </div>
         </section>
       </section>
+      <SiteFooter />
     </main>
   );
 }

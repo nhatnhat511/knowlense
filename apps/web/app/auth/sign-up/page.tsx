@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { mapSignupResult, validatePassword } from "@/lib/auth/errors";
 import { getSignupRedirectUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -60,6 +61,15 @@ export default function SignUpPage() {
         return;
       }
 
+      if (data.session?.access_token) {
+        router.push("/dashboard");
+        return;
+      }
+
+      if ((data.user?.identities?.length ?? 0) === 0) {
+        return;
+      }
+
       router.push(`/auth/verify-email?email=${encodeURIComponent(email)}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to create the account.");
@@ -71,17 +81,7 @@ export default function SignUpPage() {
 
   return (
     <main className="app-shell">
-      <header className="site-header">
-        <div className="shell topbar">
-          <Link href="/" className="brand-lockup">
-            <span className="brand-mark">K</span>
-            <span className="brand">
-              <span className="brand-name">Knowlense</span>
-              <span className="brand-tag">Create account</span>
-            </span>
-          </Link>
-        </div>
-      </header>
+      <SiteHeader tag="Create account" navItems={[{ href: "/pricing", label: "Pricing" }, { href: "/auth/sign-in", label: "Sign in" }]} />
 
       <section className="shell auth-surface single-card">
         <section className="auth-card">
@@ -122,6 +122,7 @@ export default function SignUpPage() {
           </div>
         </section>
       </section>
+      <SiteFooter />
     </main>
   );
 }

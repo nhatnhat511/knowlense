@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { fetchApiProfile, type ApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -11,6 +12,7 @@ export default function AccountPage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [profile, setProfile] = useState<ApiProfile | null>(null);
   const [status, setStatus] = useState("Checking account status...");
+  const [emailConfirmed, setEmailConfirmed] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!supabase) {
@@ -36,11 +38,15 @@ export default function AccountPage() {
       }
 
       try {
-        const user = await fetchApiProfile(session.access_token);
+        const [
+          authResult,
+          profileResult
+        ] = await Promise.all([client.auth.getUser(), fetchApiProfile(session.access_token)]);
         if (!active) {
           return;
         }
-        setProfile(user);
+        setProfile(profileResult);
+        setEmailConfirmed(Boolean(authResult.data.user?.email_confirmed_at));
         setStatus("Your account is active on the website.");
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Unable to load account.");
@@ -65,28 +71,14 @@ export default function AccountPage() {
 
   return (
     <main className="app-shell">
-      <header className="site-header">
-        <div className="shell topbar">
-          <Link href="/" className="brand-lockup">
-            <span className="brand-mark">K</span>
-            <span className="brand">
-              <span className="brand-name">Knowlense</span>
-              <span className="brand-tag">Account</span>
-            </span>
-          </Link>
-          <nav className="nav">
-            <Link className="nav-link" href="/pricing">
-              Pricing
-            </Link>
-            <Link className="nav-link" href="/dashboard">
-              Dashboard
-            </Link>
-            <button className="secondary-button" onClick={handleSignOut} type="button">
-              Sign out
-            </button>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader
+        tag="Account"
+        navItems={[
+          { href: "/pricing", label: "Pricing" },
+          { href: "/dashboard", label: "Dashboard" },
+          { href: "/contact", label: "Support" }
+        ]}
+      />
 
       <section className="shell dashboard-surface">
         <div className="section-heading">
@@ -106,11 +98,15 @@ export default function AccountPage() {
                 <span>User ID</span>
                 <strong>{profile?.id ?? "Unavailable"}</strong>
               </div>
+              <div className="data-item">
+                <span>Email verification</span>
+                <strong>{emailConfirmed === null ? "Checking..." : emailConfirmed ? "Verified" : "Not verified"}</strong>
+              </div>
             </div>
           </article>
 
           <article className="dashboard-panel">
-            <h2>Extension connection</h2>
+            <h2>Security and extension access</h2>
             <p className="panel-copy">
               The extension must be connected from the website through a Worker-managed session bridge. It never asks for your
               credentials directly.
@@ -122,10 +118,40 @@ export default function AccountPage() {
               <Link className="secondary-button" href="/auth/change-password">
                 Change password
               </Link>
+              <button className="secondary-button" onClick={handleSignOut} type="button">
+                Sign out
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <div className="dashboard-layout">
+          <article className="dashboard-panel">
+            <h2>Billing</h2>
+            <p className="panel-copy">
+              Billing is handled through Paddle. Choose a plan from the pricing page to start checkout through the Worker API.
+            </p>
+            <div className="stack-row">
+              <Link className="primary-button" href="/pricing">
+                Manage plans
+              </Link>
+            </div>
+          </article>
+
+          <article className="dashboard-panel">
+            <h2>Support</h2>
+            <p className="panel-copy">
+              For access issues, billing questions, or privacy requests, use the contact page and include your account email.
+            </p>
+            <div className="stack-row">
+              <Link className="secondary-button" href="/contact">
+                Contact support
+              </Link>
             </div>
           </article>
         </div>
       </section>
+      <SiteFooter />
     </main>
   );
 }

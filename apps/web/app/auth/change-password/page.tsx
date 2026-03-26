@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { validatePassword } from "@/lib/auth/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -91,17 +92,7 @@ export default function ChangePasswordPage() {
 
   return (
     <main className="app-shell">
-      <header className="site-header">
-        <div className="shell topbar">
-          <Link href="/" className="brand-lockup">
-            <span className="brand-mark">K</span>
-            <span className="brand">
-              <span className="brand-name">Knowlense</span>
-              <span className="brand-tag">Change password</span>
-            </span>
-          </Link>
-        </div>
-      </header>
+      <SiteHeader tag="Change password" navItems={[{ href: "/account", label: "Account" }, { href: "/contact", label: "Support" }]} />
 
       <section className="shell auth-surface single-card">
         <section className="auth-card">
@@ -129,6 +120,7 @@ export default function ChangePasswordPage() {
           </form>
         </section>
       </section>
+      <SiteFooter />
     </main>
   );
 }

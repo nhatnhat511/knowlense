@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { authorizeExtensionConnection } from "@/lib/api/extension-connect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -83,22 +84,7 @@ function ConnectPageContent() {
 
   return (
     <main className="app-shell">
-      <header className="site-header">
-        <div className="shell topbar">
-          <Link href="/" className="brand-lockup">
-            <span className="brand-mark">K</span>
-            <span className="brand">
-              <span className="brand-name">Knowlense</span>
-              <span className="brand-tag">Connect extension</span>
-            </span>
-          </Link>
-          <nav className="nav">
-            <Link className="nav-link" href="/dashboard">
-              Dashboard
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader tag="Connect extension" navItems={[{ href: "/dashboard", label: "Dashboard" }, { href: "/account", label: "Account" }]} />
 
       <section className="shell connect-surface">
         <div className="connect-card">
@@ -119,6 +105,7 @@ function ConnectPageContent() {
           </div>
         </div>
       </section>
+      <SiteFooter />
     </main>
   );
 }

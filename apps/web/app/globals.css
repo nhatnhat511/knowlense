@@ -338,6 +338,10 @@ input {
   line-height: 1.7;
 }
 
+.compact-list {
+  margin-bottom: 24px;
+}
+
 .pricing-amount {
   font-family: var(--font-display), sans-serif;
   font-size: 3rem;
@@ -471,9 +475,45 @@ input {
   padding-bottom: 48px;
 }
 
-.footer-links {
-  gap: 18px;
+.footer-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.footer-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.footer-copy {
   color: var(--muted);
+  line-height: 1.7;
+  max-width: 56ch;
+}
+
+.footer-links {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  align-items: start;
+}
+
+.legal-card,
+.faq-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 24px;
+}
+
+.legal-card h2,
+.faq-card h2 {
+  margin: 0 0 12px;
 }
 
 .run-topline {
@@ -513,6 +553,10 @@ input {
   .dashboard-layout,
   .module-grid,
   .pricing-grid-clean {
+    grid-template-columns: 1fr;
+  }
+
+  .footer-grid {
     grid-template-columns: 1fr;
   }
 }

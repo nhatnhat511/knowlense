@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 
 const routes = [
   { href: "/auth/sign-in", title: "Sign in", copy: "Access your account from the website." },
@@ -12,17 +13,7 @@ const routes = [
 export default function AuthIndexPage() {
   return (
     <main className="app-shell">
-      <header className="site-header">
-        <div className="shell topbar">
-          <Link href="/" className="brand-lockup">
-            <span className="brand-mark">K</span>
-            <span className="brand">
-              <span className="brand-name">Knowlense</span>
-              <span className="brand-tag">Authentication</span>
-            </span>
-          </Link>
-        </div>
-      </header>
+      <SiteHeader tag="Authentication" navItems={[{ href: "/pricing", label: "Pricing" }, { href: "/contact", label: "Contact" }]} />
 
       <section className="shell auth-index-surface">
         <div className="section-heading">
@@ -38,6 +29,7 @@ export default function AuthIndexPage() {
           ))}
         </div>
       </section>
+      <SiteFooter />
     </main>
   );
 }

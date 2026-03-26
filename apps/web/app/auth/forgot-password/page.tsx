@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { useMemo, useState } from "react";
 import { getPasswordResetRedirectUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -48,17 +49,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <main className="app-shell">
-      <header className="site-header">
-        <div className="shell topbar">
-          <Link href="/" className="brand-lockup">
-            <span className="brand-mark">K</span>
-            <span className="brand">
-              <span className="brand-name">Knowlense</span>
-              <span className="brand-tag">Forgot password</span>
-            </span>
-          </Link>
-        </div>
-      </header>
+      <SiteHeader tag="Forgot password" navItems={[{ href: "/auth/sign-in", label: "Sign in" }, { href: "/auth/sign-up", label: "Create account" }]} />
 
       <section className="shell auth-surface single-card">
         <section className="auth-card">
@@ -81,6 +72,7 @@ export default function ForgotPasswordPage() {
           </div>
         </section>
       </section>
+      <SiteFooter />
     </main>
   );
 }

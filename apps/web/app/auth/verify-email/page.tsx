@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { getSignupRedirectUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
-  const email = searchParams.get("email") || "";
+  const [email, setEmail] = useState(searchParams.get("email") || "");
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [status, setStatus] = useState("Check your inbox and click the confirmation link.");
   const [statusKind, setStatusKind] = useState<"idle" | "error" | "success">("idle");
@@ -56,23 +57,19 @@ function VerifyEmailContent() {
 
   return (
     <main className="app-shell">
-      <header className="site-header">
-        <div className="shell topbar">
-          <Link href="/" className="brand-lockup">
-            <span className="brand-mark">K</span>
-            <span className="brand">
-              <span className="brand-name">Knowlense</span>
-              <span className="brand-tag">Verify email</span>
-            </span>
-          </Link>
-        </div>
-      </header>
+      <SiteHeader tag="Verify email" navItems={[{ href: "/auth/sign-in", label: "Sign in" }, { href: "/auth/sign-up", label: "Create account" }]} />
 
       <section className="shell auth-surface single-card">
         <section className="auth-card">
           <span className="eyebrow">Email confirmation</span>
           <h1 className="page-title" style={{ fontSize: "2.4rem" }}>Verify your email address</h1>
-          <p className="page-copy">{email ? `We sent a confirmation email to ${email}.` : "We sent a confirmation email to your inbox."}</p>
+          <p className="page-copy">
+            {email ? `We sent a confirmation email to ${email}.` : "Enter the email address you used so we can resend confirmation."}
+          </p>
+          <div className="field">
+            <label htmlFor="verify-email">Email</label>
+            <input id="verify-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+          </div>
           <div className={`status ${statusKind !== "idle" ? statusKind : ""}`}>{status}</div>
           <div className="stack-row">
             <button className="primary-button" disabled={loading} onClick={handleResend} type="button">
@@ -84,6 +81,7 @@ function VerifyEmailContent() {
           </div>
         </section>
       </section>
+      <SiteFooter />
     </main>
   );
 }
