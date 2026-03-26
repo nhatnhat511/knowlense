@@ -2,19 +2,22 @@ import Link from "next/link";
 
 const features = [
   {
+    icon: "LG",
     title: "Listing Grader",
-    copy: "Audit title structure, first-screen copy, preview coverage, and conversion friction while you edit a TPT product.",
-    bullets: ["Title and tag score", "Thumbnail and preview checks", "Action-first optimization notes"]
+    copy: "Audit title quality, preview depth, positioning clarity, and conversion friction while a seller is already inside TPT.",
+    bullets: ["Title and tag diagnostics", "Preview and thumbnail checks", "Prioritized fix list per product"]
   },
   {
+    icon: "KF",
     title: "Keyword Finder",
-    copy: "Capture the language sellers use on live TPT search pages and turn it into an organized opportunity map.",
-    bullets: ["Keyword clusters", "Intent tagging", "Repeatable niche research"]
+    copy: "Turn live TPT search result pages into structured keyword intelligence instead of guesswork and spreadsheets.",
+    bullets: ["Search snapshot capture", "Phrase clustering", "Opportunity scoring from real pages"]
   },
   {
+    icon: "MG",
     title: "Market Gap Board",
-    copy: "Highlight saturated topics, underserved grades, and likely bundle opportunities without spreadsheet sprawl.",
-    bullets: ["Gap summaries", "Opportunity backlog", "Expansion ideas for each niche"]
+    copy: "Spot underserved modifiers, adjacent niches, and bundle directions that are more actionable than generic SEO tips.",
+    bullets: ["Gap explanations", "Adjacent niche suggestions", "Saved opportunity backlog"]
   }
 ];
 
@@ -22,143 +25,224 @@ const plans = [
   {
     title: "Starter",
     price: "$0",
-    copy: "For testing the extension, auth flow, and base dashboard.",
-    bullets: ["Extension popup", "Website account", "Manual keyword board"]
+    suffix: "/month",
+    copy: "For validating the extension, account flow, and initial TPT research workflow.",
+    bullets: ["Extension popup", "Website account", "Basic keyword captures"]
   },
   {
     title: "Pro",
     price: "$29",
-    copy: "The first real SaaS tier for active TPT sellers.",
-    bullets: ["Listing grader", "Keyword suggestions", "Saved opportunities"],
+    suffix: "/month",
+    copy: "The first paid plan for sellers actively optimizing listings and exploring niche expansion.",
+    bullets: ["Listing Grader", "Keyword Finder", "Saved opportunities and account sync"],
     featured: true
   },
   {
     title: "Studio",
     price: "$79",
-    copy: "For sellers with VAs, larger catalogs, and a repeatable optimization workflow.",
-    bullets: ["Multi-seat access", "Priority sync jobs", "Expansion planning"]
+    suffix: "/month",
+    copy: "For higher-volume sellers running a real operating workflow across many products.",
+    bullets: ["Multi-seat collaboration", "Priority sync jobs", "Deeper catalog planning"]
   }
 ];
 
 export default function HomePage() {
   return (
-    <main className="shell page-grid">
-      <header className="topbar">
-        <Link href="/" className="brand">
-          Knowlense
-        </Link>
-        <nav className="nav">
-          <a className="pill" href="#features">
-            Features
-          </a>
-          <a className="pill" href="#pricing">
-            Pricing
-          </a>
-          <Link className="ghost-button" href="/auth">
-            Sign in
+    <main>
+      <header className="site-header">
+        <div className="shell topbar">
+          <Link href="/" className="brand-lockup">
+            <span className="brand-mark">K</span>
+            <span className="brand">
+              <span className="brand-name">Knowlense</span>
+              <span className="brand-tag">TPT seller intelligence</span>
+            </span>
           </Link>
-          <Link className="primary-button" href="/dashboard">
-            Open app
-          </Link>
-        </nav>
+          <nav className="nav">
+            <a className="nav-link" href="#product">
+              Product
+            </a>
+            <a className="nav-link" href="#pricing">
+              Pricing
+            </a>
+            <Link className="ghost-button" href="/auth">
+              Sign in
+            </Link>
+            <Link className="primary-button" href="/dashboard">
+              Open app
+            </Link>
+          </nav>
+        </div>
       </header>
 
       <section className="hero">
-        <div className="panel hero-copy">
-          <div className="eyebrow">Chrome extension + SaaS workflow for TPT sellers</div>
-          <h1>See what your listings are missing before revenue does.</h1>
-          <p>
-            Knowlense gives TPT sellers a cleaner operating system: audit listings in-place, collect market signals,
-            and track what to fix next from a dedicated SaaS dashboard.
-          </p>
-          <div className="hero-actions">
+        <div className="shell hero-grid">
+          <div className="hero-copy">
+            <span className="eyebrow">Chrome extension + Pages + Workers + Supabase</span>
+            <h1 className="hero-title">A SaaS operating layer for serious TPT sellers.</h1>
+            <p>
+              Knowlense helps sellers analyze listings inside TPT, capture keyword signals from real search pages, and
+              move opportunities into a cleaner account-based workflow.
+            </p>
+            <div className="hero-actions">
+              <Link className="primary-button" href="/auth">
+                Create account
+              </Link>
+              <Link className="secondary-button" href="/dashboard">
+                View app shell
+              </Link>
+            </div>
+            <div className="hero-proof">
+              <div className="proof-item">
+                <span className="proof-value">1</span>
+                <span className="proof-label">Unified login across site and extension</span>
+              </div>
+              <div className="proof-item">
+                <span className="proof-value">3</span>
+                <span className="proof-label">Core modules in the MVP direction</span>
+              </div>
+              <div className="proof-item">
+                <span className="proof-value">API</span>
+                <span className="proof-label">Session validation through Workers</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="card hero-panel">
+            <div className="panel-header">
+              <div>
+                <div className="panel-title">Seller command center</div>
+                <div className="panel-subtitle">What the first real SaaS surface should feel like</div>
+              </div>
+              <span className="status-chip">Live MVP foundation</span>
+            </div>
+
+            <div className="preview-window">
+              <div className="preview-topbar">
+                <span className="preview-dot" />
+                <span className="preview-dot" />
+                <span className="preview-dot" />
+              </div>
+              <div className="preview-body">
+                <div className="preview-line" />
+                <div className="preview-line-short" />
+                <div className="preview-block" />
+              </div>
+            </div>
+
+            <div className="signal-list">
+              <div className="signal-item">
+                <span className="signal-label">Session model</span>
+                <span className="signal-value">Supabase + `/v1/me`</span>
+              </div>
+              <div className="signal-item">
+                <span className="signal-label">Frontend</span>
+                <span className="signal-value">Next.js on Pages</span>
+              </div>
+              <div className="signal-item">
+                <span className="signal-label">Extension role</span>
+                <span className="signal-value">In-context TPT analysis</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="page-section" id="product">
+        <div className="shell">
+          <div className="section-header">
+            <div>
+              <h2 className="section-title">Built around a credible SaaS workflow</h2>
+              <p className="section-copy">
+                The product direction is not “AI writes some copy.” It is an operating system for recovering revenue,
+                finding adjacent niches, and turning live TPT research into structured action.
+              </p>
+            </div>
+          </div>
+
+          <div className="feature-grid">
+            {features.map((feature) => (
+              <article className="feature-card" key={feature.title}>
+                <div className="feature-icon">{feature.icon}</div>
+                <h3>{feature.title}</h3>
+                <p className="muted">{feature.copy}</p>
+                <ul className="feature-list">
+                  {feature.bullets.map((bullet) => (
+                    <li key={bullet}>{bullet}</li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="page-section">
+        <div className="shell split-band">
+          <div className="card band-card">
+            <span className="eyebrow">Architecture</span>
+            <h2 className="section-title" style={{ fontSize: "clamp(2rem, 4vw, 3.1rem)", marginTop: 18 }}>
+              Split correctly for Cloudflare from day one.
+            </h2>
+            <p className="section-copy" style={{ marginTop: 14 }}>
+              `knowlense-web` handles the product surface and account experience. `knowlense-api` owns auth validation,
+              business logic, and billing rails. The extension becomes the seller-side entry point.
+            </p>
+          </div>
+          <div className="card band-card">
+            <span className="eyebrow">Why it matters</span>
+            <ul className="clean-list">
+              <li>Website and extension use the same identity model.</li>
+              <li>Workers can become the source of truth for billing and feature access.</li>
+              <li>The UI is ready to grow into a real product instead of a temporary landing page.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section className="page-section" id="pricing">
+        <div className="shell">
+          <div className="section-header">
+            <div>
+              <h2 className="section-title">Pricing that maps cleanly to Paddle</h2>
+              <p className="section-copy">
+                The visual structure is ready for checkout wiring later. For now it frames the SaaS correctly and avoids
+                the look of a placeholder startup page.
+              </p>
+            </div>
+          </div>
+
+          <div className="pricing-grid">
+            {plans.map((plan) => (
+              <article className={`pricing-card${plan.featured ? " featured" : ""}`} key={plan.title}>
+                {plan.featured ? <div className="plan-tag">Recommended launch plan</div> : null}
+                <h3>{plan.title}</h3>
+                <div className="price">
+                  <strong>{plan.price}</strong>
+                  <span>{plan.suffix}</span>
+                </div>
+                <p className="muted">{plan.copy}</p>
+                <ul className="pricing-list">
+                  {plan.bullets.map((bullet) => (
+                    <li key={bullet}>{bullet}</li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+
+          <div className="section-actions" style={{ marginTop: 24 }}>
             <Link className="primary-button" href="/auth">
               Start with your account
             </Link>
-            <a className="secondary-button" href="#features">
-              Explore the MVP
-            </a>
-          </div>
-        </div>
-
-        <div className="panel hero-metrics">
-          <div className="metric-card">
-            <div className="metric-label">Primary outcome</div>
-            <div className="metric-value">Recover underperforming listings</div>
-          </div>
-          <div className="metric-card">
-            <div className="metric-label">Chrome extension focus</div>
-            <div className="metric-value">Popup, auth, and seller-side analysis</div>
-          </div>
-          <div className="metric-card">
-            <div className="metric-label">Cloudflare split</div>
-            <div className="metric-value">Pages for UI, Workers for logic</div>
+            <Link className="ghost-button" href="/dashboard">
+              Inspect the app shell
+            </Link>
           </div>
         </div>
       </section>
 
-      <section className="section" id="features">
-        <div className="section-header">
-          <div>
-            <div className="section-title">Built for the first usable release</div>
-            <p className="section-copy">
-              The initial stack is optimized for quick deployment: static frontend, Worker API, Supabase auth, Paddle
-              billing, and a popup-first extension experience.
-            </p>
-          </div>
-        </div>
-        <div className="feature-grid">
-          {features.map((feature) => (
-            <article className="feature-card" key={feature.title}>
-              <h3>{feature.title}</h3>
-              <p className="muted">{feature.copy}</p>
-              <ul className="feature-list">
-                {feature.bullets.map((bullet) => (
-                  <li key={bullet}>{bullet}</li>
-                ))}
-              </ul>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="section" id="pricing">
-        <div className="section-header">
-          <div>
-            <div className="section-title">Pricing rails are wired for Paddle</div>
-            <p className="section-copy">
-              The page is ready for your Paddle checkout integration on the Worker side. Right now it communicates the
-              tier structure clearly while the subscription APIs are still thin.
-            </p>
-          </div>
-        </div>
-        <div className="pricing-grid">
-          {plans.map((plan) => (
-            <article className={`pricing-card${plan.featured ? " featured" : ""}`} key={plan.title}>
-              <h3>{plan.title}</h3>
-              <p className="metric-value">{plan.price}</p>
-              <p className="muted">{plan.copy}</p>
-              <ul className="pricing-list">
-                {plan.bullets.map((bullet) => (
-                  <li key={bullet}>{bullet}</li>
-                ))}
-              </ul>
-            </article>
-          ))}
-        </div>
-        <div className="section-actions">
-          <Link className="primary-button" href="/auth">
-            Create your Knowlense account
-          </Link>
-          <Link className="secondary-button" href="/dashboard">
-            Preview the app shell
-          </Link>
-        </div>
-      </section>
-
-      <footer className="footer">
-        Knowlense is structured for `knowlense-web` on Cloudflare Pages and `knowlense-api` on Cloudflare Workers.
-      </footer>
+      <footer className="shell footer">Knowlense is now structured like a SaaS product, not a placeholder site.</footer>
     </main>
   );
 }

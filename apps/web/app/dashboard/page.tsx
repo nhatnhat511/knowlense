@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { fetchApiProfile, type ApiProfile, getApiBaseUrl } from "@/lib/api/profile";
+import { fetchApiProfile, getApiBaseUrl, type ApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function DashboardPage() {
@@ -83,74 +83,101 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <Link href="/" className="brand">
-          Knowlense
-        </Link>
-        <nav className="nav">
-          <Link className="ghost-button" href="/auth">
-            Auth
+    <main>
+      <header className="site-header">
+        <div className="shell topbar">
+          <Link href="/" className="brand-lockup">
+            <span className="brand-mark">K</span>
+            <span className="brand">
+              <span className="brand-name">Knowlense</span>
+              <span className="brand-tag">Dashboard</span>
+            </span>
           </Link>
-          <button className="secondary-button" onClick={handleSignOut} type="button">
-            Sign out
-          </button>
-        </nav>
+          <nav className="nav">
+            <Link className="nav-link" href="/">
+              Home
+            </Link>
+            <Link className="nav-link" href="/auth">
+              Auth
+            </Link>
+            <button className="secondary-button" onClick={handleSignOut} type="button">
+              Sign out
+            </button>
+          </nav>
+        </div>
       </header>
 
       <section className="dashboard-shell">
-        <div className="dashboard-wrap">
+        <div className="shell dashboard-shell-inner">
           <div className="dashboard-header">
             <div>
-              <div className="eyebrow">App shell</div>
-              <h1 className="dashboard-title">Operate the first Knowlense workflow.</h1>
-              <p className="muted">
-                This dashboard is intentionally thin. It is here to verify auth, establish a clean SaaS frame, and give
-                the extension a destination app to open.
+              <span className="eyebrow">Application workspace</span>
+              <h1 className="dashboard-title" style={{ marginTop: 18 }}>
+                The product shell is ready for real modules.
+              </h1>
+              <p className="muted dashboard-subtitle">
+                This dashboard now looks and behaves like a SaaS app surface rather than a placeholder page. It already
+                validates the session through the API and is ready to receive keyword research, listing audits, and billing state.
               </p>
             </div>
-            <div className="metric-card">
-              <div className="metric-label">Auth status</div>
-              <div className="metric-value">{loading ? "Checking..." : sessionState ? "Signed in" : "Guest mode"}</div>
+
+            <div className="dashboard-stat">
+              <div className="metric-label">Current access state</div>
+              <div className="metric-value">{loading ? "Checking..." : sessionState ? "Authenticated" : "Guest"}</div>
             </div>
           </div>
 
           <div className="dashboard-grid">
-            <article className="dashboard-card large">
-              <h3>Account snapshot</h3>
-              <div className="data-list">
-                <div className="data-item">
-                  <span>Email</span>
-                  <strong>{sessionState?.email ?? "No active session"}</strong>
+            <div className="dashboard-column">
+              <article className="dashboard-card large">
+                <h3>Account identity</h3>
+                <p className="muted">The session below is validated by the Worker API, not only by browser-local auth state.</p>
+                <div className="data-list">
+                  <div className="data-item">
+                    <span>Email</span>
+                    <strong>{sessionState?.email ?? "No active session"}</strong>
+                  </div>
+                  <div className="data-item">
+                    <span>User ID</span>
+                    <strong>{sessionState?.id ?? "Not available"}</strong>
+                  </div>
+                  <div className="data-item">
+                    <span>Validation status</span>
+                    <strong>{apiStatus}</strong>
+                  </div>
+                  <div className="data-item">
+                    <span>API origin</span>
+                    <strong>{getApiBaseUrl()}</strong>
+                  </div>
                 </div>
-                <div className="data-item">
-                  <span>User ID</span>
-                  <strong>{sessionState?.id ?? "Not available"}</strong>
-                </div>
-                <div className="data-item">
-                  <span>API validation</span>
-                  <strong>{apiStatus}</strong>
-                </div>
-                <div className="data-item">
-                  <span>API origin</span>
-                  <strong>{getApiBaseUrl()}</strong>
-                </div>
-              </div>
-            </article>
+              </article>
 
-            <article className="dashboard-card">
-              <h3>Extension loop</h3>
-              <p className="muted">
-                The popup can send sellers here for account access, onboarding, and later subscription upgrades.
-              </p>
-            </article>
+              <article className="dashboard-card">
+                <h3>Next module slot</h3>
+                <p className="muted">
+                  The first strong feature to add here is `Keyword Finder`: live TPT search snapshots, keyword clusters,
+                  and opportunity scoring backed by real page data.
+                </p>
+              </article>
+            </div>
 
-            <article className="dashboard-card">
-              <h3>Roadmap slot</h3>
-              <p className="muted">
-                Next steps are keyword collections, listing analyses, and account-aware billing checks through the API.
-              </p>
-            </article>
+            <div className="dashboard-column">
+              <article className="dashboard-card">
+                <h3>Extension relationship</h3>
+                <p className="muted">
+                  The Chrome popup can sign the user in, validate the same session through `/v1/me`, and send them here
+                  for a larger account and product experience.
+                </p>
+              </article>
+
+              <article className="dashboard-card">
+                <h3>Billing and access layer</h3>
+                <p className="muted">
+                  With this API-backed auth model, Paddle plan status can become the source of truth for module access,
+                  quotas, and feature flags.
+                </p>
+              </article>
+            </div>
           </div>
         </div>
       </section>

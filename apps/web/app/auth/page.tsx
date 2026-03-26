@@ -25,9 +25,9 @@ export default function AuthPage() {
     setStatusKind("idle");
 
     if (!supabase) {
-      setLoading(false);
       setStatus("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.");
       setStatusKind("error");
+      setLoading(false);
       return;
     }
 
@@ -72,56 +72,68 @@ export default function AuthPage() {
   }
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <Link href="/" className="brand">
-          Knowlense
-        </Link>
-        <nav className="nav">
-          <Link className="ghost-button" href="/">
-            Back home
+    <main>
+      <header className="site-header">
+        <div className="shell topbar">
+          <Link href="/" className="brand-lockup">
+            <span className="brand-mark">K</span>
+            <span className="brand">
+              <span className="brand-name">Knowlense</span>
+              <span className="brand-tag">Account access</span>
+            </span>
           </Link>
-          <Link className="primary-button" href="/dashboard">
-            Dashboard
-          </Link>
-        </nav>
+          <nav className="nav">
+            <Link className="nav-link" href="/">
+              Home
+            </Link>
+            <Link className="primary-button" href="/dashboard">
+              Dashboard
+            </Link>
+          </nav>
+        </div>
       </header>
 
       <section className="auth-shell">
-        <div className="auth-layout">
-          <aside className="panel auth-panel">
-            <div className="eyebrow">Account foundation</div>
-            <h2 className="section-title">One login for the site and the extension.</h2>
-            <p className="muted">
-              This first pass uses Supabase email/password auth so both the web app and Chrome extension can share the
-              same account model without extra OAuth complexity.
-            </p>
-            <div className="metric-card">
-              <div className="metric-label">Current implementation</div>
-              <div className="metric-value">Email + password auth</div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-label">Next natural step</div>
-              <div className="metric-value">Protected dashboard and billing state</div>
-            </div>
-          </aside>
+        <div className="shell auth-layout">
+          <div className="auth-stack">
+            <article className="auth-sidebar-card">
+              <span className="eyebrow">Unified session model</span>
+              <h1 className="auth-title" style={{ marginTop: 18 }}>
+                One account across the website, extension, and API.
+              </h1>
+              <p className="muted" style={{ marginTop: 16 }}>
+                Sign-in happens through Supabase. Session trust happens through the Worker API. That gives you a cleaner
+                foundation for billing, usage limits, and feature gating later.
+              </p>
+            </article>
 
-          <section className="auth-card">
-            <h1>Access Knowlense</h1>
-            <p className="muted">Use the same credentials here and inside the extension popup.</p>
+            <article className="auth-sidebar-card">
+              <h3>Current auth stack</h3>
+              <ul className="clean-list">
+                <li>Email and password with Supabase</li>
+                <li>Session validation via `GET /v1/me`</li>
+                <li>Ready for billing-aware account states next</li>
+              </ul>
+            </article>
+          </div>
+
+          <section className="auth-panel">
+            <span className="eyebrow">Secure access</span>
+            <h2 style={{ margin: "18px 0 10px", fontSize: "2rem", letterSpacing: "-0.04em" }}>Access your workspace</h2>
+            <p className="muted">Use the same credentials here and in the Chrome extension popup.</p>
 
             <div className="auth-toggle">
-              <button className={mode === "signin" ? "active" : ""} onClick={() => setMode("signin")} type="button">
+              <button className={`tab-button${mode === "signin" ? " active" : ""}`} onClick={() => setMode("signin")} type="button">
                 Sign in
               </button>
-              <button className={mode === "signup" ? "active" : ""} onClick={() => setMode("signup")} type="button">
+              <button className={`tab-button${mode === "signup" ? " active" : ""}`} onClick={() => setMode("signup")} type="button">
                 Create account
               </button>
             </div>
 
             <form onSubmit={handleSubmit}>
               <div className="field">
-                <label htmlFor="email">Email</label>
+                <label htmlFor="email">Work email</label>
                 <input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
               </div>
               <div className="field">
@@ -136,9 +148,14 @@ export default function AuthPage() {
                 />
               </div>
               <div className={`status ${statusKind !== "idle" ? statusKind : ""}`}>{status}</div>
-              <button className="primary-button" disabled={loading} type="submit">
-                {loading ? "Working..." : mode === "signin" ? "Sign in" : "Create account"}
-              </button>
+              <div className="stack-row">
+                <button className="primary-button" disabled={loading} type="submit">
+                  {loading ? "Working..." : mode === "signin" ? "Sign in" : "Create account"}
+                </button>
+                <Link className="ghost-button" href="/">
+                  Back to homepage
+                </Link>
+              </div>
             </form>
           </section>
         </div>
