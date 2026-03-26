@@ -39,10 +39,7 @@ export default function DashboardPage() {
       }
 
       try {
-        const [profile, keywordData] = await Promise.all([
-          fetchApiProfile(session.access_token),
-          fetchKeywordRuns(session.access_token)
-        ]);
+        const [profile, keywordData] = await Promise.all([fetchApiProfile(session.access_token), fetchKeywordRuns(session.access_token)]);
 
         if (!active) {
           return;
@@ -58,7 +55,7 @@ export default function DashboardPage() {
 
         setSessionState(null);
         setKeywordRuns([]);
-        setKeywordWarning(error instanceof Error ? error.message : "Unable to validate the current session");
+        setKeywordWarning(error instanceof Error ? error.message : "Unable to validate the current session.");
       } finally {
         if (active) {
           setLoading(false);
@@ -95,19 +92,20 @@ export default function DashboardPage() {
       <SiteHeader
         tag="Dashboard"
         navItems={[
-          { href: "/", label: "Home" },
-          { href: "/account", label: "Account" },
           { href: "/pricing", label: "Pricing" },
-          { href: "/connect", label: "Connect extension" }
+          { href: "/account", label: "Account" },
+          { href: "/contact", label: "Support" }
         ]}
+        primaryCta={{ href: "/connect", label: "Connect extension" }}
       />
 
       <section className="shell dashboard-surface">
         <div className="section-heading">
-          <h1 className="page-title">A dashboard that matches the actual product flow.</h1>
+          <span className="section-label">Dashboard</span>
+          <h1 className="page-title">Your web app is the control center for the extension workflow.</h1>
           <p className="page-copy">
-            The website owns authentication and account state. The extension connects afterward and runs research tasks
-            against the Worker API with its own session.
+            Sign in on the website, connect the extension through the secure bridge, and review recent Keyword Finder
+            activity here.
           </p>
         </div>
 
@@ -115,20 +113,29 @@ export default function DashboardPage() {
           <article className="stat-chip-card">
             <span className="stat-label">Website auth</span>
             <strong>{loading ? "Checking..." : sessionState ? "Ready" : "Signed out"}</strong>
+            <span className="stat-help">The website is the primary authentication surface.</span>
           </article>
           <article className="stat-chip-card">
             <span className="stat-label">Keyword runs</span>
             <strong>{keywordRuns.length}</strong>
+            <span className="stat-help">Recent analyses captured from TPT search results appear here.</span>
           </article>
           <article className="stat-chip-card">
-            <span className="stat-label">Best next step</span>
+            <span className="stat-label">Recommended next step</span>
             <strong>{sessionState ? "Connect extension" : "Sign in"}</strong>
+            <span className="stat-help">The product becomes useful after the website and extension are linked.</span>
           </article>
         </div>
 
         <div className="dashboard-layout">
           <article className="dashboard-panel">
-            <h2>Workspace overview</h2>
+            <div className="panel-header">
+              <div>
+                <h2>Workspace overview</h2>
+                <p className="panel-copy">A concise read on account readiness and product activity.</p>
+              </div>
+              <span className="panel-badge">Overview</span>
+            </div>
             <div className="data-list">
               <div className="data-item">
                 <span>Status</span>
@@ -150,39 +157,74 @@ export default function DashboardPage() {
           </article>
 
           <article className="dashboard-panel">
-            <h2>Extension connection</h2>
-            <p className="panel-copy">
-              Open the extension popup and use <strong>Connect via website</strong>. It will open the website flow and
-              come back with a Worker-issued extension session.
-            </p>
+            <div className="panel-header">
+              <div>
+                <h2>Quick actions</h2>
+                <p className="panel-copy">The shortest path from a new session to a useful result.</p>
+              </div>
+              <span className="panel-badge">Actions</span>
+            </div>
             <div className="stack-row">
               <Link className="primary-button" href="/connect">
-                Open connect page
+                Connect extension
               </Link>
-              <Link className="secondary-button" href="/account">Manage account</Link>
-              <button className="secondary-button" onClick={handleSignOut} type="button">Sign out</button>
+              <Link className="secondary-button" href="/pricing">
+                Review plans
+              </Link>
+              <button className="secondary-button" onClick={handleSignOut} type="button">
+                Sign out
+              </button>
+            </div>
+            <div className="panel-list">
+              <div className="panel-list-item">
+                <strong>Step 1</strong>
+                <p>Keep your website session active so the connect flow can approve the extension request.</p>
+              </div>
+              <div className="panel-list-item">
+                <strong>Step 2</strong>
+                <p>Open a TPT search page and run Keyword Finder from the popup after the extension is connected.</p>
+              </div>
             </div>
           </article>
         </div>
 
         <div className="dashboard-layout">
           <article className="dashboard-panel">
-            <h2>Suggested next steps</h2>
+            <div className="panel-header">
+              <div>
+                <h2>How the product is meant to be used</h2>
+                <p className="panel-copy">A clear sequence keeps the experience understandable for new users.</p>
+              </div>
+              <span className="panel-badge">Workflow</span>
+            </div>
             <ul className="clean-list">
-              <li>Sign in on the website if there is no active session.</li>
-              <li>Connect the extension from the popup or account page.</li>
-              <li>Open a TPT search results page and run Keyword Finder.</li>
+              <li>Sign in and manage account state on the website.</li>
+              <li>Approve the extension request from the connect page.</li>
+              <li>Use the extension on live TPT search pages and review saved runs here.</li>
             </ul>
           </article>
 
           <article className="dashboard-panel">
-            <h2>Subscription path</h2>
-            <p className="panel-copy">
-              Paid usage starts from the pricing page. Paddle checkout is generated on the Worker and returned to the website.
-            </p>
+            <div className="panel-header">
+              <div>
+                <h2>Subscription path</h2>
+                <p className="panel-copy">Billing should feel like a continuation of the app, not a detached external step.</p>
+              </div>
+              <span className="panel-badge">Billing</span>
+            </div>
+            <div className="panel-list">
+              <div className="panel-list-item">
+                <strong>Free first</strong>
+                <p>Users can validate the workflow before committing to a paid plan.</p>
+              </div>
+              <div className="panel-list-item">
+                <strong>Worker-generated checkout</strong>
+                <p>Paddle checkout links are created on the Worker based on the selected plan.</p>
+              </div>
+            </div>
             <div className="stack-row">
               <Link className="primary-button" href="/pricing">
-                Review pricing
+                Open pricing
               </Link>
             </div>
           </article>
@@ -190,8 +232,9 @@ export default function DashboardPage() {
 
         <section className="history-section">
           <div className="section-heading compact">
+            <span className="section-label">Recent Activity</span>
             <h2 className="section-title">Keyword Finder history</h2>
-            <p className="section-copy">Recent analyses captured from the Chrome extension while browsing TPT.</p>
+            <p className="section-copy">Recent analyses captured from the Chrome extension while browsing Teachers Pay Teachers.</p>
           </div>
 
           {keywordWarning ? <p className="status error">{keywordWarning}</p> : null}

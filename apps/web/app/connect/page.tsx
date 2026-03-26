@@ -103,6 +103,16 @@ function ConnectPageContent() {
               Open dashboard
             </Link>
           </div>
+          <div className="panel-list">
+            <div className="panel-list-item">
+              <strong>Why this page exists</strong>
+              <p>The extension does not ask for your website credentials directly. Approval happens here after sign-in.</p>
+            </div>
+            <div className="panel-list-item">
+              <strong>What happens next</strong>
+              <p>Once approved, the popup receives a separate Worker-managed session and can use product features safely.</p>
+            </div>
+          </div>
         </div>
       </section>
       <SiteFooter />

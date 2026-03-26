@@ -62,7 +62,7 @@ function VerifyEmailContent() {
       <section className="shell auth-surface single-card">
         <section className="auth-card">
           <span className="eyebrow">Email confirmation</span>
-          <h1 className="page-title" style={{ fontSize: "2.4rem" }}>Verify your email address</h1>
+          <h1 className="page-title auth-title">Verify your email address</h1>
           <p className="page-copy">
             {email ? `We sent a confirmation email to ${email}.` : "Enter the email address you used so we can resend confirmation."}
           </p>
@@ -79,6 +79,10 @@ function VerifyEmailContent() {
               Back to sign in
             </Link>
           </div>
+          <p className="auth-support-note">
+            If you already clicked the confirmation link, return to sign in. If the email expired, request a fresh one
+            from this page.
+          </p>
         </section>
       </section>
       <SiteFooter />

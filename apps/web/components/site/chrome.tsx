@@ -46,16 +46,27 @@ export function SiteFooter() {
         <div>
           <div className="footer-title">Knowlense</div>
           <p className="footer-copy">
-            Website-first authentication, Worker-owned logic, and extension workflows built for TPT sellers.
+            Knowlense helps Teachers Pay Teachers sellers move from scattered research to a structured workflow across the
+            website and Chrome extension.
           </p>
         </div>
-        <div className="footer-links">
-          <Link href="/pricing">Pricing</Link>
-          <Link href="/about">About</Link>
-          <Link href="/contact">Contact</Link>
-          <Link href="/privacy">Privacy</Link>
-          <Link href="/terms">Terms</Link>
-          <Link href="/refund-policy">Refund policy</Link>
+        <div>
+          <div className="footer-list-title">Product</div>
+          <div className="footer-links">
+            <Link href="/pricing">Pricing</Link>
+            <Link href="/about">About</Link>
+            <Link href="/dashboard">Dashboard</Link>
+            <Link href="/account">Account</Link>
+          </div>
+        </div>
+        <div>
+          <div className="footer-list-title">Company</div>
+          <div className="footer-links">
+            <Link href="/contact">Contact</Link>
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/terms">Terms</Link>
+            <Link href="/refund-policy">Refund policy</Link>
+          </div>
         </div>
       </div>
     </footer>

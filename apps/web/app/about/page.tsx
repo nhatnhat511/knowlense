@@ -1,22 +1,63 @@
-import Link from "next/link";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 
 export default function AboutPage() {
   return (
     <main className="app-shell">
-      <SiteHeader tag="About" navItems={[{ href: "/pricing", label: "Pricing" }, { href: "/contact", label: "Contact" }, { href: "/auth/sign-in", label: "Sign in" }]} />
-      <section className="shell legal-surface">
-        <h1 className="page-title">About Knowlense</h1>
-        <p className="page-copy">
-          Knowlense is a SaaS workflow for sellers on Teachers Pay Teachers. It focuses on keyword research, listing analysis,
-          and structured opportunity tracking built on a website, Worker APIs, and a Chrome extension.
-        </p>
-        <div className="legal-card">
-          <h2>What the product is solving</h2>
+      <SiteHeader
+        tag="About"
+        navItems={[
+          { href: "/pricing", label: "Pricing" },
+          { href: "/contact", label: "Contact" },
+          { href: "/auth/sign-in", label: "Sign in" }
+        ]}
+        primaryCta={{ href: "/auth/sign-up", label: "Start free" }}
+      />
+
+      <section className="shell marketing-surface">
+        <div className="section-heading">
+          <span className="section-label">About Knowlense</span>
+          <h1 className="page-title">Knowlense is built to make TPT seller research feel more deliberate.</h1>
           <p className="page-copy">
-            Sellers often switch between marketplace tabs, spreadsheets, manual notes, and disconnected tools. Knowlense is
-            designed to keep research, account access, and extension actions inside one system.
+            The product is being shaped around one clear goal: give sellers a cleaner path from market observation to useful
+            action without making the extension, the account system, and the web app feel disconnected.
           </p>
+        </div>
+
+        <div className="comparison-grid">
+          <article className="comparison-card">
+            <h2>What Knowlense is trying to replace</h2>
+            <ul className="clean-list">
+              <li>Jumping between marketplace tabs, notes, and spreadsheets.</li>
+              <li>Weak handoff between account state and extension usage.</li>
+              <li>Research flows that feel improvised instead of productized.</li>
+            </ul>
+          </article>
+          <article className="comparison-card">
+            <h2>What Knowlense is trying to provide</h2>
+            <ul className="clean-list">
+              <li>A stable website account layer.</li>
+              <li>A secure extension connection flow.</li>
+              <li>A dashboard that keeps recent research visible and usable.</li>
+            </ul>
+          </article>
+        </div>
+
+        <div className="process-grid">
+          <article className="process-card">
+            <span className="process-step">01</span>
+            <h3>Website-first account management</h3>
+            <p>Authentication, password recovery, and account updates stay in the web app where users expect them.</p>
+          </article>
+          <article className="process-card">
+            <span className="process-step">02</span>
+            <h3>Worker-owned product logic</h3>
+            <p>Business logic and API behavior live in Cloudflare Workers instead of being split across multiple surfaces.</p>
+          </article>
+          <article className="process-card">
+            <span className="process-step">03</span>
+            <h3>Extension as a task surface</h3>
+            <p>The extension should help sellers do work inside TPT, not become the place where everything else is managed.</p>
+          </article>
         </div>
       </section>
       <SiteFooter />

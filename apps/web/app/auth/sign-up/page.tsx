@@ -86,8 +86,11 @@ export default function SignUpPage() {
       <section className="shell auth-surface single-card">
         <section className="auth-card">
           <span className="eyebrow">Website sign up</span>
-          <h1 className="page-title" style={{ fontSize: "2.6rem" }}>Create your account</h1>
-          <p className="page-copy">A confirmation email will be sent according to your Supabase auth settings.</p>
+          <h1 className="page-title auth-title">Create your account</h1>
+          <p className="page-copy">
+            Set up your website account first. Email verification, password recovery, and extension access are managed
+            from the web app.
+          </p>
           <form onSubmit={handleSubmit}>
             <div className="field">
               <label htmlFor="email">Email</label>
@@ -96,6 +99,7 @@ export default function SignUpPage() {
             <div className="field">
               <label htmlFor="password">Password</label>
               <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+              <span className="field-hint">Use at least 8 characters.</span>
             </div>
             <div className="field">
               <label htmlFor="confirm-password">Confirm password</label>
@@ -120,6 +124,10 @@ export default function SignUpPage() {
               Forgot password
             </Link>
           </div>
+          <p className="auth-support-note">
+            If the account already exists, Knowlense follows the authentication behavior configured in Supabase rather than
+            exposing unnecessary account-enumeration details.
+          </p>
         </section>
       </section>
       <SiteFooter />

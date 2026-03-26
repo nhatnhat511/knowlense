@@ -13,16 +13,29 @@ const routes = [
 export default function AuthIndexPage() {
   return (
     <main className="app-shell">
-      <SiteHeader tag="Authentication" navItems={[{ href: "/pricing", label: "Pricing" }, { href: "/contact", label: "Contact" }]} />
+      <SiteHeader
+        tag="Authentication"
+        navItems={[
+          { href: "/pricing", label: "Pricing" },
+          { href: "/contact", label: "Contact" },
+          { href: "/auth/sign-in", label: "Sign in" }
+        ]}
+        primaryCta={{ href: "/auth/sign-up", label: "Create account" }}
+      />
 
       <section className="shell auth-index-surface">
         <div className="section-heading">
-          <h1 className="page-title">Account flows</h1>
-          <p className="page-copy">Each authentication situation now has its own dedicated route and logic on the website.</p>
+          <span className="section-label">Account Flows</span>
+          <h1 className="page-title">Every account state has a dedicated website flow.</h1>
+          <p className="page-copy">
+            Sign up, sign in, verify email, recover access, and update credentials through purpose-built routes instead of
+            one overloaded form.
+          </p>
         </div>
         <div className="module-grid auth-route-grid">
           {routes.map((route) => (
             <Link className="module-card" href={route.href} key={route.href}>
+              <span className="module-meta">Auth route</span>
               <h3>{route.title}</h3>
               <p>{route.copy}</p>
             </Link>

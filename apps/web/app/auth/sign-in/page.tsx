@@ -96,8 +96,8 @@ function SignInContent() {
       <section className="shell auth-surface single-card">
         <section className="auth-card">
           <span className="eyebrow">Website sign in</span>
-          <h1 className="page-title" style={{ fontSize: "2.6rem" }}>Access your account</h1>
-          <p className="page-copy">Sign in here first. The extension can be connected afterward through the website.</p>
+          <h1 className="page-title auth-title">Access your account</h1>
+          <p className="page-copy">Sign in on the website first, then connect the extension from a separate approval flow.</p>
           <form onSubmit={handleSubmit}>
             <div className="field">
               <label htmlFor="email">Email</label>
@@ -123,6 +123,10 @@ function SignInContent() {
               Forgot password
             </Link>
           </div>
+          <p className="auth-support-note">
+            If your email has not been confirmed yet, use the verification flow first. Password recovery and account
+            updates are handled on dedicated website routes.
+          </p>
         </section>
       </section>
       <SiteFooter />

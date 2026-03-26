@@ -54,7 +54,11 @@ export default function ForgotPasswordPage() {
       <section className="shell auth-surface single-card">
         <section className="auth-card">
           <span className="eyebrow">Password recovery</span>
-          <h1 className="page-title" style={{ fontSize: "2.4rem" }}>Request a reset email</h1>
+          <h1 className="page-title auth-title">Request a reset email</h1>
+          <p className="page-copy">
+            Enter the email tied to your Knowlense account. If it exists, Supabase will send a recovery link to the
+            configured reset route.
+          </p>
           <form onSubmit={handleSubmit}>
             <div className="field">
               <label htmlFor="email">Email</label>
@@ -70,6 +74,10 @@ export default function ForgotPasswordPage() {
               Back to sign in
             </Link>
           </div>
+          <p className="auth-support-note">
+            If you do not receive the email, confirm that you used the correct address and check any spam or promotions
+            folders before trying again.
+          </p>
         </section>
       </section>
       <SiteFooter />
