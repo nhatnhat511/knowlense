@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Knowlense",
+  "description": "Popup-first MVP for TPT sellers with account access and local settings.",
+  "version": "0.1.0",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://*.supabase.co/*",
+    "https://*.workers.dev/*",
+    "https://api.knowlense.com/*"
+  ],
+  "action": {
+    "default_title": "Knowlense",
+    "default_popup": "popup.html"
+  }
+}

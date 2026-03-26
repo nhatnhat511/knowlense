@@ -2,15 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "knowlense-api",
   "main": "src/index.ts",
-  "compatibility_date": "2026-03-25",
-  "compatibility_flags": [
-    "nodejs_compat"
-  ],
+  "compatibility_date": "2026-03-26",
   "observability": {
     "enabled": true
-  },
-  "vars": {
-    "CORS_ORIGIN": "*",
-    "PADDLE_ENVIRONMENT": "sandbox"
   }
 }

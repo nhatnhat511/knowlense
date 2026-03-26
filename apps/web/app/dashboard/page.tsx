@@ -1,326 +1,159 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@/components/providers/auth-provider";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { fetchApiProfile, type ApiProfile, getApiBaseUrl } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-const API_BASE_URL = "https://api.knowlense.com";
-
-type DashboardState = {
-  email: string;
-  plan: string;
-  expiresAt: string | null;
-};
-
-type UserSettingsState = {
-  blacklist: string[];
-  whitelist: string[];
-  preferredLanguage: string;
-};
-
 export default function DashboardPage() {
-  const { user, session, loading, configured } = useAuth();
-  const [dashboardState, setDashboardState] = useState<DashboardState>({
-    email: "",
-    plan: "free",
-    expiresAt: null
-  });
-  const [settings, setSettings] = useState<UserSettingsState>({
-    blacklist: [],
-    whitelist: [],
-    preferredLanguage: "en-US"
-  });
-  const [blacklistInput, setBlacklistInput] = useState("");
-  const [statusMessage, setStatusMessage] = useState("");
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [startingCheckout, setStartingCheckout] = useState(false);
-
-  const formattedExpiry = useMemo(() => {
-    if (!dashboardState.expiresAt) {
-      return "No renewal date available";
-    }
-
-    return new Date(dashboardState.expiresAt).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric"
-    });
-  }, [dashboardState.expiresAt]);
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+  const [sessionState, setSessionState] = useState<ApiProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [apiStatus, setApiStatus] = useState("Checking /v1/me");
 
   useEffect(() => {
-    if (!session?.access_token || !user) {
+    if (!supabase) {
+      setApiStatus("Missing Supabase configuration");
+      setLoading(false);
       return;
     }
 
-    let cancelled = false;
+    const client = supabase;
+    let active = true;
 
-    async function loadDashboard() {
+    async function loadSession() {
+      setApiStatus("Checking /v1/me");
+
+      const {
+        data: { session }
+      } = await client.auth.getSession();
+
+      if (!active) {
+        return;
+      }
+
+      if (!session?.access_token) {
+        setSessionState(null);
+        setApiStatus("No active access token");
+        setLoading(false);
+        return;
+      }
+
       try {
-        const supabase = getSupabaseBrowserClient();
-
-        const [profileResult, settingsResult, subscriptionResponse] = await Promise.all([
-          supabase
-            ?.from("profiles")
-            .select("email, subscription_plan")
-            .eq("id", user.id)
-            .maybeSingle(),
-          supabase
-            ?.from("user_settings")
-            .select("blacklist, whitelist, preferred_language")
-            .eq("user_id", user.id)
-            .maybeSingle(),
-          fetch(`${API_BASE_URL}/api/subscription/status`, {
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-              Accept: "application/json"
-            }
-          })
-        ]);
-
-        const subscriptionPayload = await subscriptionResponse.json().catch(() => ({}));
-
-        if (cancelled) {
+        const profile = await fetchApiProfile(session.access_token);
+        if (!active) {
           return;
         }
 
-        setDashboardState({
-          email: profileResult?.data?.email || user.email || "",
-          plan: profileResult?.data?.subscription_plan || "free",
-          expiresAt: subscriptionPayload?.subscription?.currentPeriodEnd || subscriptionPayload?.subscription?.trialEndsAt || null
-        });
-
-        setSettings({
-          blacklist: Array.isArray(settingsResult?.data?.blacklist) ? settingsResult.data.blacklist : [],
-          whitelist: Array.isArray(settingsResult?.data?.whitelist) ? settingsResult.data.whitelist : [],
-          preferredLanguage: settingsResult?.data?.preferred_language || "en-US"
-        });
+        setSessionState(profile);
+        setApiStatus("Session validated via API");
       } catch (error) {
-        if (!cancelled) {
-          setStatusMessage("Unable to load your dashboard data right now.");
+        if (!active) {
+          return;
         }
+
+        setSessionState(null);
+        setApiStatus(error instanceof Error ? error.message : "Unable to validate session");
       }
+
+      setLoading(false);
     }
 
-    void loadDashboard();
+    void loadSession();
+
+    const {
+      data: { subscription }
+    } = client.auth.onAuthStateChange(() => {
+      void loadSession();
+    });
 
     return () => {
-      cancelled = true;
+      active = false;
+      subscription.unsubscribe();
     };
-  }, [session, user]);
+  }, [supabase]);
 
-  function addBlacklistDomain() {
-    const normalized = blacklistInput.trim().toLowerCase();
-
-    if (!normalized) {
+  async function handleSignOut() {
+    if (!supabase) {
       return;
     }
 
-    setSettings((current) => {
-      if (current.blacklist.includes(normalized)) {
-        return current;
-      }
-
-      return {
-        ...current,
-        blacklist: [...current.blacklist, normalized]
-      };
-    });
-    setBlacklistInput("");
-  }
-
-  function removeBlacklistDomain(domain: string) {
-    setSettings((current) => ({
-      ...current,
-      blacklist: current.blacklist.filter((item) => item !== domain)
-    }));
-  }
-
-  async function handleSaveSettings() {
-    if (!session?.access_token) {
-      setStatusMessage("Please sign in again to update your settings.");
-      return;
-    }
-
-    setSavingSettings(true);
-    setStatusMessage("");
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/user/settings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({
-          whitelist: settings.whitelist,
-          blacklist: settings.blacklist,
-          preferredLanguage: settings.preferredLanguage
-        })
-      });
-
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(payload?.error || "Failed to save settings.");
-      }
-
-      setStatusMessage("Settings saved.");
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Failed to save settings.");
-    } finally {
-      setSavingSettings(false);
-    }
-  }
-
-  async function handleManageSubscription() {
-    if (!session?.access_token) {
-      setStatusMessage("Please sign in again to manage your subscription.");
-      return;
-    }
-
-    setStartingCheckout(true);
-    setStatusMessage("");
-
-    try {
-      const preferredPlan = dashboardState.plan === "yearly" ? "yearly" : "monthly";
-      const response = await fetch(`${API_BASE_URL}/api/subscription/checkout`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({
-          plan: preferredPlan
-        })
-      });
-
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok || !payload?.url) {
-        throw new Error(payload?.error || "Unable to open Paddle checkout.");
-      }
-
-      window.location.href = payload.url;
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Unable to open Paddle checkout.");
-    } finally {
-      setStartingCheckout(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <main className="container py-16">
-        <p className="text-sm text-muted-foreground">Loading dashboard...</p>
-      </main>
-    );
-  }
-
-  if (!configured || !user || !session) {
-    return (
-      <main className="container py-16">
-        <Card className="max-w-3xl">
-          <CardHeader>
-            <CardTitle>Dashboard unavailable</CardTitle>
-            <CardDescription>Sign in with Knowlense to manage your plan and extension settings.</CardDescription>
-          </CardHeader>
-        </Card>
-      </main>
-    );
+    await supabase.auth.signOut();
+    setSessionState(null);
   }
 
   return (
-    <main className="container py-16">
-      <div className="mb-8 space-y-3">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">Dashboard</p>
-        <h1 className="text-4xl font-semibold tracking-tight">Manage your Knowlense workspace.</h1>
-        <p className="max-w-3xl text-muted-foreground">
-          Review your subscription, launch Paddle checkout, and control which domains should stay out of automatic highlighting.
-        </p>
-      </div>
+    <main className="shell">
+      <header className="topbar">
+        <Link href="/" className="brand">
+          Knowlense
+        </Link>
+        <nav className="nav">
+          <Link className="ghost-button" href="/auth">
+            Auth
+          </Link>
+          <button className="secondary-button" onClick={handleSignOut} type="button">
+            Sign out
+          </button>
+        </nav>
+      </header>
 
-      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Account</CardTitle>
-            <CardDescription>Current SaaS account status pulled from Supabase and the API.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-3xl border border-border/70 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Email</p>
-                <p className="mt-2 text-sm font-medium text-slate-900">{dashboardState.email || user.email}</p>
-              </div>
-              <div className="rounded-3xl border border-border/70 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Current plan</p>
-                <div className="mt-2">
-                  <Badge>{dashboardState.plan}</Badge>
+      <section className="dashboard-shell">
+        <div className="dashboard-wrap">
+          <div className="dashboard-header">
+            <div>
+              <div className="eyebrow">App shell</div>
+              <h1 className="dashboard-title">Operate the first Knowlense workflow.</h1>
+              <p className="muted">
+                This dashboard is intentionally thin. It is here to verify auth, establish a clean SaaS frame, and give
+                the extension a destination app to open.
+              </p>
+            </div>
+            <div className="metric-card">
+              <div className="metric-label">Auth status</div>
+              <div className="metric-value">{loading ? "Checking..." : sessionState ? "Signed in" : "Guest mode"}</div>
+            </div>
+          </div>
+
+          <div className="dashboard-grid">
+            <article className="dashboard-card large">
+              <h3>Account snapshot</h3>
+              <div className="data-list">
+                <div className="data-item">
+                  <span>Email</span>
+                  <strong>{sessionState?.email ?? "No active session"}</strong>
+                </div>
+                <div className="data-item">
+                  <span>User ID</span>
+                  <strong>{sessionState?.id ?? "Not available"}</strong>
+                </div>
+                <div className="data-item">
+                  <span>API validation</span>
+                  <strong>{apiStatus}</strong>
+                </div>
+                <div className="data-item">
+                  <span>API origin</span>
+                  <strong>{getApiBaseUrl()}</strong>
                 </div>
               </div>
-              <div className="rounded-3xl border border-border/70 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Renewal date</p>
-                <p className="mt-2 text-sm font-medium text-slate-900">{formattedExpiry}</p>
-              </div>
-            </div>
+            </article>
 
-            <Button onClick={handleManageSubscription} disabled={startingCheckout}>
-              {startingCheckout ? "Opening checkout..." : "Manage Subscription"}
-            </Button>
-          </CardContent>
-        </Card>
+            <article className="dashboard-card">
+              <h3>Extension loop</h3>
+              <p className="muted">
+                The popup can send sellers here for account access, onboarding, and later subscription upgrades.
+              </p>
+            </article>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Settings</CardTitle>
-            <CardDescription>Blacklist domains where automatic highlighting should stay disabled.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-3">
-              <Input
-                value={blacklistInput}
-                onChange={(event) => setBlacklistInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    addBlacklistDomain();
-                  }
-                }}
-                placeholder="example.com"
-              />
-              <Button type="button" variant="outline" onClick={addBlacklistDomain}>
-                Add
-              </Button>
-            </div>
-
-            <div className="flex min-h-24 flex-wrap gap-2 rounded-3xl border border-dashed border-border/80 bg-slate-50 p-4">
-              {settings.blacklist.length ? (
-                settings.blacklist.map((domain) => (
-                  <button
-                    key={domain}
-                    type="button"
-                    onClick={() => removeBlacklistDomain(domain)}
-                    className="rounded-full border border-border bg-white px-3 py-1 text-sm text-slate-700 transition hover:bg-slate-100"
-                  >
-                    {domain} ×
-                  </button>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No domains blocked yet.</p>
-              )}
-            </div>
-
-            <Button onClick={handleSaveSettings} disabled={savingSettings}>
-              {savingSettings ? "Saving..." : "Save Settings"}
-            </Button>
-
-            {statusMessage ? <p className="text-sm text-muted-foreground">{statusMessage}</p> : null}
-          </CardContent>
-        </Card>
-      </div>
+            <article className="dashboard-card">
+              <h3>Roadmap slot</h3>
+              <p className="muted">
+                Next steps are keyword collections, listing analyses, and account-aware billing checks through the API.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }

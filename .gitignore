@@ -13,6 +13,8 @@ pnpm-debug.log*
 .env
 .env.local
 .env.*.local
+apps/api/.dev.vars
+extension/config.local.js
 
 # OS / Editor
 .DS_Store
