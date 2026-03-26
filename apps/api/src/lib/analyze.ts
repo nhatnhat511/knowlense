@@ -1,7 +1,7 @@
 import { COMMON_WORDS } from "./commonWords";
 
 const ANALYZE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const ANALYZE_CACHE_VERSION = "v12";
+const ANALYZE_CACHE_VERSION = "v13";
 const OPEN_SEARCH_TIMEOUT_MS = 2500;
 const SUMMARY_TIMEOUT_MS = 3000;
 const MAX_CANDIDATES = 3;
@@ -1237,10 +1237,12 @@ function shouldRejectAsCommonWord(inputText: string, context: string, candidate:
     normalizedInput === normalizedSimplifiedTitle ||
     normalizedInput === normalizedSimplifiedCandidateTitle;
   const abstractOrDictionaryLike =
-    /concept in|virtue|ethics|philosophy|moral|religion|quality|opposite of evil/i.test(candidate.description) ||
+    /concept in (ethics|philosophy|logic|epistemology)|virtue|ethics|philosophy|moral|quality|opposite of evil/i.test(
+      candidate.description
+    ) ||
     /\bin most contexts\b|\bdenotes\b|\bthe concept of\b|\bopposite of evil\b|\bright and wrong\b/i.test(candidate.extract);
   const clearlyTypedEntity =
-    /technology company|company|corporation|business|country|city|capital|programming language|software|framework|library|scientist|physicist|mathematician|actor|writer|device|operating system|browser|application|protocol|algorithm|service model|chatbot|ai assistant|virtual assistant|large language model|language model|multimodal model/i.test(
+    /technology company|company|corporation|business|country|city|capital|programming language|software|framework|library|scientist|physicist|mathematician|actor|writer|device|operating system|browser|application|protocol|algorithm|service model|chatbot|ai assistant|virtual assistant|large language model|language model|multimodal model|archbishop|bishop|priest|cleric|rabbi|imam|religious leader|theologian|theological concept|religious concept|doctrine|ritual/i.test(
       candidate.description
     );
 
@@ -1295,7 +1297,7 @@ function classifyCandidateType(title: string, description: string, extract: stri
     },
     {
       type: "generic_concept",
-      regex: /concept in|virtue|ethics|philosophy|moral|religion|quality|opposite of evil|right and wrong|abstract idea/i,
+      regex: /concept in (ethics|philosophy|logic|epistemology)|virtue|ethics|philosophy|moral|quality|opposite of evil|right and wrong|abstract idea/i,
       score: 0.05
     },
     {
@@ -1337,7 +1339,11 @@ function classifyCandidateType(title: string, description: string, extract: stri
   }
 
   const allowPatterns: Array<{ type: string; regex: RegExp; score: number }> = [
-    { type: "person", regex: /scientist|physicist|mathematician|artist|actor|writer|philosopher|politician|person/i, score: 0.95 },
+    {
+      type: "person",
+      regex: /scientist|physicist|mathematician|artist|actor|writer|philosopher|politician|person|archbishop|bishop|priest|cleric|rabbi|imam|monk|nun|religious leader|theologian/i,
+      score: 0.95
+    },
     { type: "company", regex: /technology company|multinational technology company|company|corporation|organization|business/i, score: 0.95 },
     { type: "place", regex: /country|city|capital|municipality|state|province|region|place/i, score: 0.92 },
     {
@@ -1346,7 +1352,11 @@ function classifyCandidateType(title: string, description: string, extract: stri
       score: 0.92
     },
     { type: "product", regex: /device|smartphone|computer|product|operating system|browser|application|protocol/i, score: 0.9 },
-    { type: "technical_term", regex: /cloud computing|algorithm|service model|technical term|engineering|scientific term|scientific concept|artificial intelligence|machine learning/i, score: 0.88 }
+    {
+      type: "technical_term",
+      regex: /cloud computing|algorithm|service model|technical term|engineering|scientific term|scientific concept|artificial intelligence|machine learning|religious concept|theological concept|concept in religion|doctrine|ritual|rite|liturgy/i,
+      score: 0.88
+    }
   ];
 
   for (const pattern of allowPatterns) {
