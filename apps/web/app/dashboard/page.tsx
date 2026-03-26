@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fetchKeywordRuns, type KeywordRun } from "@/lib/api/keyword-finder";
 import { fetchApiProfile, getApiBaseUrl, type ApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -10,6 +11,8 @@ export default function DashboardPage() {
   const [sessionState, setSessionState] = useState<ApiProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [apiStatus, setApiStatus] = useState("Checking /v1/me");
+  const [keywordRuns, setKeywordRuns] = useState<KeywordRun[]>([]);
+  const [keywordWarning, setKeywordWarning] = useState("");
 
   useEffect(() => {
     if (!supabase) {
@@ -41,11 +44,14 @@ export default function DashboardPage() {
 
       try {
         const profile = await fetchApiProfile(session.access_token);
+        const keywordData = await fetchKeywordRuns(session.access_token);
         if (!active) {
           return;
         }
 
         setSessionState(profile);
+        setKeywordRuns(keywordData.runs);
+        setKeywordWarning(keywordData.warning ?? "");
         setApiStatus("Session validated via API");
       } catch (error) {
         if (!active) {
@@ -53,6 +59,7 @@ export default function DashboardPage() {
         }
 
         setSessionState(null);
+        setKeywordRuns([]);
         setApiStatus(error instanceof Error ? error.message : "Unable to validate session");
       }
 
@@ -163,19 +170,54 @@ export default function DashboardPage() {
 
             <div className="dashboard-column">
               <article className="dashboard-card">
-                <h3>Extension relationship</h3>
+                <h3>Keyword Finder history</h3>
                 <p className="muted">
-                  The Chrome popup can sign the user in, validate the same session through `/v1/me`, and send them here
-                  for a larger account and product experience.
+                  Run analysis from the extension while viewing a TPT search results page. The latest runs will appear
+                  here after the Worker stores them.
                 </p>
+                {keywordWarning ? <p className="status error">{keywordWarning}</p> : null}
+                {keywordRuns.length === 0 ? (
+                  <div className="empty-state">
+                    No Keyword Finder runs yet. Open a TPT search page in Chrome and use the Knowlense popup.
+                  </div>
+                ) : (
+                  <div className="run-list">
+                    {keywordRuns.slice(0, 3).map((run) => (
+                      <article className="run-item" key={run.id}>
+                        <div className="run-topline">
+                          <strong>{run.summary.query}</strong>
+                          <span>{new Date(run.created_at).toLocaleDateString()}</span>
+                        </div>
+                        <p className="muted">
+                          {run.summary.totalResults} observed results, dominant terms: {run.summary.dominantTerms.slice(0, 3).join(", ")}
+                        </p>
+                        <div className="keyword-pill-grid">
+                          {run.opportunities.slice(0, 3).map((opportunity) => (
+                            <span className="keyword-pill" key={`${run.id}-${opportunity.phrase}`}>
+                              {opportunity.phrase}
+                            </span>
+                          ))}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
               </article>
 
               <article className="dashboard-card">
-                <h3>Billing and access layer</h3>
+                <h3>Latest opportunity frame</h3>
                 <p className="muted">
-                  With this API-backed auth model, Paddle plan status can become the source of truth for module access,
-                  quotas, and feature flags.
+                  {keywordRuns[0]
+                    ? `Top run "${keywordRuns[0].summary.query}" surfaced ${keywordRuns[0].opportunities.length} opportunity candidates.`
+                    : "After the first analysis, this panel can summarize the strongest adjacent keywords and saturation warnings."}
                 </p>
+                {keywordRuns[0] ? (
+                  <ul className="clean-list">
+                    {keywordRuns[0].opportunities.slice(0, 3).map((opportunity) => (
+                      <li key={opportunity.phrase}>{`${opportunity.phrase}: ${opportunity.reason}`}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </article>
             </div>
           </div>

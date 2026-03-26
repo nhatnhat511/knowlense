@@ -62,6 +62,34 @@
           </div>
         </form>
       </section>
+
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>Keyword Finder</h2>
+          <span class="badge">MVP</span>
+        </div>
+        <p class="subtle">Open a TPT search results page, then analyze the current page to extract live keyword signals.</p>
+        <div class="settings-actions">
+          <button id="analyze-page" class="primary-button" type="button">Analyze current page</button>
+          <button id="refresh-analysis" class="ghost-button" type="button">Refresh summary</button>
+        </div>
+        <div id="analysis-empty" class="analysis-empty">No Keyword Finder run yet.</div>
+        <div id="analysis-card" class="analysis-card hidden">
+          <div class="analysis-row">
+            <span>Query</span>
+            <strong id="analysis-query"></strong>
+          </div>
+          <div class="analysis-row">
+            <span>Observed results</span>
+            <strong id="analysis-count"></strong>
+          </div>
+          <div class="analysis-row">
+            <span>Top opportunity</span>
+            <strong id="analysis-top-opportunity"></strong>
+          </div>
+          <div id="analysis-keywords" class="analysis-tags"></div>
+        </div>
+      </section>
     </main>
 
     <script type="module" src="popup.js"></script>

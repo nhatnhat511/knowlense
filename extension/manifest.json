@@ -3,11 +3,18 @@
   "name": "Knowlense",
   "description": "Popup-first MVP for TPT sellers with account access and local settings.",
   "version": "0.1.0",
-  "permissions": ["storage"],
+  "permissions": ["storage", "tabs"],
   "host_permissions": [
     "https://*.supabase.co/*",
     "https://*.workers.dev/*",
-    "https://api.knowlense.com/*"
+    "https://api.knowlense.com/*",
+    "https://www.teacherspayteachers.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.teacherspayteachers.com/*"],
+      "js": ["content.js"]
+    }
   ],
   "action": {
     "default_title": "Knowlense",

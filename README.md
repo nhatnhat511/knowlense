@@ -29,6 +29,10 @@ Set these variables in Workers:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
+Apply the Keyword Finder schema in Supabase before using persistence:
+
+- `apps/api/supabase/001_keyword_finder.sql`
+
 ### Extension
 
 Copy `extension/config.example.js` to `extension/config.js` and fill:
@@ -44,3 +48,4 @@ Copy `extension/config.example.js` to `extension/config.js` and fill:
 - The frontend is static-export friendly for Cloudflare Pages.
 - The API currently includes health, public config, auth check, and billing/webhook placeholders.
 - The extension currently stores session data in `chrome.storage.local` for the first MVP loop.
+- Keyword Finder works without AI: it extracts a live TPT search page, sends the snapshot to the Worker, scores keyword opportunities with rule-based logic, and stores the run in Supabase when the schema exists.
