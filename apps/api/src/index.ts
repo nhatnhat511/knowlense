@@ -478,16 +478,77 @@ app.get("/v1/keyword-finder/runs", async (c) => {
 });
 
 app.post("/v1/billing/checkout", async (c) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
   const body = await c.req.json().catch(() => null);
+  const interval = body?.interval as "monthly" | "yearly" | undefined;
+  const user = c.get("user");
+
+  if (!interval || !["monthly", "yearly"].includes(interval)) {
+    return c.json({ error: "Invalid billing interval." }, 400);
+  }
+
+  const priceId = interval === "monthly" ? c.env.PADDLE_PRICE_ID_MONTHLY : c.env.PADDLE_PRICE_ID_YEARLY;
+  const apiKey = c.env.PADDLE_API_KEY;
+
+  if (!priceId || !apiKey) {
+    return c.json({ error: "Paddle checkout is not configured." }, 500);
+  }
+
+  const paddleBaseUrl = c.env.PADDLE_ENVIRONMENT === "production" ? "https://api.paddle.com" : "https://sandbox-api.paddle.com";
+
+  const response = await fetch(`${paddleBaseUrl}/transactions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      ...jsonHeaders()
+    },
+    body: JSON.stringify({
+      items: [{ price_id: priceId, quantity: 1 }],
+      collection_mode: "automatic",
+      custom_data: {
+        app: "Knowlense",
+        plan: interval,
+        user_id: user.id,
+        user_email: user.email
+      }
+    })
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        data?: {
+          checkout?: {
+            url?: string;
+          };
+        };
+        error?: {
+          detail?: string;
+          message?: string;
+        };
+      }
+    | null;
+  const checkoutUrl = payload?.data?.checkout?.url;
+
+  if (!response.ok || !checkoutUrl) {
+    return c.json(
+      {
+        error: payload?.error?.detail ?? payload?.error?.message ?? "Unable to create Paddle checkout."
+      },
+      502
+    );
+  }
 
   return c.json(
     {
-      message: "Checkout endpoint scaffolded. Wire this to Paddle transaction creation next.",
-      received: body ?? {},
-      environment: c.env.PADDLE_ENVIRONMENT ?? "sandbox",
-      pricesConfigured: Boolean(c.env.PADDLE_PRICE_ID_MONTHLY && c.env.PADDLE_PRICE_ID_YEARLY)
+      checkoutUrl,
+      interval,
+      environment: c.env.PADDLE_ENVIRONMENT ?? "sandbox"
     },
-    501
+    200
   );
 });
 

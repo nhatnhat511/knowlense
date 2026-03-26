@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { validatePassword } from "@/lib/auth/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function UpdatePasswordPage() {
@@ -70,9 +71,10 @@ export default function UpdatePasswordPage() {
       return;
     }
 
-    if (password !== confirmPassword) {
-      setStatus("Password confirmation does not match.");
-      setStatusKind("error");
+    const passwordValidation = validatePassword(password, confirmPassword);
+    if (passwordValidation) {
+      setStatus(passwordValidation.message);
+      setStatusKind(passwordValidation.kind === "error" ? "error" : "idle");
       return;
     }
 

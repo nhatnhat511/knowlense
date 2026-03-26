@@ -5,6 +5,7 @@ const routes = [
   { href: "/auth/sign-up", title: "Create account", copy: "Register a new Knowlense account." },
   { href: "/auth/verify-email", title: "Verify email", copy: "Check status or resend the confirmation email." },
   { href: "/auth/forgot-password", title: "Forgot password", copy: "Request a reset email from Supabase." },
+  { href: "/auth/change-password", title: "Change password", copy: "Update the password while signed in." },
   { href: "/auth/update-password", title: "Update password", copy: "Set a new password after recovery." }
 ];
 

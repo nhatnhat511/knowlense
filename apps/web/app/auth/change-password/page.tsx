@@ -1,68 +1,88 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { mapSignupResult, validatePassword } from "@/lib/auth/errors";
-import { getSignupRedirectUrl } from "@/lib/auth/redirects";
+import { validatePassword } from "@/lib/auth/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-export default function SignUpPage() {
+export default function ChangePasswordPage() {
   const router = useRouter();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState("Checking website session...");
   const [statusKind, setStatusKind] = useState<"idle" | "error" | "success">("idle");
+  const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!supabase) {
+      setStatus("Missing Supabase configuration.");
+      setStatusKind("error");
+      return;
+    }
+
+    const client = supabase;
+    let active = true;
+
+    async function hydrate() {
+      const {
+        data: { session }
+      } = await client.auth.getSession();
+
+      if (!active) {
+        return;
+      }
+
+      if (!session?.access_token) {
+        router.replace("/auth/sign-in?next=/auth/change-password");
+        return;
+      }
+
+      setReady(true);
+      setStatus("Set a new password for your account.");
+      setStatusKind("success");
+    }
+
+    void hydrate();
+
+    return () => {
+      active = false;
+    };
+  }, [router, supabase]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
-    setStatus("");
-    setStatusKind("idle");
 
     const passwordValidation = validatePassword(password, confirmPassword);
     if (passwordValidation) {
       setStatus(passwordValidation.message);
       setStatusKind(passwordValidation.kind === "error" ? "error" : "idle");
-      setLoading(false);
       return;
     }
 
-    if (!supabase) {
-      setStatus("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+    if (!ready || !supabase) {
+      setStatus("A valid session was not found.");
       setStatusKind("error");
-      setLoading(false);
       return;
     }
+
+    setLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: getSignupRedirectUrl()
-        }
-      });
+      const { error } = await supabase.auth.updateUser({ password });
 
-      const signupMessage = mapSignupResult({
-        email,
-        errorMessage: error?.message,
-        identitiesLength: data.user?.identities?.length
-      });
-
-      setStatus(signupMessage.message);
-      setStatusKind(signupMessage.kind === "error" ? "error" : signupMessage.kind === "success" ? "success" : "idle");
-
-      if (signupMessage.kind === "error") {
+      if (error) {
+        setStatus(error.message);
+        setStatusKind("error");
         return;
       }
 
-      router.push(`/auth/verify-email?email=${encodeURIComponent(email)}`);
+      setStatus("Password updated successfully.");
+      setStatusKind("success");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to create the account.");
+      setStatus(error instanceof Error ? error.message : "Unable to update password.");
       setStatusKind("error");
     } finally {
       setLoading(false);
@@ -77,7 +97,7 @@ export default function SignUpPage() {
             <span className="brand-mark">K</span>
             <span className="brand">
               <span className="brand-name">Knowlense</span>
-              <span className="brand-tag">Create account</span>
+              <span className="brand-tag">Change password</span>
             </span>
           </Link>
         </div>
@@ -85,20 +105,15 @@ export default function SignUpPage() {
 
       <section className="shell auth-surface single-card">
         <section className="auth-card">
-          <span className="eyebrow">Website sign up</span>
-          <h1 className="page-title" style={{ fontSize: "2.6rem" }}>Create your account</h1>
-          <p className="page-copy">A confirmation email will be sent according to your Supabase auth settings.</p>
+          <span className="eyebrow">Account security</span>
+          <h1 className="page-title" style={{ fontSize: "2.4rem" }}>Change your password</h1>
           <form onSubmit={handleSubmit}>
             <div className="field">
-              <label htmlFor="email">Email</label>
-              <input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
-            </div>
-            <div className="field">
-              <label htmlFor="password">Password</label>
+              <label htmlFor="password">New password</label>
               <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
             </div>
             <div className="field">
-              <label htmlFor="confirm-password">Confirm password</label>
+              <label htmlFor="confirm-password">Confirm new password</label>
               <input
                 id="confirm-password"
                 type="password"
@@ -109,17 +124,9 @@ export default function SignUpPage() {
             </div>
             <div className={`status ${statusKind !== "idle" ? statusKind : ""}`}>{status}</div>
             <button className="primary-button wide-button" disabled={loading} type="submit">
-              {loading ? "Creating account..." : "Create account"}
+              {loading ? "Updating..." : "Change password"}
             </button>
           </form>
-          <div className="stack-row">
-            <Link className="nav-link" href="/auth/sign-in">
-              Already have an account
-            </Link>
-            <Link className="nav-link" href="/auth/forgot-password">
-              Forgot password
-            </Link>
-          </div>
         </section>
       </section>
     </main>

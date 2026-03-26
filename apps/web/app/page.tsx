@@ -37,6 +37,12 @@ export default function HomePage() {
             <a className="nav-link" href="#modules">
               Modules
             </a>
+            <Link className="nav-link" href="/pricing">
+              Pricing
+            </Link>
+            <Link className="nav-link" href="/about">
+              About
+            </Link>
             <Link className="nav-link" href="/auth/sign-in">
               Sign in
             </Link>
@@ -90,6 +96,16 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      <footer className="shell site-footer">
+        <div className="stack-row footer-links">
+          <Link href="/pricing">Pricing</Link>
+          <Link href="/contact">Contact</Link>
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/terms">Terms</Link>
+          <Link href="/refund-policy">Refund policy</Link>
+        </div>
+      </footer>
     </main>
   );
 }

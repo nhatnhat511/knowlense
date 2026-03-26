@@ -149,7 +149,9 @@ input {
 .connect-surface,
 .dashboard-surface,
 .modules-section,
-.auth-index-surface {
+.auth-index-surface,
+.marketing-surface,
+.legal-surface {
   padding: 48px 0 72px;
 }
 
@@ -307,6 +309,42 @@ input {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.marketing-surface,
+.legal-surface {
+  display: grid;
+  gap: 24px;
+}
+
+.pricing-grid-clean {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.pricing-card-clean {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  box-shadow: var(--shadow);
+}
+
+.pricing-card-clean h2 {
+  margin: 0 0 14px;
+}
+
+.pricing-card-clean p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.pricing-amount {
+  font-family: var(--font-display), sans-serif;
+  font-size: 3rem;
+  letter-spacing: -0.05em;
+  margin-bottom: 10px;
+}
+
 .auth-intro {
   display: grid;
   gap: 18px;
@@ -429,6 +467,15 @@ input {
   line-height: 1.7;
 }
 
+.site-footer {
+  padding-bottom: 48px;
+}
+
+.footer-links {
+  gap: 18px;
+  color: var(--muted);
+}
+
 .run-topline {
   display: flex;
   justify-content: space-between;
@@ -464,7 +511,8 @@ input {
   .hero-simple,
   .auth-surface,
   .dashboard-layout,
-  .module-grid {
+  .module-grid,
+  .pricing-grid-clean {
     grid-template-columns: 1fr;
   }
 }

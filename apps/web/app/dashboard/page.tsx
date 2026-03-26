@@ -108,6 +108,9 @@ export default function DashboardPage() {
             <Link className="nav-link" href="/">
               Home
             </Link>
+            <Link className="nav-link" href="/account">
+              Account
+            </Link>
             <Link className="nav-link" href="/connect">
               Connect extension
             </Link>

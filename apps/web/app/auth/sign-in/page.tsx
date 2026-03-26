@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { mapSignInError } from "@/lib/auth/errors";
 import { fetchApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -61,7 +62,7 @@ function SignInContent() {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
-        setStatus(error.message);
+        setStatus(mapSignInError(error.message));
         setStatusKind("error");
         return;
       }
