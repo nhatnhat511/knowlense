@@ -13,6 +13,7 @@ function SignInContent() {
   const searchParams = useSearchParams();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const nextPath = searchParams.get("next") || "/dashboard";
+  const isAccountGate = nextPath === "/account";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
@@ -93,7 +94,34 @@ function SignInContent() {
     <main className="app-shell">
       <SiteHeader tag="Sign in" navItems={[{ href: "/pricing", label: "Pricing" }, { href: "/auth/sign-up", label: "Create account" }]} />
 
-      <section className="shell auth-surface single-card">
+      <section className="shell auth-surface">
+        <section className="auth-intro">
+          <div className="section-heading">
+            <span className="section-label">Website Access</span>
+            <h1 className="page-title auth-title">{isAccountGate ? "Sign in to access your account center." : "Sign in and continue on the website."}</h1>
+            <p className="page-copy">
+              {isAccountGate
+                ? "Your account center, billing entry points, and extension connection controls are available after website sign-in."
+                : "Knowlense uses the website as the primary account surface. The extension is connected later through a separate approval step."}
+            </p>
+          </div>
+
+          <div className="info-stack">
+            <article className="info-card">
+              <strong>Why sign-in happens here</strong>
+              <span>Authentication, password recovery, and email verification are handled on the web app instead of the extension popup.</span>
+            </article>
+            <article className="info-card">
+              <strong>What happens after sign-in</strong>
+              <span>From the dashboard or account page, you can approve a dedicated extension session through the connect flow.</span>
+            </article>
+            <article className="info-card">
+              <strong>If access is blocked</strong>
+              <span>Use the verify-email or forgot-password routes instead of retrying the same form repeatedly.</span>
+            </article>
+          </div>
+        </section>
+
         <section className="auth-card">
           <span className="eyebrow">Website sign in</span>
           <h1 className="page-title auth-title">Access your account</h1>
