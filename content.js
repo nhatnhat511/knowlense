@@ -141,70 +141,93 @@ function isWordCharacter(value) {
   return /[\p{L}\p{N}_'-]/u.test(value || "");
 }
 
-function getDeepestTextCharacter(node, direction) {
-  if (!node) {
-    return "";
+function getSelectionScopeNode(range) {
+  if (!range) {
+    return document.body;
   }
 
-  if (node.nodeType === Node.TEXT_NODE) {
-    const text = node.textContent || "";
-    return direction === "backward" ? text.slice(-1) : text.slice(0, 1);
-  }
+  const commonNode =
+    range.commonAncestorContainer instanceof Element
+      ? range.commonAncestorContainer
+      : range.commonAncestorContainer?.parentElement;
 
-  if (!(node instanceof Element || node instanceof DocumentFragment)) {
-    return "";
-  }
-
-  const children = Array.from(node.childNodes);
-  const orderedChildren = direction === "backward" ? children.reverse() : children;
-
-  for (const child of orderedChildren) {
-    const character = getDeepestTextCharacter(child, direction);
-    if (character) {
-      return character;
-    }
-  }
-
-  return "";
+  return getClosestBlockElement(commonNode) || commonNode || document.body;
 }
 
-function getAdjacentCharacter(node, offset, direction) {
-  if (!node) {
+function getTrailingWordFragment(text) {
+  if (!text) {
     return "";
   }
 
-  if (node.nodeType === Node.TEXT_NODE) {
-    const text = node.textContent || "";
-
-    if (direction === "backward" && offset > 0) {
-      return text[offset - 1] || "";
+  let fragment = "";
+  for (let index = text.length - 1; index >= 0; index -= 1) {
+    const character = text[index];
+    if (!isWordCharacter(character)) {
+      break;
     }
-
-    if (direction === "forward" && offset < text.length) {
-      return text[offset] || "";
-    }
-  } else if (node instanceof Element || node instanceof DocumentFragment) {
-    const childNodes = Array.from(node.childNodes);
-
-    if (direction === "backward" && offset > 0) {
-      return getDeepestTextCharacter(childNodes[offset - 1], "backward");
-    }
-
-    if (direction === "forward" && offset < childNodes.length) {
-      return getDeepestTextCharacter(childNodes[offset], "forward");
-    }
+    fragment = `${character}${fragment}`;
   }
 
-  let current = node;
-  while (current) {
-    const sibling = direction === "backward" ? current.previousSibling : current.nextSibling;
-    if (sibling) {
-      return getDeepestTextCharacter(sibling, direction);
-    }
-    current = current.parentNode;
+  return fragment;
+}
+
+function getLeadingWordFragment(text) {
+  if (!text) {
+    return "";
   }
 
-  return "";
+  let fragment = "";
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (!isWordCharacter(character)) {
+      break;
+    }
+    fragment += character;
+  }
+
+  return fragment;
+}
+
+function getRangeTextWithinScope(scopeNode, boundaryContainer, boundaryOffset, direction) {
+  if (!scopeNode || !boundaryContainer) {
+    return "";
+  }
+
+  try {
+    const helperRange = document.createRange();
+    helperRange.selectNodeContents(scopeNode);
+
+    if (direction === "backward") {
+      helperRange.setEnd(boundaryContainer, boundaryOffset);
+    } else {
+      helperRange.setStart(boundaryContainer, boundaryOffset);
+    }
+
+    return helperRange.toString();
+  } catch {
+    return "";
+  }
+}
+
+function getCompleteSelectionBoundaryTokens(selection) {
+  if (!selection || selection.rangeCount === 0) {
+    return { startToken: "", endToken: "" };
+  }
+
+  const range = selection.getRangeAt(0);
+  const scopeNode = getSelectionScopeNode(range);
+  const selectedText = selection.toString();
+  const prefixText = getRangeTextWithinScope(scopeNode, range.startContainer, range.startOffset, "backward");
+  const suffixText = getRangeTextWithinScope(scopeNode, range.endContainer, range.endOffset, "forward");
+  const startToken = `${getTrailingWordFragment(prefixText)}${selectedText.split(/\s+/)[0] || ""}`;
+  const selectedWords = selectedText.trim().split(/\s+/).filter(Boolean);
+  const lastSelectedWord = selectedWords[selectedWords.length - 1] || "";
+  const endToken = `${lastSelectedWord}${getLeadingWordFragment(suffixText)}`;
+
+  return {
+    startToken: formatSummary(startToken),
+    endToken: formatSummary(endToken)
+  };
 }
 
 function isPartialWordSelection(selection, selectedText) {
@@ -212,15 +235,26 @@ function isPartialWordSelection(selection, selectedText) {
     return false;
   }
 
-  const range = selection.getRangeAt(0);
-  const firstSelectedCharacter = selectedText[0] || "";
-  const lastSelectedCharacter = selectedText[selectedText.length - 1] || "";
-  const characterBefore = getAdjacentCharacter(range.startContainer, range.startOffset, "backward");
-  const characterAfter = getAdjacentCharacter(range.endContainer, range.endOffset, "forward");
-  const startsInsideWord = isWordCharacter(characterBefore) && isWordCharacter(firstSelectedCharacter);
-  const endsInsideWord = isWordCharacter(lastSelectedCharacter) && isWordCharacter(characterAfter);
+  const normalizedSelection = formatSummary(selectedText);
+  const selectionWords = normalizedSelection.split(/\s+/).filter(Boolean);
+  if (selectionWords.length === 0) {
+    return false;
+  }
 
-  return startsInsideWord || endsInsideWord;
+  const { startToken, endToken } = getCompleteSelectionBoundaryTokens(selection);
+  const firstSelectedWord = selectionWords[0] || "";
+  const lastSelectedWord = selectionWords[selectionWords.length - 1] || "";
+
+  const partialAtStart =
+    isWordCharacter(firstSelectedWord[0] || "") &&
+    Boolean(startToken) &&
+    startToken.toLowerCase() !== firstSelectedWord.toLowerCase();
+  const partialAtEnd =
+    isWordCharacter(lastSelectedWord[lastSelectedWord.length - 1] || "") &&
+    Boolean(endToken) &&
+    endToken.toLowerCase() !== lastSelectedWord.toLowerCase();
+
+  return partialAtStart || partialAtEnd;
 }
 
 function getSelectionContext() {
@@ -374,6 +408,15 @@ async function lookupSelectedTerm() {
   }
 
   const context = getSelectionContext();
+
+  if (context.partialWordSelection) {
+    createFloatingBox(latestPointer.x, latestPointer.y, {
+      state: "empty",
+      summary: "No information found for this term.",
+      source: ""
+    });
+    return;
+  }
 
   createFloatingBox(latestPointer.x, latestPointer.y, {
     state: "loading"
