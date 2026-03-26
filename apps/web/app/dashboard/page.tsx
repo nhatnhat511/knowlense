@@ -111,6 +111,21 @@ export default function DashboardPage() {
           </p>
         </div>
 
+        <div className="stats-strip">
+          <article className="stat-chip-card">
+            <span className="stat-label">Website auth</span>
+            <strong>{loading ? "Checking..." : sessionState ? "Ready" : "Signed out"}</strong>
+          </article>
+          <article className="stat-chip-card">
+            <span className="stat-label">Keyword runs</span>
+            <strong>{keywordRuns.length}</strong>
+          </article>
+          <article className="stat-chip-card">
+            <span className="stat-label">Best next step</span>
+            <strong>{sessionState ? "Connect extension" : "Sign in"}</strong>
+          </article>
+        </div>
+
         <div className="dashboard-layout">
           <article className="dashboard-panel">
             <h2>Workspace overview</h2>
@@ -146,6 +161,29 @@ export default function DashboardPage() {
               </Link>
               <Link className="secondary-button" href="/account">Manage account</Link>
               <button className="secondary-button" onClick={handleSignOut} type="button">Sign out</button>
+            </div>
+          </article>
+        </div>
+
+        <div className="dashboard-layout">
+          <article className="dashboard-panel">
+            <h2>Suggested next steps</h2>
+            <ul className="clean-list">
+              <li>Sign in on the website if there is no active session.</li>
+              <li>Connect the extension from the popup or account page.</li>
+              <li>Open a TPT search results page and run Keyword Finder.</li>
+            </ul>
+          </article>
+
+          <article className="dashboard-panel">
+            <h2>Subscription path</h2>
+            <p className="panel-copy">
+              Paid usage starts from the pricing page. Paddle checkout is generated on the Worker and returned to the website.
+            </p>
+            <div className="stack-row">
+              <Link className="primary-button" href="/pricing">
+                Review pricing
+              </Link>
             </div>
           </article>
         </div>

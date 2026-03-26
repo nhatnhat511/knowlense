@@ -114,7 +114,8 @@ export default function PricingPage() {
 
         <div className="pricing-grid-clean">
           {plans.map((plan) => (
-            <article className="pricing-card-clean" key={plan.title}>
+            <article className={`pricing-card-clean${plan.interval === "yearly" ? " highlighted-card" : ""}`} key={plan.title}>
+              {plan.interval === "yearly" ? <div className="plan-badge">Best value</div> : null}
               <h2>{plan.title}</h2>
               <div className="pricing-amount">{plan.price}</div>
               <p>{plan.subtitle}</p>
@@ -142,6 +143,25 @@ export default function PricingPage() {
             Monthly and yearly checkout are created on Cloudflare Workers and sent to Paddle. The yearly price reflects a
             30% savings relative to the monthly plan over twelve months.
           </p>
+        </div>
+
+        <div className="comparison-grid">
+          <article className="comparison-card">
+            <h2>Free is best when</h2>
+            <ul className="clean-list">
+              <li>You want to test sign-up, account access, and extension connection first.</li>
+              <li>You are validating the workflow before subscribing.</li>
+              <li>You need a low-friction place to start.</li>
+            </ul>
+          </article>
+          <article className="comparison-card">
+            <h2>Paid is best when</h2>
+            <ul className="clean-list">
+              <li>You expect repeated TPT research sessions.</li>
+              <li>You want a stable workflow between the website and extension.</li>
+              <li>You want yearly savings instead of monthly flexibility.</li>
+            </ul>
+          </article>
         </div>
       </section>
       <SiteFooter />

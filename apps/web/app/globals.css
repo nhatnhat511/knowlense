@@ -333,6 +333,23 @@ input {
   margin: 0 0 14px;
 }
 
+.highlighted-card {
+  border-color: #93c5fd;
+}
+
+.plan-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: var(--primary);
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
 .pricing-card-clean p {
   color: var(--muted);
   line-height: 1.7;
@@ -511,6 +528,48 @@ input {
   padding: 24px;
 }
 
+.comparison-grid,
+.stats-strip {
+  display: grid;
+  gap: 18px;
+}
+
+.comparison-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.comparison-card,
+.stat-chip-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.comparison-card {
+  padding: 24px;
+}
+
+.comparison-card h2 {
+  margin: 0 0 10px;
+}
+
+.stats-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 22px;
+}
+
+.stat-chip-card {
+  padding: 18px 20px;
+  display: grid;
+  gap: 6px;
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .legal-card h2,
 .faq-card h2 {
   margin: 0 0 12px;
@@ -552,7 +611,9 @@ input {
   .auth-surface,
   .dashboard-layout,
   .module-grid,
-  .pricing-grid-clean {
+  .pricing-grid-clean,
+  .comparison-grid,
+  .stats-strip {
     grid-template-columns: 1fr;
   }
 

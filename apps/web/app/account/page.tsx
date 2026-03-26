@@ -86,6 +86,21 @@ export default function AccountPage() {
           <p className="page-copy">{status}</p>
         </div>
 
+        <div className="stats-strip">
+          <article className="stat-chip-card">
+            <span className="stat-label">Website session</span>
+            <strong>{profile ? "Active" : "Inactive"}</strong>
+          </article>
+          <article className="stat-chip-card">
+            <span className="stat-label">Email verification</span>
+            <strong>{emailConfirmed === null ? "Checking..." : emailConfirmed ? "Verified" : "Pending"}</strong>
+          </article>
+          <article className="stat-chip-card">
+            <span className="stat-label">Next action</span>
+            <strong>Connect extension</strong>
+          </article>
+        </div>
+
         <div className="dashboard-layout">
           <article className="dashboard-panel">
             <h2>Profile</h2>
@@ -135,6 +150,9 @@ export default function AccountPage() {
               <Link className="primary-button" href="/pricing">
                 Manage plans
               </Link>
+              <Link className="secondary-button" href="/refund-policy">
+                Refund policy
+              </Link>
             </div>
           </article>
 
@@ -146,6 +164,9 @@ export default function AccountPage() {
             <div className="stack-row">
               <Link className="secondary-button" href="/contact">
                 Contact support
+              </Link>
+              <Link className="secondary-button" href="/privacy">
+                Privacy details
               </Link>
             </div>
           </article>
