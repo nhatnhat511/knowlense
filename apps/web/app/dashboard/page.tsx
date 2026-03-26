@@ -10,7 +10,7 @@ export default function DashboardPage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [sessionState, setSessionState] = useState<ApiProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [apiStatus, setApiStatus] = useState("Checking /v1/me");
+  const [apiStatus, setApiStatus] = useState("Checking website session");
   const [keywordRuns, setKeywordRuns] = useState<KeywordRun[]>([]);
   const [keywordWarning, setKeywordWarning] = useState("");
 
@@ -24,9 +24,7 @@ export default function DashboardPage() {
     const client = supabase;
     let active = true;
 
-    async function loadSession() {
-      setApiStatus("Checking /v1/me");
-
+    async function hydrate() {
       const {
         data: { session }
       } = await client.auth.getSession();
@@ -37,14 +35,17 @@ export default function DashboardPage() {
 
       if (!session?.access_token) {
         setSessionState(null);
-        setApiStatus("No active access token");
+        setApiStatus("No active website session");
         setLoading(false);
         return;
       }
 
       try {
-        const profile = await fetchApiProfile(session.access_token);
-        const keywordData = await fetchKeywordRuns(session.access_token);
+        const [profile, keywordData] = await Promise.all([
+          fetchApiProfile(session.access_token),
+          fetchKeywordRuns(session.access_token)
+        ]);
+
         if (!active) {
           return;
         }
@@ -52,7 +53,7 @@ export default function DashboardPage() {
         setSessionState(profile);
         setKeywordRuns(keywordData.runs);
         setKeywordWarning(keywordData.warning ?? "");
-        setApiStatus("Session validated via API");
+        setApiStatus("Session validated through the Worker");
       } catch (error) {
         if (!active) {
           return;
@@ -60,18 +61,20 @@ export default function DashboardPage() {
 
         setSessionState(null);
         setKeywordRuns([]);
-        setApiStatus(error instanceof Error ? error.message : "Unable to validate session");
+        setApiStatus(error instanceof Error ? error.message : "Unable to validate the current session");
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
-
-      setLoading(false);
     }
 
-    void loadSession();
+    void hydrate();
 
     const {
       data: { subscription }
     } = client.auth.onAuthStateChange(() => {
-      void loadSession();
+      void hydrate();
     });
 
     return () => {
@@ -87,10 +90,11 @@ export default function DashboardPage() {
 
     await supabase.auth.signOut();
     setSessionState(null);
+    setKeywordRuns([]);
   }
 
   return (
-    <main>
+    <main className="app-shell">
       <header className="site-header">
         <div className="shell topbar">
           <Link href="/" className="brand-lockup">
@@ -104,8 +108,8 @@ export default function DashboardPage() {
             <Link className="nav-link" href="/">
               Home
             </Link>
-            <Link className="nav-link" href="/auth">
-              Auth
+            <Link className="nav-link" href="/connect">
+              Connect extension
             </Link>
             <button className="secondary-button" onClick={handleSignOut} type="button">
               Sign out
@@ -114,114 +118,90 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <section className="dashboard-shell">
-        <div className="shell dashboard-shell-inner">
-          <div className="dashboard-header">
-            <div>
-              <span className="eyebrow">Application workspace</span>
-              <h1 className="dashboard-title" style={{ marginTop: 18 }}>
-                The product shell is ready for real modules.
-              </h1>
-              <p className="muted dashboard-subtitle">
-                This dashboard now looks and behaves like a SaaS app surface rather than a placeholder page. It already
-                validates the session through the API and is ready to receive keyword research, listing audits, and billing state.
-              </p>
-            </div>
-
-            <div className="dashboard-stat">
-              <div className="metric-label">Current access state</div>
-              <div className="metric-value">{loading ? "Checking..." : sessionState ? "Authenticated" : "Guest"}</div>
-            </div>
-          </div>
-
-          <div className="dashboard-grid">
-            <div className="dashboard-column">
-              <article className="dashboard-card large">
-                <h3>Account identity</h3>
-                <p className="muted">The session below is validated by the Worker API, not only by browser-local auth state.</p>
-                <div className="data-list">
-                  <div className="data-item">
-                    <span>Email</span>
-                    <strong>{sessionState?.email ?? "No active session"}</strong>
-                  </div>
-                  <div className="data-item">
-                    <span>User ID</span>
-                    <strong>{sessionState?.id ?? "Not available"}</strong>
-                  </div>
-                  <div className="data-item">
-                    <span>Validation status</span>
-                    <strong>{apiStatus}</strong>
-                  </div>
-                  <div className="data-item">
-                    <span>API origin</span>
-                    <strong>{getApiBaseUrl()}</strong>
-                  </div>
-                </div>
-              </article>
-
-              <article className="dashboard-card">
-                <h3>Next module slot</h3>
-                <p className="muted">
-                  The first strong feature to add here is `Keyword Finder`: live TPT search snapshots, keyword clusters,
-                  and opportunity scoring backed by real page data.
-                </p>
-              </article>
-            </div>
-
-            <div className="dashboard-column">
-              <article className="dashboard-card">
-                <h3>Keyword Finder history</h3>
-                <p className="muted">
-                  Run analysis from the extension while viewing a TPT search results page. The latest runs will appear
-                  here after the Worker stores them.
-                </p>
-                {keywordWarning ? <p className="status error">{keywordWarning}</p> : null}
-                {keywordRuns.length === 0 ? (
-                  <div className="empty-state">
-                    No Keyword Finder runs yet. Open a TPT search page in Chrome and use the Knowlense popup.
-                  </div>
-                ) : (
-                  <div className="run-list">
-                    {keywordRuns.slice(0, 3).map((run) => (
-                      <article className="run-item" key={run.id}>
-                        <div className="run-topline">
-                          <strong>{run.summary.query}</strong>
-                          <span>{new Date(run.created_at).toLocaleDateString()}</span>
-                        </div>
-                        <p className="muted">
-                          {run.summary.totalResults} observed results, dominant terms: {run.summary.dominantTerms.slice(0, 3).join(", ")}
-                        </p>
-                        <div className="keyword-pill-grid">
-                          {run.opportunities.slice(0, 3).map((opportunity) => (
-                            <span className="keyword-pill" key={`${run.id}-${opportunity.phrase}`}>
-                              {opportunity.phrase}
-                            </span>
-                          ))}
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </article>
-
-              <article className="dashboard-card">
-                <h3>Latest opportunity frame</h3>
-                <p className="muted">
-                  {keywordRuns[0]
-                    ? `Top run "${keywordRuns[0].summary.query}" surfaced ${keywordRuns[0].opportunities.length} opportunity candidates.`
-                    : "After the first analysis, this panel can summarize the strongest adjacent keywords and saturation warnings."}
-                </p>
-                {keywordRuns[0] ? (
-                  <ul className="clean-list">
-                    {keywordRuns[0].opportunities.slice(0, 3).map((opportunity) => (
-                      <li key={opportunity.phrase}>{`${opportunity.phrase}: ${opportunity.reason}`}</li>
-                    ))}
-                  </ul>
-                ) : null}
-              </article>
-            </div>
-          </div>
+      <section className="shell dashboard-surface">
+        <div className="section-heading">
+          <h1 className="page-title">A dashboard that matches the actual product flow.</h1>
+          <p className="page-copy">
+            The website owns authentication and account state. The extension connects afterward and runs research tasks
+            against the Worker API with its own session.
+          </p>
         </div>
+
+        <div className="dashboard-layout">
+          <article className="dashboard-panel">
+            <h2>Account</h2>
+            <div className="data-list">
+              <div className="data-item">
+                <span>Status</span>
+                <strong>{loading ? "Checking..." : sessionState ? "Signed in" : "Signed out"}</strong>
+              </div>
+              <div className="data-item">
+                <span>Email</span>
+                <strong>{sessionState?.email ?? "No active session"}</strong>
+              </div>
+              <div className="data-item">
+                <span>API validation</span>
+                <strong>{apiStatus}</strong>
+              </div>
+              <div className="data-item">
+                <span>API origin</span>
+                <strong>{getApiBaseUrl()}</strong>
+              </div>
+            </div>
+          </article>
+
+          <article className="dashboard-panel">
+            <h2>Extension connection</h2>
+            <p className="panel-copy">
+              Open the extension popup and use <strong>Connect via website</strong>. It will open the website flow and
+              come back with a Worker-issued extension session.
+            </p>
+            <div className="stack-row">
+              <Link className="primary-button" href="/connect">
+                Open connect page
+              </Link>
+              <Link className="secondary-button" href="/auth">
+                Manage account
+              </Link>
+            </div>
+          </article>
+        </div>
+
+        <section className="history-section">
+          <div className="section-heading compact">
+            <h2 className="section-title">Keyword Finder history</h2>
+            <p className="section-copy">Recent analyses captured from the Chrome extension while browsing TPT.</p>
+          </div>
+
+          {keywordWarning ? <p className="status error">{keywordWarning}</p> : null}
+
+          {keywordRuns.length === 0 ? (
+            <div className="empty-state">
+              No Keyword Finder runs yet. Connect the extension, open a TPT search results page, and analyze it from the popup.
+            </div>
+          ) : (
+            <div className="history-grid">
+              {keywordRuns.map((run) => (
+                <article className="history-card" key={run.id}>
+                  <div className="run-topline">
+                    <strong>{run.summary.query}</strong>
+                    <span>{new Date(run.created_at).toLocaleString()}</span>
+                  </div>
+                  <p className="panel-copy">
+                    {run.summary.totalResults} observed results. Dominant terms: {run.summary.dominantTerms.slice(0, 4).join(", ")}.
+                  </p>
+                  <div className="keyword-pill-grid">
+                    {run.opportunities.slice(0, 4).map((item) => (
+                      <span className="keyword-pill" key={`${run.id}-${item.phrase}`}>
+                        {item.phrase}
+                      </span>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       </section>
     </main>
   );

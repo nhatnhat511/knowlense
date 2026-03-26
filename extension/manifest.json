@@ -1,11 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Knowlense",
-  "description": "Popup-first MVP for TPT sellers with account access and local settings.",
+  "description": "Keyword research extension for TPT sellers with website-managed authentication.",
   "version": "0.1.0",
   "permissions": ["storage", "tabs"],
   "host_permissions": [
-    "https://*.supabase.co/*",
     "https://*.workers.dev/*",
     "https://api.knowlense.com/*",
     "https://www.teacherspayteachers.com/*"

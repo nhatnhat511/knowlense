@@ -32,6 +32,7 @@ Set these variables in Workers:
 Create and bind a D1 database for app data, then apply the Keyword Finder migration:
 
 - `apps/api/d1/001_keyword_finder.sql`
+- `apps/api/d1/002_extension_auth.sql`
 
 ### Extension
 
@@ -39,14 +40,14 @@ Copy `extension/config.example.js` to `extension/config.js` and fill:
 
 - `websiteUrl`
 - `dashboardUrl`
+- `connectUrl`
 - `apiUrl`
-- `supabaseUrl`
-- `supabaseAnonKey`
 
 ## Notes
 
 - The frontend is static-export friendly for Cloudflare Pages.
 - The API currently includes health, public config, auth check, and billing/webhook placeholders.
-- The extension currently stores session data in `chrome.storage.local` for the first MVP loop.
+- The website owns sign up and sign in.
+- The extension does not collect credentials. It connects through a website approval flow and stores a Worker-issued session token in `chrome.storage.local`.
 - Supabase is used for authentication only.
 - Keyword Finder works without AI: it extracts a live TPT search page, sends the snapshot to the Worker, scores keyword opportunities with rule-based logic, and stores the run in Cloudflare D1.

@@ -33,34 +33,27 @@
 
       <section class="panel">
         <div class="panel-title-row">
-          <h2>Account</h2>
-          <span id="auth-badge" class="badge">Guest</span>
+          <h2>Connection</h2>
+          <span id="auth-badge" class="badge">Disconnected</span>
         </div>
 
         <div id="account-view" class="hidden">
-          <p class="subtle">Connected account</p>
+          <p class="subtle">Connected website session</p>
           <p id="account-email" class="account-email"></p>
           <div class="settings-actions">
-            <button id="sign-out" class="secondary-button" type="button">Sign out</button>
+            <button id="disconnect-session" class="secondary-button" type="button">Disconnect</button>
             <button id="open-site" class="ghost-button" type="button">Website</button>
           </div>
         </div>
 
-        <form id="sign-in-form">
-          <label class="field">
-            <span>Email</span>
-            <input id="email" type="email" autocomplete="username" required />
-          </label>
-          <label class="field">
-            <span>Password</span>
-            <input id="password" type="password" autocomplete="current-password" required />
-          </label>
-          <p id="status" class="status">Use the same credentials as the website.</p>
+        <div id="connect-view">
+          <p class="subtle">Authentication happens on the website. The extension receives a separate Worker session after approval.</p>
+          <p id="status" class="status">Connect this extension through the website to begin.</p>
           <div class="settings-actions">
-            <button id="sign-in" class="primary-button" type="submit">Sign in</button>
-            <button id="create-account" class="ghost-button" type="button">Create account</button>
+            <button id="connect-session" class="primary-button" type="button">Connect via website</button>
+            <button id="open-dashboard-site" class="ghost-button" type="button">Dashboard</button>
           </div>
-        </form>
+        </div>
       </section>
 
       <section class="panel">

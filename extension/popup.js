@@ -6,7 +6,8 @@ const state = {
   settings: {
     apiUrl: config.apiUrl
   },
-  lastKeywordRun: null
+  lastKeywordRun: null,
+  connectRequest: null
 };
 
 const elements = {
@@ -15,16 +16,15 @@ const elements = {
   apiOrigin: document.getElementById("api-origin"),
   saveSettings: document.getElementById("save-settings"),
   openDashboard: document.getElementById("open-dashboard"),
-  signInForm: document.getElementById("sign-in-form"),
-  email: document.getElementById("email"),
-  password: document.getElementById("password"),
-  status: document.getElementById("status"),
   authBadge: document.getElementById("auth-badge"),
   accountView: document.getElementById("account-view"),
+  connectView: document.getElementById("connect-view"),
   accountEmail: document.getElementById("account-email"),
-  signOut: document.getElementById("sign-out"),
+  disconnectSession: document.getElementById("disconnect-session"),
   openSite: document.getElementById("open-site"),
-  createAccount: document.getElementById("create-account"),
+  openDashboardSite: document.getElementById("open-dashboard-site"),
+  connectSession: document.getElementById("connect-session"),
+  status: document.getElementById("status"),
   analyzePage: document.getElementById("analyze-page"),
   refreshAnalysis: document.getElementById("refresh-analysis"),
   analysisEmpty: document.getElementById("analysis-empty"),
@@ -36,12 +36,23 @@ const elements = {
 };
 
 async function loadState() {
-  const stored = await storage.get(["knowlense_session", "knowlense_settings", "knowlense_last_keyword_run"]);
-  state.session = stored.knowlense_session ?? null;
+  const stored = await storage.get([
+    "knowlense_extension_session",
+    "knowlense_settings",
+    "knowlense_last_keyword_run",
+    "knowlense_connect_request"
+  ]);
+
+  state.session = stored.knowlense_extension_session ?? null;
   state.lastKeywordRun = stored.knowlense_last_keyword_run ?? null;
+  state.connectRequest = stored.knowlense_connect_request ?? null;
   state.settings = {
     apiUrl: stored.knowlense_settings?.apiUrl || config.apiUrl
   };
+}
+
+function apiUrl() {
+  return state.settings.apiUrl.replace(/\/$/, "");
 }
 
 function setStatus(message, kind = "idle") {
@@ -62,7 +73,7 @@ function renderAnalysis() {
 
   elements.analysisQuery.textContent = run.analysis.summary.query;
   elements.analysisCount.textContent = String(run.analysis.summary.totalResults);
-  elements.analysisTopOpportunity.textContent = run.analysis.opportunities[0]?.phrase || "No strong adjacent term yet";
+  elements.analysisTopOpportunity.textContent = run.analysis.opportunities[0]?.phrase || "No clear adjacent keyword yet";
   elements.analysisKeywords.innerHTML = "";
 
   run.analysis.keywords.slice(0, 4).forEach((keyword) => {
@@ -74,27 +85,19 @@ function renderAnalysis() {
 }
 
 function render() {
+  const isConnected = Boolean(state.session?.sessionToken);
   elements.apiOrigin.value = state.settings.apiUrl;
-
-  const signedIn = Boolean(state.session?.profile?.email || state.session?.user?.email);
-  elements.authBadge.textContent = signedIn ? "Signed in" : "Guest";
-  elements.accountView.classList.toggle("hidden", !signedIn);
-  elements.signInForm.classList.toggle("hidden", signedIn);
-  elements.accountEmail.textContent = state.session?.profile?.email || state.session?.user?.email || "";
-  elements.analyzePage.disabled = !signedIn;
-
-  if (signedIn) {
-    setStatus("Session validated through /v1/me.", "success");
-  } else {
-    setStatus("Use the same credentials as the website.");
-  }
-
+  elements.authBadge.textContent = isConnected ? "Connected" : "Disconnected";
+  elements.accountView.classList.toggle("hidden", !isConnected);
+  elements.connectView.classList.toggle("hidden", isConnected);
+  elements.accountEmail.textContent = state.session?.user?.email || "Connected session";
+  elements.analyzePage.disabled = !isConnected;
   renderAnalysis();
 }
 
 async function persistSession(session) {
   state.session = session;
-  await storage.set({ knowlense_session: session });
+  await storage.set({ knowlense_extension_session: session });
   render();
 }
 
@@ -108,47 +111,15 @@ async function persistKeywordRun(run) {
   renderAnalysis();
 }
 
-async function signInWithPassword(email, password) {
-  const response = await fetch(`${config.supabaseUrl}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: {
-      apikey: config.supabaseAnonKey,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ email, password })
-  });
-
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.error_description || payload.msg || "Unable to sign in.");
-  }
-
-  const userResponse = await fetch(`${config.supabaseUrl}/auth/v1/user`, {
-    headers: {
-      apikey: config.supabaseAnonKey,
-      Authorization: `Bearer ${payload.access_token}`
-    }
-  });
-
-  const user = await userResponse.json();
-
-  if (!userResponse.ok) {
-    throw new Error(user.message || "Unable to load account.");
-  }
-
-  return {
-    accessToken: payload.access_token,
-    refreshToken: payload.refresh_token,
-    expiresIn: payload.expires_in,
-    user
-  };
+async function persistConnectRequest(request) {
+  state.connectRequest = request;
+  await storage.set({ knowlense_connect_request: request });
 }
 
-async function fetchApiProfile(accessToken, apiUrl) {
-  const response = await fetch(`${apiUrl.replace(/\/$/, "")}/v1/me`, {
+async function fetchApiProfile(token) {
+  const response = await fetch(`${apiUrl()}/v1/me`, {
     headers: {
-      Authorization: `Bearer ${accessToken}`
+      Authorization: `Bearer ${token}`
     }
   });
 
@@ -161,11 +132,71 @@ async function fetchApiProfile(accessToken, apiUrl) {
   return payload.user;
 }
 
-async function analyzeKeywordSnapshot(accessToken, apiUrl, snapshot) {
-  const response = await fetch(`${apiUrl.replace(/\/$/, "")}/v1/keyword-finder/analyze`, {
+async function startConnectFlow() {
+  const response = await fetch(`${apiUrl()}/v1/extension/session/start`, {
+    method: "POST"
+  });
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok || !payload?.requestId) {
+    throw new Error(payload?.error || "Unable to start the extension connection flow.");
+  }
+
+  const request = {
+    requestId: payload.requestId,
+    expiresAt: payload.expiresAt
+  };
+
+  await persistConnectRequest(request);
+  chrome.tabs.create({ url: `${config.connectUrl}?request=${encodeURIComponent(request.requestId)}` });
+  setStatus("Waiting for website approval...", "success");
+  await pollConnectFlow();
+}
+
+async function pollConnectFlow() {
+  if (!state.connectRequest?.requestId) {
+    return;
+  }
+
+  const timeoutAt = Date.now() + 90 * 1000;
+
+  while (Date.now() < timeoutAt) {
+    const response = await fetch(`${apiUrl()}/v1/extension/session/poll?requestId=${encodeURIComponent(state.connectRequest.requestId)}`);
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(payload?.error || "Unable to poll the connection request.");
+    }
+
+    if (payload?.status === "connected" && payload?.sessionToken) {
+      await persistSession({
+        sessionToken: payload.sessionToken,
+        user: payload.user,
+        expiresAt: payload.expiresAt
+      });
+      await persistConnectRequest(null);
+      setStatus("Extension connected through the website.", "success");
+      return;
+    }
+
+    if (payload?.status === "expired") {
+      await persistConnectRequest(null);
+      setStatus("Connection request expired. Start again from the popup.", "error");
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  setStatus("Still waiting for approval. You can keep the popup open or start again.", "idle");
+}
+
+async function analyzeKeywordSnapshot(token, snapshot) {
+  const response = await fetch(`${apiUrl()}/v1/keyword-finder/analyze`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(snapshot)
@@ -200,31 +231,9 @@ async function extractSnapshotFromCurrentTab() {
   return response.snapshot;
 }
 
-async function handleSubmit(event) {
-  event.preventDefault();
-
-  const email = elements.email.value.trim();
-  const password = elements.password.value;
-
-  if (!config.supabaseUrl.includes(".supabase.co") || config.supabaseAnonKey.startsWith("YOUR_")) {
-    setStatus("Set Supabase values in extension/config.js first.", "error");
-    return;
-  }
-
-  setStatus("Signing in...");
-
-  try {
-    const session = await signInWithPassword(email, password);
-    const profile = await fetchApiProfile(session.accessToken, state.settings.apiUrl);
-    await persistSession({ ...session, profile });
-  } catch (error) {
-    setStatus(error.message, "error");
-  }
-}
-
 async function handleAnalyzePage() {
-  if (!state.session?.accessToken) {
-    setStatus("Sign in before running Keyword Finder.", "error");
+  if (!state.session?.sessionToken) {
+    setStatus("Connect the extension through the website first.", "error");
     return;
   }
 
@@ -233,7 +242,7 @@ async function handleAnalyzePage() {
   try {
     const snapshot = await extractSnapshotFromCurrentTab();
     setStatus("Analyzing keyword opportunities...");
-    const analysisPayload = await analyzeKeywordSnapshot(state.session.accessToken, state.settings.apiUrl, snapshot);
+    const analysisPayload = await analyzeKeywordSnapshot(state.session.sessionToken, snapshot);
     await persistKeywordRun(analysisPayload);
     setStatus(analysisPayload.warning || "Keyword Finder completed.", analysisPayload.warning ? "error" : "success");
   } catch (error) {
@@ -246,10 +255,9 @@ async function handleRefreshAnalysis() {
   setStatus(state.lastKeywordRun ? "Showing the latest local Keyword Finder result." : "No local analysis found.");
 }
 
-async function handleSignOut() {
+async function handleDisconnect() {
   await persistSession(null);
-  elements.email.value = "";
-  elements.password.value = "";
+  setStatus("Extension session removed from this browser.");
 }
 
 function attachEvents() {
@@ -267,31 +275,50 @@ function attachEvents() {
     chrome.tabs.create({ url: config.dashboardUrl });
   });
 
+  elements.openDashboardSite.addEventListener("click", () => {
+    chrome.tabs.create({ url: config.dashboardUrl });
+  });
+
   elements.openSite.addEventListener("click", () => {
     chrome.tabs.create({ url: config.websiteUrl });
   });
 
-  elements.createAccount.addEventListener("click", () => {
-    chrome.tabs.create({ url: `${config.websiteUrl}/auth` });
+  elements.connectSession.addEventListener("click", async () => {
+    try {
+      await startConnectFlow();
+    } catch (error) {
+      setStatus(error.message, "error");
+    }
   });
 
+  elements.disconnectSession.addEventListener("click", handleDisconnect);
   elements.analyzePage.addEventListener("click", handleAnalyzePage);
   elements.refreshAnalysis.addEventListener("click", handleRefreshAnalysis);
-  elements.signInForm.addEventListener("submit", handleSubmit);
-  elements.signOut.addEventListener("click", handleSignOut);
 }
 
 async function boot() {
   await loadState();
-  if (state.session?.accessToken) {
+
+  if (state.session?.sessionToken) {
     try {
-      const profile = await fetchApiProfile(state.session.accessToken, state.settings.apiUrl);
-      state.session = { ...state.session, profile };
+      const user = await fetchApiProfile(state.session.sessionToken);
+      state.session = { ...state.session, user };
+      await storage.set({ knowlense_extension_session: state.session });
+      setStatus("Extension session is active.", "success");
     } catch {
       state.session = null;
-      await storage.remove("knowlense_session");
+      await storage.remove("knowlense_extension_session");
+      setStatus("Connect this extension through the website to begin.");
     }
+  } else if (state.connectRequest?.requestId) {
+    setStatus("Waiting for website approval...", "success");
+    setTimeout(() => {
+      void pollConnectFlow().catch((error) => setStatus(error.message, "error"));
+    }, 200);
+  } else {
+    setStatus("Connect this extension through the website to begin.");
   }
+
   attachEvents();
   render();
 }

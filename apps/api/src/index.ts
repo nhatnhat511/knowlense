@@ -19,6 +19,7 @@ type Variables = {
   user: {
     email: string | null;
     id: string;
+    authType: "supabase" | "extension";
   };
 };
 
@@ -60,6 +61,67 @@ function createAdminClient(env: Bindings) {
   });
 }
 
+function jsonHeaders() {
+  return {
+    "Content-Type": "application/json"
+  };
+}
+
+async function hashToken(token: string) {
+  const input = new TextEncoder().encode(token);
+  const digest = await crypto.subtle.digest("SHA-256", input);
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function createExtensionToken() {
+  const randomValues = crypto.getRandomValues(new Uint8Array(24));
+  const tokenBody = btoa(String.fromCharCode(...randomValues)).replace(/[+/=]/g, "").slice(0, 32);
+  return `knlx_${tokenBody}`;
+}
+
+function isoFromNow(minutes: number) {
+  return new Date(Date.now() + minutes * 60 * 1000).toISOString();
+}
+
+async function authenticateSupabaseToken(env: Bindings, token: string) {
+  const supabase = createAdminClient(env);
+  const { data, error } = await supabase.auth.getUser(token);
+
+  if (error || !data.user) {
+    return null;
+  }
+
+  return {
+    id: data.user.id,
+    email: data.user.email ?? null,
+    authType: "supabase" as const
+  };
+}
+
+async function authenticateExtensionToken(env: Bindings, token: string) {
+  const tokenHash = await hashToken(token);
+  const session = await env.DB.prepare(
+    `SELECT user_id, user_email
+     FROM extension_sessions
+     WHERE token_hash = ?1
+       AND revoked_at IS NULL
+       AND datetime(expires_at) > datetime('now')
+     LIMIT 1`
+  )
+    .bind(tokenHash)
+    .first<{ user_id: string; user_email: string | null }>();
+
+  if (!session) {
+    return null;
+  }
+
+  return {
+    id: session.user_id,
+    email: session.user_email,
+    authType: "extension" as const
+  };
+}
+
 async function authenticateRequest(c: {
   req: { header: (name: string) => string | undefined };
   env: Bindings;
@@ -72,18 +134,14 @@ async function authenticateRequest(c: {
     return { error: "Missing bearer token.", status: 401 as const };
   }
 
-  const supabase = createAdminClient(c.env);
-  const { data, error } = await supabase.auth.getUser(token);
+  const user =
+    token.startsWith("knlx_") ? await authenticateExtensionToken(c.env, token) : await authenticateSupabaseToken(c.env, token);
 
-  if (error || !data.user) {
+  if (!user) {
     return { error: "Invalid session.", status: 401 as const };
   }
 
-  c.set("user", {
-    email: data.user.email ?? null,
-    id: data.user.id
-  });
-
+  c.set("user", user);
   return null;
 }
 
@@ -102,12 +160,7 @@ app.use(
   })
 );
 
-app.get("/", (c) =>
-  c.json({
-    name: "knowlense-api",
-    status: "ok"
-  })
-);
+app.get("/", (c) => c.json({ name: "knowlense-api", status: "ok" }));
 
 app.get("/health", (c) =>
   c.json({
@@ -137,6 +190,183 @@ app.get("/v1/me", (c) =>
     user: c.get("user")
   })
 );
+
+app.post("/v1/extension/session/start", async (c) => {
+  const requestId = crypto.randomUUID();
+  const expiresAt = isoFromNow(10);
+
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO extension_connection_requests (id, status, expires_at)
+       VALUES (?1, 'pending', ?2)`
+    )
+      .bind(requestId, expiresAt)
+      .run();
+  } catch {
+    return c.json({ error: "Unable to start extension connection flow." }, 500);
+  }
+
+  return c.json({
+    requestId,
+    expiresAt
+  });
+});
+
+app.get("/v1/extension/session/poll", async (c) => {
+  const requestId = c.req.query("requestId");
+
+  if (!requestId) {
+    return c.json({ error: "Missing requestId." }, 400);
+  }
+
+  const request = await c.env.DB.prepare(
+    `SELECT id, status, user_email, session_id, expires_at, claimed_at
+     FROM extension_connection_requests
+     WHERE id = ?1
+     LIMIT 1`
+  )
+    .bind(requestId)
+    .first<{
+      id: string;
+      status: string;
+      user_email: string | null;
+      session_id: string | null;
+      expires_at: string;
+      claimed_at: string | null;
+    }>();
+
+  if (!request) {
+    return c.json({ error: "Unknown connection request." }, 404);
+  }
+
+  if (new Date(request.expires_at).getTime() <= Date.now()) {
+    return c.json({ status: "expired" });
+  }
+
+  if (request.status !== "authorized" || !request.session_id) {
+    return c.json({ status: request.status });
+  }
+
+  const session = await c.env.DB.prepare(
+    `SELECT token_hash, user_id, user_email, expires_at
+     FROM extension_sessions
+     WHERE id = ?1
+       AND revoked_at IS NULL
+     LIMIT 1`
+  )
+    .bind(request.session_id)
+    .first<{ token_hash: string; user_id: string; user_email: string | null; expires_at: string }>();
+
+  if (!session) {
+    return c.json({ status: "pending" });
+  }
+
+  const tokenDelivery = await c.env.DB.prepare(
+    `SELECT token_plaintext
+     FROM extension_connection_requests
+     WHERE id = ?1
+     LIMIT 1`
+  )
+    .bind(requestId)
+    .first<{ token_plaintext: string | null }>()
+    .catch(() => null);
+
+  if (!tokenDelivery?.token_plaintext) {
+    return c.json({ status: "pending" });
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE extension_connection_requests
+     SET claimed_at = COALESCE(claimed_at, CURRENT_TIMESTAMP)
+     WHERE id = ?1`
+  )
+    .bind(requestId)
+    .run();
+
+  return c.json({
+    status: "connected",
+    sessionToken: tokenDelivery.token_plaintext,
+    user: {
+      id: session.user_id,
+      email: session.user_email
+    },
+    expiresAt: session.expires_at
+  });
+});
+
+app.use("/v1/extension/session/authorize", async (c, next) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  const user = c.get("user");
+  if (user.authType !== "supabase") {
+    return c.json({ error: "Website authorization requires a Supabase web session." }, 403);
+  }
+
+  await next();
+});
+
+app.post("/v1/extension/session/authorize", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const requestId = body?.requestId as string | undefined;
+
+  if (!requestId) {
+    return c.json({ error: "Missing requestId." }, 400);
+  }
+
+  const request = await c.env.DB.prepare(
+    `SELECT id, status, expires_at
+     FROM extension_connection_requests
+     WHERE id = ?1
+     LIMIT 1`
+  )
+    .bind(requestId)
+    .first<{ id: string; status: string; expires_at: string }>();
+
+  if (!request) {
+    return c.json({ error: "Unknown connection request." }, 404);
+  }
+
+  if (new Date(request.expires_at).getTime() <= Date.now()) {
+    return c.json({ error: "Connection request expired." }, 410);
+  }
+
+  const user = c.get("user");
+  const sessionId = crypto.randomUUID();
+  const sessionToken = createExtensionToken();
+  const tokenHash = await hashToken(sessionToken);
+  const sessionExpiresAt = isoFromNow(60 * 24 * 30);
+
+  try {
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO extension_sessions (id, user_id, user_email, token_hash, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)`
+      ).bind(sessionId, user.id, user.email, tokenHash, sessionExpiresAt),
+      c.env.DB.prepare(
+        `UPDATE extension_connection_requests
+         SET status = 'authorized',
+             user_id = ?2,
+             user_email = ?3,
+             session_id = ?4,
+             token_plaintext = ?5
+         WHERE id = ?1`
+      ).bind(requestId, user.id, user.email, sessionId, sessionToken)
+    ]);
+  } catch {
+    return c.json({ error: "Unable to authorize extension session." }, 500);
+  }
+
+  return c.json({
+    connected: true,
+    user: {
+      id: user.id,
+      email: user.email
+    }
+  });
+});
 
 app.use("/v1/keyword-finder/*", async (c, next) => {
   const authResult = await authenticateRequest(c);
