@@ -88,6 +88,11 @@ function SignInContent() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (loading) {
+      return;
+    }
+
     setLoading(true);
     setStatus("");
 
@@ -110,9 +115,24 @@ function SignInContent() {
         return;
       }
 
+      await fetchApiProfile(result.session.accessToken);
       setStatus(`Signed in as ${result.user.email ?? result.user.id}. Redirecting...`);
       router.push(nextPath);
     } catch (error) {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+
+      if (session?.access_token) {
+        try {
+          await fetchApiProfile(session.access_token);
+          router.push(nextPath);
+          return;
+        } catch {
+          await supabase.auth.signOut();
+        }
+      }
+
       const message = error instanceof Error ? error.message : "Unable to sign in.";
       setStatus(mapSignInError(message));
     } finally {
