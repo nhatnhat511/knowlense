@@ -2,17 +2,23 @@ export type ProductSeoAuditSnapshot = {
   productId?: string | null;
   productUrl: string;
   sellerName?: string | null;
+  auditKeyword: string;
   title: string;
   descriptionExcerpt: string;
   grades: string[];
   tags: string[];
   subjects?: string[];
   resourceType?: string | null;
-  preview?: {
-    buttonVisible: boolean;
-    thumbCount: number;
-    textHints: string[];
+  pagesValue?: string | null;
+  media?: {
+    imageCount: number;
+    hasVideo: boolean;
+    hasReviewSection: boolean;
   };
+  discountOfferVisible?: boolean;
+  bundleOfferVisible?: boolean;
+  descriptionProductLinks?: string[];
+  unansweredQuestions?: number;
 };
 
 export type ProductSeoAudit = {
@@ -23,32 +29,41 @@ export type ProductSeoAudit = {
     title: string;
   };
   audit: {
+    keyword: string;
     seoScore: number;
-    primaryKeyword: string | null;
-    placements: {
-      title: boolean;
-      snippet: boolean;
-      description: boolean;
-      preview: boolean;
+    rank: {
+      status: "ranked" | "beyond_page_3";
+      position: number;
+      resultPage: number | null;
+      searchUrl: string;
     };
-    tagCompleteness: {
-      score: number;
-      totalTags: number;
-      matchedTags: string[];
-      status: "strong" | "needs_work";
+    checks: {
+      titleContainsKeyword: boolean;
+      descriptionContainsKeyword: boolean;
+      titleLengthOk: boolean;
+      titleKeywordRepeated: boolean;
+      descriptionKeywordOverused: boolean;
+      subjectsComplete: boolean;
+      tagsComplete: boolean;
+      pagesFilled: boolean;
+      mediaComplete: boolean;
+      discountEnabled: boolean;
+      bundleEnabled: boolean;
+      hasInternalProductLink: boolean;
+      unansweredQuestions: number;
     };
-    cannibalization: {
-      status: "none" | "possible";
-      similarListings: Array<{
-        productId: string | null;
-        productUrl: string;
-        title: string;
-        primaryKeyword: string;
-      }>;
+    counts: {
+      titleLength: number;
+      titleKeywordMentions: number;
+      descriptionKeywordMentions: number;
+      subjectsCount: number;
+      tagsCount: number;
+      imageCount: number;
+      hasVideo: boolean;
+      hasReviewSection: boolean;
     };
     actionItems: string[];
     analyzedAt: string;
-    cooldownMinutes: number;
     note: string;
   };
 };
@@ -56,7 +71,6 @@ export type ProductSeoAudit = {
 type AuditOptions = {
   db: D1Database;
   userId: string;
-  cooldownMinutes?: number;
 };
 
 type StoredAuditRow = {
@@ -69,76 +83,9 @@ type StoredAuditRow = {
   created_at: string;
 };
 
-const DEFAULT_COOLDOWN_MINUTES = 30;
-const STOP_WORDS = new Set([
-  "a",
-  "about",
-  "all",
-  "an",
-  "and",
-  "are",
-  "as",
-  "at",
-  "be",
-  "book",
-  "craft",
-  "for",
-  "from",
-  "in",
-  "interactive",
-  "is",
-  "it",
-  "kindergarten",
-  "of",
-  "on",
-  "or",
-  "planting",
-  "printable",
-  "the",
-  "this",
-  "to",
-  "with",
-  "worksheet",
-  "worksheets"
-]);
-const FORMAT_HINTS = [
-  "activities",
-  "activity",
-  "book",
-  "booklet",
-  "center",
-  "centers",
-  "craft",
-  "craftivity",
-  "cut and paste activity",
-  "flipbook",
-  "interactive book",
-  "poster",
-  "printable",
-  "spinner",
-  "spinner craft",
-  "task cards",
-  "template",
-  "worksheet",
-  "worksheets",
-  "writing activity"
-];
-const GENERIC_TAILS = new Set(["animal", "animals", "plant", "plants", "resource", "resources"]);
-const ACADEMIC_PATTERNS = [
-  "compare and contrast",
-  "cause and effect",
-  "life cycle",
-  "main idea",
-  "text evidence",
-  "reading comprehension",
-  "close reading",
-  "opinion writing",
-  "informational writing",
-  "narrative writing",
-  "parts of speech",
-  "states of matter",
-  "water cycle"
-];
+const TPT_BASE_URL = "https://www.teacherspayteachers.com";
+const MAX_SEARCH_PAGES = 3;
+const NOT_FOUND_RANK = 74;
 
 function normalizeText(value: string) {
   return value
@@ -149,284 +96,231 @@ function normalizeText(value: string) {
     .trim();
 }
 
-function tokenize(value: string) {
-  return normalizeText(value)
-    .split(" ")
-    .map((token) => token.trim())
-    .filter((token) => token.length > 1 && !STOP_WORDS.has(token));
+function countPhraseOccurrences(text: string, phrase: string) {
+  const normalizedText = normalizeText(text);
+  const normalizedPhrase = normalizeText(phrase);
+
+  if (!normalizedText || !normalizedPhrase) {
+    return 0;
+  }
+
+  const matches = normalizedText.match(new RegExp(`\\b${normalizedPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"));
+  return matches?.length ?? 0;
 }
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function decodeHtmlEntities(value: string) {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 }
 
-function buildNgrams(tokens: string[], minSize: number, maxSize: number) {
-  const phrases: string[] = [];
+function extractProductId(value: string) {
+  return value.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
+}
 
-  for (let start = 0; start < tokens.length; start += 1) {
-    for (let size = minSize; size <= maxSize; size += 1) {
-      const slice = tokens.slice(start, start + size);
-      if (slice.length === size) {
-        phrases.push(slice.join(" "));
+function extractProductUrlsFromSearchHtml(html: string) {
+  const matches = [...html.matchAll(/href="([^"]*\/Product\/[^"]+)"/g)];
+  const seen = new Set<string>();
+  const urls: string[] = [];
+
+  matches.forEach((match) => {
+    const decoded = decodeHtmlEntities(match[1] ?? "");
+    if (!decoded) {
+      return;
+    }
+
+    const href = new URL(decoded, TPT_BASE_URL).toString();
+    if (!seen.has(href)) {
+      seen.add(href);
+      urls.push(href);
+    }
+  });
+
+  return urls;
+}
+
+async function lookupKeywordRank(productId: string | null, keyword: string) {
+  const searchUrl = `${TPT_BASE_URL}/browse?search=${encodeURIComponent(keyword)}`;
+
+  if (!productId) {
+    return {
+      status: "beyond_page_3" as const,
+      position: NOT_FOUND_RANK,
+      resultPage: null,
+      searchUrl
+    };
+  }
+
+  for (let page = 1; page <= MAX_SEARCH_PAGES; page += 1) {
+    const pageUrl = page === 1 ? searchUrl : `${searchUrl}&page=${page}`;
+    const response = await fetch(pageUrl, {
+      headers: {
+        "User-Agent": "KnowlenseBot/0.1"
+      }
+    });
+
+    if (!response.ok) {
+      continue;
+    }
+
+    const html = await response.text();
+    const urls = extractProductUrlsFromSearchHtml(html);
+
+    for (let index = 0; index < urls.length; index += 1) {
+      if (extractProductId(urls[index]) === productId) {
+        return {
+          status: "ranked" as const,
+          position: (page - 1) * urls.length + index + 1,
+          resultPage: page,
+          searchUrl
+        };
       }
     }
   }
 
-  return phrases;
-}
-
-function stripFormatHints(value: string) {
-  let text = ` ${normalizeText(value)} `;
-
-  [...FORMAT_HINTS].sort((left, right) => right.length - left.length).forEach((hint) => {
-    text = text.replace(new RegExp(`\\b${escapeRegExp(hint)}\\b`, "g"), " ");
-  });
-
-  return text.replace(/\s+/g, " ").trim();
-}
-
-function cleanEntity(value: string) {
-  const tokens = tokenize(value);
-  if (tokens.length > 1 && GENERIC_TAILS.has(tokens[tokens.length - 1])) {
-    tokens.pop();
-  }
-
-  return tokens.join(" ").trim();
-}
-
-function dedupe<T>(items: T[]) {
-  return [...new Set(items)];
-}
-
-function extractPrimaryKeyword(snapshot: ProductSeoAuditSnapshot) {
-  const title = normalizeText(snapshot.title);
-  const description = normalizeText(snapshot.descriptionExcerpt);
-  const topicCandidates = new Set<string>();
-
-  const titleCycleMatch = title.match(/\blife cycle of (?:a |an |the )?([a-z0-9\s-]{2,40})/);
-  if (titleCycleMatch?.[1]) {
-    const entity = cleanEntity(titleCycleMatch[1]);
-    if (entity) {
-      topicCandidates.add(`${entity} life cycle`);
-    }
-  }
-
-  const directCycleMatch = title.match(/\b([a-z0-9\s-]{2,40}?) life cycle\b/);
-  if (directCycleMatch?.[1]) {
-    const entity = cleanEntity(directCycleMatch[1]);
-    if (entity) {
-      topicCandidates.add(`${entity} life cycle`);
-    }
-  }
-
-  const descriptionCycleMatch = description.match(/\blife cycle of (?:a |an |the )?([a-z0-9\s-]{2,40})/);
-  if (descriptionCycleMatch?.[1]) {
-    const entity = cleanEntity(descriptionCycleMatch[1]);
-    if (entity) {
-      topicCandidates.add(`${entity} life cycle`);
-    }
-  }
-
-  ACADEMIC_PATTERNS.forEach((pattern) => {
-    if (title.includes(pattern) || description.includes(pattern)) {
-      topicCandidates.add(pattern);
-    }
-  });
-
-  const titleWithoutFormats = stripFormatHints(title);
-  const titleNgrams = buildNgrams(tokenize(titleWithoutFormats), 2, 4);
-  const descriptionText = stripFormatHints(description);
-  titleNgrams
-    .map((phrase) => ({
-      phrase,
-      score:
-        (titleWithoutFormats.includes(phrase) ? 45 : 0) +
-        (descriptionText.includes(phrase) ? 30 : 0) +
-        (phrase.split(" ").length === 2 ? 8 : phrase.split(" ").length === 3 ? 12 : 10)
-    }))
-    .filter((item) => item.score >= 45)
-    .sort((left, right) => right.score - left.score)
-    .slice(0, 8)
-    .forEach((item) => topicCandidates.add(item.phrase));
-
-  const sorted = [...topicCandidates]
-    .map((item) => normalizeText(item))
-    .filter((item) => item.length >= 6 && item.split(" ").length <= 4)
-    .sort((left, right) => left.split(" ").length - right.split(" ").length || left.length - right.length);
-
-  return sorted[0] ?? null;
-}
-
-function buildSnippet(descriptionExcerpt: string) {
-  return descriptionExcerpt.trim().slice(0, 180);
-}
-
-function hasKeywordPlacement(text: string | null | undefined, keyword: string | null) {
-  if (!text || !keyword) {
-    return false;
-  }
-
-  return normalizeText(text).includes(normalizeText(keyword));
-}
-
-function computeTagCompleteness(tags: string[], primaryKeyword: string | null) {
-  const normalizedTags = tags.map(normalizeText).filter(Boolean);
-  const keywordTokens = new Set(tokenize(primaryKeyword ?? ""));
-  const matchedTags = normalizedTags.filter((tag) => {
-    const tagTokens = tokenize(tag);
-    return tagTokens.some((token) => keywordTokens.has(token));
-  });
-
-  const scoreBase = Math.min(normalizedTags.length * 12, 60);
-  const alignmentBonus = Math.min(matchedTags.length * 10, 40);
-  const score = Math.max(0, Math.min(100, scoreBase + alignmentBonus));
-  const status: "strong" | "needs_work" = score >= 70 ? "strong" : "needs_work";
-
   return {
-    score,
-    totalTags: normalizedTags.length,
-    matchedTags: matchedTags.map((tag) => tag),
-    status
+    status: "beyond_page_3" as const,
+    position: NOT_FOUND_RANK,
+    resultPage: null,
+    searchUrl
   };
-}
-
-function compareKeywordSimilarity(left: string, right: string) {
-  const leftTokens = new Set(tokenize(left));
-  const rightTokens = new Set(tokenize(right));
-  const overlap = [...leftTokens].filter((token) => rightTokens.has(token)).length;
-  const union = new Set([...leftTokens, ...rightTokens]).size || 1;
-
-  return overlap / union;
-}
-
-async function findCannibalization(db: D1Database, userId: string, sellerName: string | null, productId: string | null, primaryKeyword: string | null) {
-  if (!primaryKeyword) {
-    return [];
-  }
-
-  const result = await db
-    .prepare(
-      `SELECT product_id, product_url, title_text, primary_keyword
-       FROM product_seo_audits
-       WHERE user_id = ?1
-         AND (?2 IS NULL OR seller_name = ?2)
-         AND (?3 IS NULL OR product_id != ?3)
-         AND primary_keyword IS NOT NULL
-       ORDER BY datetime(created_at) DESC
-       LIMIT 25`
-    )
-    .bind(userId, sellerName, productId)
-    .all<{ product_id: string | null; product_url: string; title_text: string; primary_keyword: string }>();
-
-  return (result.results ?? [])
-    .filter((row) => compareKeywordSimilarity(primaryKeyword, row.primary_keyword) >= 0.6)
-    .slice(0, 3)
-    .map((row) => ({
-      productId: row.product_id,
-      productUrl: row.product_url,
-      title: row.title_text,
-      primaryKeyword: row.primary_keyword
-    }));
 }
 
 function buildActionItems(input: {
-  primaryKeyword: string | null;
-  placements: { title: boolean; snippet: boolean; description: boolean; preview: boolean };
-  tagCompleteness: { totalTags: number; matchedTags: string[]; status: "strong" | "needs_work" };
-  cannibalizationCount: number;
+  keyword: string;
+  checks: ProductSeoAudit["audit"]["checks"];
+  counts: ProductSeoAudit["audit"]["counts"];
+  rankStatus: "ranked" | "beyond_page_3";
 }) {
-  const actions: string[] = [];
-  const keyword = input.primaryKeyword ?? "your main keyword";
+  const issues: Array<{ weight: number; text: string }> = [];
 
-  if (!input.placements.title) {
-    actions.push(`Add "${keyword}" to the product title, ideally near the front.`);
-  } else {
-    actions.push(`Keep "${keyword}" visible in the title and avoid replacing it with format-heavy wording.`);
+  if (input.rankStatus !== "ranked") {
+    issues.push({ weight: 18, text: `This product is not in the first 3 TPT search pages for "${input.keyword}". Tighten the listing around that keyword.` });
   }
 
-  if (!input.placements.snippet) {
-    actions.push(`Mention "${keyword}" in the first 160 characters of the description snippet.`);
-  } else {
-    actions.push(`Keep the description opening focused on "${keyword}" and the buyer outcome.`);
+  if (!input.checks.titleContainsKeyword) {
+    issues.push({ weight: 18, text: `Add "${input.keyword}" to the title at least once.` });
   }
 
-  if (!input.placements.description) {
-    actions.push(`Repeat "${keyword}" naturally in the description body with buyer-facing context.`);
-  } else {
-    actions.push(`Strengthen the description with one more natural mention of "${keyword}" if it still feels light.`);
+  if (!input.checks.descriptionContainsKeyword) {
+    issues.push({ weight: 16, text: `Mention "${input.keyword}" in the first 300 words of the description.` });
   }
 
-  if (!input.placements.preview) {
-    actions.push(`Add "${keyword}" or a close variation into the preview pages or preview cover text.`);
-  } else {
-    actions.push(`Keep the preview aligned with "${keyword}" so buyers see the topic immediately.`);
+  if (!input.checks.titleLengthOk) {
+    issues.push({ weight: 12, text: `Expand the title. It is only ${input.counts.titleLength} characters, while TPT allows up to 75.` });
   }
 
-  if (input.cannibalizationCount > 0) {
-    actions.push(`Differentiate this listing from similar products in your store using a clearer angle than "${keyword}".`);
-  } else if (input.tagCompleteness.status === "needs_work") {
-    actions.push(`Improve tag coverage by adding more tags aligned with "${keyword}" and the product format.`);
-  } else {
-    actions.push(`Review competing listings for "${keyword}" and tighten the title-preview-tag alignment.`);
+  if (input.checks.titleKeywordRepeated) {
+    issues.push({ weight: 12, text: `Reduce title repetition. "${input.keyword}" should appear only once in the title.` });
   }
 
-  return actions.slice(0, 5);
+  if (input.checks.descriptionKeywordOverused) {
+    issues.push({ weight: 10, text: `Reduce keyword stuffing. "${input.keyword}" appears more than 3 times in the first 300 words.` });
+  }
+
+  if (!input.checks.subjectsComplete) {
+    issues.push({ weight: 9, text: `Fill all 3 Subjects to improve discoverability.` });
+  }
+
+  if (!input.checks.tagsComplete) {
+    issues.push({ weight: 9, text: `Fill all 6 Tags to maximize filtering and search coverage.` });
+  }
+
+  if (!input.checks.pagesFilled) {
+    issues.push({ weight: 8, text: `Add the Pages count to the listing.` });
+  }
+
+  if (!input.checks.mediaComplete) {
+    issues.push({ weight: 8, text: `Add at least 4 product images, a review section, and 1 video if possible.` });
+  }
+
+  if (!input.checks.discountEnabled) {
+    issues.push({ weight: 5, text: `Turn on the new-user 10% seller discount if it fits your pricing strategy.` });
+  }
+
+  if (!input.checks.bundleEnabled) {
+    issues.push({ weight: 5, text: `Consider adding this product into a bundle so the listing can show bundle savings.` });
+  }
+
+  if (!input.checks.hasInternalProductLink) {
+    issues.push({ weight: 5, text: `Add a link in the description to another relevant product or bundle in your store.` });
+  }
+
+  if (input.checks.unansweredQuestions > 0) {
+    issues.push({ weight: 7, text: `Reply to ${input.checks.unansweredQuestions} unanswered Q&A item(s).` });
+  }
+
+  if (issues.length < 5) {
+    issues.push({ weight: 1, text: `Keep "${input.keyword}" aligned across title, description, preview, and tags.` });
+  }
+
+  return issues
+    .sort((left, right) => right.weight - left.weight)
+    .slice(0, 5)
+    .map((item) => item.text);
 }
 
-export async function findRecentSeoAudit(db: D1Database, userId: string, productId: string | null, productUrl: string, cooldownMinutes = DEFAULT_COOLDOWN_MINUTES) {
-  const row = await db
-    .prepare(
-      `SELECT id, product_id, product_url, title_text, primary_keyword, audit_json, created_at
-       FROM product_seo_audits
-       WHERE user_id = ?1
-         AND ((?2 IS NOT NULL AND product_id = ?2) OR product_url = ?3)
-         AND datetime(created_at) >= datetime('now', ?4)
-       ORDER BY datetime(created_at) DESC
-       LIMIT 1`
-    )
-    .bind(userId, productId, productUrl, `-${cooldownMinutes} minutes`)
-    .first<StoredAuditRow>();
-
-  if (!row) {
-    return null;
-  }
-
-  return {
-    runId: row.id,
-    analysis: JSON.parse(row.audit_json) as ProductSeoAudit,
-    createdAt: row.created_at
-  };
+export async function findRecentSeoAudit() {
+  return null;
 }
 
 export async function analyzeProductSeoAudit(snapshot: ProductSeoAuditSnapshot, options: AuditOptions): Promise<ProductSeoAudit> {
-  const productId = snapshot.productId ?? snapshot.productUrl.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
-  const cooldownMinutes = options.cooldownMinutes ?? DEFAULT_COOLDOWN_MINUTES;
-  const primaryKeyword = extractPrimaryKeyword(snapshot);
-  const snippet = buildSnippet(snapshot.descriptionExcerpt);
-  const previewText = snapshot.preview?.textHints?.join(" ") ?? "";
-  const placements = {
-    title: hasKeywordPlacement(snapshot.title, primaryKeyword),
-    snippet: hasKeywordPlacement(snippet, primaryKeyword),
-    description: hasKeywordPlacement(snapshot.descriptionExcerpt, primaryKeyword),
-    preview: hasKeywordPlacement(previewText, primaryKeyword)
-  };
-  const tagCompleteness = computeTagCompleteness(snapshot.tags, primaryKeyword);
-  const similarListings = await findCannibalization(
-    options.db,
-    options.userId,
-    snapshot.sellerName ?? null,
-    productId,
-    primaryKeyword
-  ).catch(() => []);
+  void options;
 
-  const score =
-    (primaryKeyword ? 25 : 0) +
-    (placements.title ? 20 : 0) +
-    (placements.snippet ? 15 : 0) +
-    (placements.description ? 15 : 0) +
-    (placements.preview ? 10 : 0) +
-    Math.round(tagCompleteness.score * 0.15) -
-    (similarListings.length > 0 ? 8 : 0);
+  const productId = snapshot.productId ?? extractProductId(snapshot.productUrl);
+  const keyword = normalizeText(snapshot.auditKeyword);
+  const titleLength = snapshot.title.trim().length;
+  const titleKeywordMentions = countPhraseOccurrences(snapshot.title, keyword);
+  const descriptionKeywordMentions = countPhraseOccurrences(snapshot.descriptionExcerpt, keyword);
+  const rank = await lookupKeywordRank(productId, keyword);
+  const checks = {
+    titleContainsKeyword: titleKeywordMentions >= 1,
+    descriptionContainsKeyword: descriptionKeywordMentions >= 1,
+    titleLengthOk: titleLength >= 55 && titleLength <= 75,
+    titleKeywordRepeated: titleKeywordMentions >= 2,
+    descriptionKeywordOverused: descriptionKeywordMentions > 3,
+    subjectsComplete: (snapshot.subjects?.length ?? 0) >= 3,
+    tagsComplete: snapshot.tags.length >= 6,
+    pagesFilled: Boolean((snapshot.pagesValue ?? "").trim() && !/n\/a/i.test(snapshot.pagesValue ?? "")),
+    mediaComplete:
+      (snapshot.media?.imageCount ?? 0) >= 4 &&
+      Boolean(snapshot.media?.hasReviewSection) &&
+      Boolean(snapshot.media?.hasVideo),
+    discountEnabled: Boolean(snapshot.discountOfferVisible),
+    bundleEnabled: Boolean(snapshot.bundleOfferVisible),
+    hasInternalProductLink: (snapshot.descriptionProductLinks?.length ?? 0) > 0,
+    unansweredQuestions: snapshot.unansweredQuestions ?? 0
+  };
+
+  const counts = {
+    titleLength,
+    titleKeywordMentions,
+    descriptionKeywordMentions,
+    subjectsCount: snapshot.subjects?.length ?? 0,
+    tagsCount: snapshot.tags.length,
+    imageCount: snapshot.media?.imageCount ?? 0,
+    hasVideo: Boolean(snapshot.media?.hasVideo),
+    hasReviewSection: Boolean(snapshot.media?.hasReviewSection)
+  };
+
+  let score = 100;
+  if (rank.status !== "ranked") score -= 18;
+  if (!checks.titleContainsKeyword) score -= 18;
+  if (!checks.descriptionContainsKeyword) score -= 16;
+  if (!checks.titleLengthOk) score -= 12;
+  if (checks.titleKeywordRepeated) score -= 12;
+  if (checks.descriptionKeywordOverused) score -= 10;
+  if (!checks.subjectsComplete) score -= 9;
+  if (!checks.tagsComplete) score -= 9;
+  if (!checks.pagesFilled) score -= 8;
+  if (!checks.mediaComplete) score -= 8;
+  if (!checks.discountEnabled) score -= 5;
+  if (!checks.bundleEnabled) score -= 5;
+  if (!checks.hasInternalProductLink) score -= 5;
+  if (checks.unansweredQuestions > 0) score -= 7;
 
   return {
     product: {
@@ -436,23 +330,19 @@ export async function analyzeProductSeoAudit(snapshot: ProductSeoAuditSnapshot, 
       title: snapshot.title
     },
     audit: {
+      keyword: snapshot.auditKeyword.trim(),
       seoScore: Math.max(0, Math.min(100, score)),
-      primaryKeyword,
-      placements,
-      tagCompleteness,
-      cannibalization: {
-        status: similarListings.length ? "possible" : "none",
-        similarListings
-      },
+      rank,
+      checks,
+      counts,
       actionItems: buildActionItems({
-        primaryKeyword,
-        placements,
-        tagCompleteness,
-        cannibalizationCount: similarListings.length
+        keyword: snapshot.auditKeyword.trim(),
+        checks,
+        counts,
+        rankStatus: rank.status
       }),
       analyzedAt: new Date().toISOString(),
-      cooldownMinutes,
-      note: "This SEO audit follows TPT listing basics: keyword focus, placement, preview alignment, tag coverage, and overlap within the analyzed store."
+      note: "This audit checks one user-provided keyword against TPT listing SEO basics and the first 3 TPT search pages."
     }
   };
 }

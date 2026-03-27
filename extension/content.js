@@ -9,6 +9,7 @@ const PANEL_STATE = {
   intent: null,
   body: null,
   action: null,
+  keywordInput: null,
   results: null
 };
 
@@ -194,7 +195,7 @@ function extractDescriptionExcerpt() {
     cursor = cursor.nextElementSibling;
   }
 
-  return chunks.join(" ").slice(0, 300).trim();
+  return chunks.join(" ").split(/\s+/).slice(0, 300).join(" ").trim();
 }
 
 function extractSellerName() {
@@ -225,6 +226,79 @@ function extractPreviewData() {
   };
 }
 
+function extractMediaData() {
+  const thumbs = [...document.querySelectorAll("img")]
+    .filter((image) => {
+      const src = image.getAttribute("src") || "";
+      return /product|preview|thumbnail|page/i.test(src);
+    })
+    .slice(0, 12);
+  const hasVideo = Boolean(
+    document.querySelector("video, iframe[src*='youtube'], iframe[src*='vimeo'], [class*='play'], [aria-label*='video']")
+  );
+  const hasReviewSection = /what others say|ratings|reviews/i.test(document.body.innerText || "");
+
+  return {
+    imageCount: thumbs.length,
+    hasVideo,
+    hasReviewSection
+  };
+}
+
+function extractDescriptionProductLinks() {
+  const headings = [...document.querySelectorAll("h2, h3, [role='heading']")];
+  const heading = headings.find((item) => normalizeText(textFromNode(item)) === "description");
+
+  if (!heading) {
+    return [];
+  }
+
+  const links = new Set();
+  let cursor = heading.parentElement?.nextElementSibling || heading.nextElementSibling;
+
+  while (cursor) {
+    cursor.querySelectorAll("a[href*='/Product/']").forEach((anchor) => links.add(anchor.href));
+    if (cursor.querySelector("h2, h3")) {
+      break;
+    }
+
+    cursor = cursor.nextElementSibling;
+  }
+
+  return [...links];
+}
+
+function extractUnansweredQuestions() {
+  const pageText = document.body.innerText || "";
+  if (/be the first to ask a question/i.test(pageText)) {
+    return 0;
+  }
+
+  const qaSection = [...document.querySelectorAll("h2, h3, [role='heading']")]
+    .find((node) => /questions?\s*&\s*answers?/i.test(textFromNode(node)));
+
+  if (!qaSection) {
+    return 0;
+  }
+
+  let sectionText = "";
+  let cursor = qaSection.parentElement?.nextElementSibling || qaSection.nextElementSibling;
+  let hops = 0;
+
+  while (cursor && hops < 6) {
+    sectionText += ` ${textFromNode(cursor)}`;
+    if (cursor.querySelector("h2, h3")) {
+      break;
+    }
+    cursor = cursor.nextElementSibling;
+    hops += 1;
+  }
+
+  const questionCount = (sectionText.match(/\?/g) || []).length;
+  const answeredCount = (sectionText.match(/answered|seller responded|reply/gi) || []).length;
+  return Math.max(0, questionCount - answeredCount);
+}
+
 function extractProductSnapshot() {
   const title = textFromNode(document.querySelector("h1"));
   const descriptionExcerpt = extractDescriptionExcerpt();
@@ -232,6 +306,7 @@ function extractProductSnapshot() {
   const tagsValue = findLabelValue("Tags");
   const subjectsValue = findLabelValue("Subjects");
   const resourceTypeValue = findLabelValue("Resource type");
+  const pagesValue = findLabelValue("Pages");
 
   if (!title) {
     return {
@@ -252,8 +327,13 @@ function extractProductSnapshot() {
       tags: splitList(tagsValue),
       subjects: splitList(subjectsValue),
       resourceType: resourceTypeValue || null,
+      pagesValue: pagesValue || null,
       preview: extractPreviewData(),
-      seedKeywords: []
+      media: extractMediaData(),
+      discountOfferVisible: /new users can receive 10% off their first purchase from this seller/i.test(document.body.innerText || ""),
+      bundleOfferVisible: /save even more with bundles/i.test(document.body.innerText || ""),
+      descriptionProductLinks: extractDescriptionProductLinks(),
+      unansweredQuestions: extractUnansweredQuestions()
     }
   };
 }
@@ -649,6 +729,23 @@ function injectStyles() {
       cursor: wait;
     }
 
+    .knowlense-panel-input {
+      width: 100%;
+      margin-bottom: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 14px;
+      background: #ffffff;
+      padding: 12px 14px;
+      font-size: 14px;
+      color: #0f172a;
+      outline: none;
+    }
+
+    .knowlense-panel-input:focus {
+      border-color: rgba(109, 94, 252, 0.45);
+      box-shadow: 0 0 0 4px rgba(109, 94, 252, 0.12);
+    }
+
     .knowlense-panel-status {
       margin-top: 10px;
       font-size: 12px;
@@ -796,17 +893,18 @@ function createPanel() {
       <div class="knowlense-panel-header">
         <div class="knowlense-panel-eyebrow">Knowlense SEO</div>
         <h3 class="knowlense-panel-title">TPT Listing SEO Auditor</h3>
-        <p class="knowlense-panel-subtitle">Audit keyword focus, placement, preview alignment, tag coverage, and overlap inside the analyzed store.</p>
+        <p class="knowlense-panel-subtitle">Enter one target keyword to audit ranking, keyword placement, metadata coverage, media completeness, and listing SEO basics.</p>
       </div>
       <div class="knowlense-panel-body">
         <section class="knowlense-panel-section knowlense-panel-meta"></section>
         <section class="knowlense-panel-section knowlense-panel-intent"></section>
         <section class="knowlense-panel-section">
+          <input class="knowlense-panel-input" type="text" placeholder="Enter one target keyword" />
           <button class="knowlense-panel-action" type="button">Run SEO audit</button>
           <div class="knowlense-panel-status">Connect the extension through the website, then run the SEO audit.</div>
         </section>
         <section class="knowlense-panel-section">
-          <div class="knowlense-panel-empty">No SEO audit yet. Run the check to score this listing, identify the primary keyword, and generate 5 clear action items.</div>
+          <div class="knowlense-panel-empty">No SEO audit yet. Enter one keyword, then run the check to score this listing and generate 5 clear action items.</div>
           <ul class="knowlense-keyword-list" hidden></ul>
         </section>
       </div>
@@ -820,6 +918,7 @@ function createPanel() {
   PANEL_STATE.intent = panel.querySelector(".knowlense-panel-intent");
   PANEL_STATE.status = panel.querySelector(".knowlense-panel-status");
   PANEL_STATE.action = panel.querySelector(".knowlense-panel-action");
+  PANEL_STATE.keywordInput = panel.querySelector(".knowlense-panel-input");
   PANEL_STATE.results = panel.querySelector(".knowlense-keyword-list");
   PANEL_STATE.body = panel.querySelector(".knowlense-panel-empty");
 }
@@ -846,8 +945,8 @@ function renderMeta(snapshot) {
         <strong>${snapshot.sellerName || "Unknown"}</strong>
       </div>
       <div style="text-align:right">
-        <span>Tags</span>
-        <strong>${snapshot.tags.length ? `${snapshot.tags.length} found` : "None"}</strong>
+        <span>Pages</span>
+        <strong>${snapshot.pagesValue || "Not set"}</strong>
       </div>
     </div>
   `;
@@ -874,25 +973,20 @@ function renderIntent(analysis) {
       <strong>${audit.seoScore}</strong>
       <span>SEO score</span>
     </div>
-    <div style="font-size:12px;color:#64748b;margin:14px 0 8px">Primary keyword</div>
-    <div class="knowlense-keyword-meta">${chipMarkup(audit.primaryKeyword ? [audit.primaryKeyword] : [])}</div>
-    <div style="font-size:12px;color:#64748b;margin:12px 0 8px">Placement checks</div>
+    <div style="font-size:12px;color:#64748b;margin:14px 0 8px">Keyword and rank</div>
     <div class="knowlense-keyword-meta">
       ${chipMarkup([
-        audit.placements.title ? "Title: yes" : "Title: missing",
-        audit.placements.snippet ? "Snippet: yes" : "Snippet: missing",
-        audit.placements.description ? "Description: yes" : "Description: missing",
-        audit.placements.preview ? "Preview: yes" : "Preview: missing"
+        audit.keyword,
+        audit.rank.status === "ranked" ? `Page ${audit.rank.resultPage} · #${audit.rank.position}` : "Outside top 3 pages (>73)"
       ])}
     </div>
-    <div style="font-size:12px;color:#64748b;margin:12px 0 8px">Tags and store overlap</div>
+    <div style="font-size:12px;color:#64748b;margin:12px 0 8px">Checks</div>
     <div class="knowlense-keyword-meta">
       ${chipMarkup([
-        `Tags score ${audit.tagCompleteness.score}`,
-        `${audit.tagCompleteness.totalTags} tags`,
-        audit.cannibalization.status === "possible"
-          ? `${audit.cannibalization.similarListings.length} similar listing${audit.cannibalization.similarListings.length > 1 ? "s" : ""}`
-          : "No overlap flagged"
+        audit.checks.titleContainsKeyword ? "Title keyword: yes" : "Title keyword: missing",
+        audit.checks.descriptionContainsKeyword ? "Description keyword: yes" : "Description keyword: missing",
+        audit.checks.tagsComplete ? "6 tags: yes" : `${audit.counts.tagsCount}/6 tags`,
+        audit.checks.subjectsComplete ? "3 subjects: yes" : `${audit.counts.subjectsCount}/3 subjects`
       ])}
     </div>
   `;
@@ -925,7 +1019,7 @@ function renderResults(payload) {
 
   PANEL_STATE.body.hidden = false;
   PANEL_STATE.results.hidden = false;
-  PANEL_STATE.body.textContent = audit.note || "Review the SEO checks and action items below.";
+  PANEL_STATE.body.textContent = `${audit.note} Title mentions: ${audit.counts.titleKeywordMentions}. Description mentions: ${audit.counts.descriptionKeywordMentions}.`;
 
   actions.forEach((item, index) => {
     const element = document.createElement("li");
@@ -960,6 +1054,13 @@ async function analyzeCurrentProduct() {
     throw new Error(extracted.error);
   }
 
+  const keyword = PANEL_STATE.keywordInput?.value?.trim();
+  if (!keyword) {
+    throw new Error("Enter one keyword before running the SEO audit.");
+  }
+
+  extracted.snapshot.auditKeyword = keyword;
+
   const response = await fetch(`${sessionState.apiUrl.replace(/\/$/, "")}/v1/product-seo-audit/analyze`, {
     method: "POST",
     headers: {
@@ -993,18 +1094,14 @@ async function handleAnalyzeClick() {
 
   PANEL_STATE.action.disabled = true;
   PANEL_STATE.action.textContent = "Analyzing...";
-  setPanelStatus("Scoring the listing, checking keyword placement, and building action items...", "");
+  setPanelStatus("Checking rank, keyword placement, metadata coverage, media completeness, and action items...", "");
 
   try {
     const result = await analyzeCurrentProduct();
     renderMeta(result.snapshot);
     renderIntent(result.payload.analysis);
     renderResults(result.payload);
-    if (result.payload.cached) {
-      setPanelStatus(`Showing a recent cached SEO audit from the last ${result.payload.cooldownMinutes} minutes.`, "success");
-    } else {
-      setPanelStatus(result.payload.warning || "SEO audit completed.", result.payload.warning ? "error" : "success");
-    }
+    setPanelStatus(result.payload.warning || "SEO audit completed.", result.payload.warning ? "error" : "success");
   } catch (error) {
     setPanelStatus(error.message, "error");
   } finally {

@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { createClient } from "@supabase/supabase-js";
 import { analyzeKeywordSnapshot, type SearchSnapshot } from "./lib/keywordFinder";
 import { analyzeProductKeywords, findRecentProductRun, type ProductKeywordSnapshot } from "./lib/productKeywords";
-import { analyzeProductSeoAudit, findRecentSeoAudit, type ProductSeoAuditSnapshot } from "./lib/seoAuditor";
+import { analyzeProductSeoAudit, type ProductSeoAuditSnapshot } from "./lib/seoAuditor";
 
 type Bindings = {
   CORS_ORIGIN?: string;
@@ -101,32 +101,41 @@ type StoredProductSeoAudit = {
   title_text: string;
   primary_keyword: string | null;
   audit: {
+    keyword: string;
     seoScore: number;
-    primaryKeyword: string | null;
-    placements: {
-      title: boolean;
-      snippet: boolean;
-      description: boolean;
-      preview: boolean;
+    rank: {
+      status: "ranked" | "beyond_page_3";
+      position: number;
+      resultPage: number | null;
+      searchUrl: string;
     };
-    tagCompleteness: {
-      score: number;
-      totalTags: number;
-      matchedTags: string[];
-      status: "strong" | "needs_work";
+    checks: {
+      titleContainsKeyword: boolean;
+      descriptionContainsKeyword: boolean;
+      titleLengthOk: boolean;
+      titleKeywordRepeated: boolean;
+      descriptionKeywordOverused: boolean;
+      subjectsComplete: boolean;
+      tagsComplete: boolean;
+      pagesFilled: boolean;
+      mediaComplete: boolean;
+      discountEnabled: boolean;
+      bundleEnabled: boolean;
+      hasInternalProductLink: boolean;
+      unansweredQuestions: number;
     };
-    cannibalization: {
-      status: "none" | "possible";
-      similarListings: Array<{
-        productId: string | null;
-        productUrl: string;
-        title: string;
-        primaryKeyword: string;
-      }>;
+    counts: {
+      titleLength: number;
+      titleKeywordMentions: number;
+      descriptionKeywordMentions: number;
+      subjectsCount: number;
+      tagsCount: number;
+      imageCount: number;
+      hasVideo: boolean;
+      hasReviewSection: boolean;
     };
     actionItems: string[];
     analyzedAt: string;
-    cooldownMinutes: number;
     note: string;
   };
   created_at: string;
@@ -1105,28 +1114,15 @@ app.use("/v1/product-seo-audit/*", async (c, next) => {
 app.post("/v1/product-seo-audit/analyze", async (c) => {
   const body = (await c.req.json().catch(() => null)) as ProductSeoAuditSnapshot | null;
 
-  if (!body?.productUrl || !body?.title) {
+  if (!body?.productUrl || !body?.title || !body?.auditKeyword?.trim()) {
     return c.json({ error: "Invalid SEO audit snapshot payload." }, 400);
   }
 
   const user = c.get("user");
-  const productId = body.productId ?? body.productUrl.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
-  const recentRun = await findRecentSeoAudit(c.env.DB, user.id, productId, body.productUrl, 30).catch(() => null);
-
-  if (recentRun) {
-    return c.json({
-      runId: recentRun.runId,
-      persisted: true,
-      cached: true,
-      cooldownMinutes: recentRun.analysis.audit.cooldownMinutes,
-      analysis: recentRun.analysis
-    });
-  }
 
   const analysis = await analyzeProductSeoAudit(body, {
     db: c.env.DB,
-    userId: user.id,
-    cooldownMinutes: 30
+    userId: user.id
   });
 
   const runId = crypto.randomUUID();
@@ -1146,7 +1142,7 @@ app.post("/v1/product-seo-audit/analyze", async (c) => {
         analysis.product.id,
         analysis.product.url,
         analysis.product.title,
-        analysis.audit.primaryKeyword,
+        analysis.audit.keyword,
         JSON.stringify(analysis)
       )
       .run();
@@ -1160,7 +1156,6 @@ app.post("/v1/product-seo-audit/analyze", async (c) => {
     runId,
     persisted,
     cached: false,
-    cooldownMinutes: analysis.audit.cooldownMinutes,
     warning,
     analysis
   });
