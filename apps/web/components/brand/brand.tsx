@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import logoKnowlense from "@/logo/logoknowlense.png";
+import logoKnowlense from "@/logo/logoknowlense.svg";
 
 type BrandLockupProps = {
   href?: string;
