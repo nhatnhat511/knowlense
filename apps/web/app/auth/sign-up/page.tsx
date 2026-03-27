@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { mapSignupResult, validatePassword } from "@/lib/auth/errors";
-import { getSignupRedirectUrl } from "@/lib/auth/redirects";
+import { getAuthCallbackUrl, getSignupRedirectUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   AuthDivider,
@@ -45,7 +45,7 @@ export default function SignUpPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: getSignupRedirectUrl()
+          redirectTo: getAuthCallbackUrl("/dashboard")
         }
       });
 

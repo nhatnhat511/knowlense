@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
 
-export default function AuthCallbackPage() {
+function AuthCallbackContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+  const nextPath = searchParams.get("next")?.startsWith("/") ? searchParams.get("next")! : "/dashboard";
   const [status, setStatus] = useState("Processing the Supabase callback...");
 
   useEffect(() => {
@@ -16,33 +18,91 @@ export default function AuthCallbackPage() {
       return;
     }
 
+    const providerError = searchParams.get("error_description") || searchParams.get("error");
+    if (providerError) {
+      setStatus(providerError);
+      return;
+    }
+
     const client = supabase;
     let active = true;
+    let redirectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    async function completeCallback() {
+    async function finalizeWithSession() {
       const {
         data: { session }
       } = await client.auth.getSession();
 
       if (!active) {
-        return;
+        return false;
       }
 
       if (session?.access_token) {
-        setStatus("Email confirmed. Redirecting to your dashboard...");
-        setTimeout(() => router.replace("/dashboard"), 1200);
+        setStatus("Authentication completed. Redirecting...");
+        redirectTimer = setTimeout(() => router.replace(nextPath), 900);
+        return true;
+      }
+
+      return false;
+    }
+
+    async function completeCallback() {
+      const authCode = searchParams.get("code");
+
+      if (authCode) {
+        const { error } = await client.auth.exchangeCodeForSession(authCode);
+
+        if (!active) {
+          return;
+        }
+
+        if (error) {
+          setStatus(error.message);
+          return;
+        }
+      }
+
+      const completed = await finalizeWithSession();
+      if (completed || !active) {
         return;
       }
 
-      setStatus("The callback completed, but no active session was created. Return to sign in if needed.");
+      setStatus("Finishing sign-in...");
+
+      const retryTimer = setTimeout(async () => {
+        const ready = await finalizeWithSession();
+        if (!ready && active) {
+          setStatus("The callback completed, but no active session was created. Return to sign in if needed.");
+        }
+      }, 1200);
+
+      return () => clearTimeout(retryTimer);
     }
 
-    void completeCallback();
+    const unsubscribe = client.auth.onAuthStateChange((event) => {
+      if (!active) {
+        return;
+      }
+
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        void finalizeWithSession();
+      }
+    });
+
+    let cleanupRetry: (() => void) | undefined;
+    void completeCallback().then((cleanup) => {
+      cleanupRetry = cleanup;
+    });
 
     return () => {
       active = false;
+      unsubscribe.data.subscription.unsubscribe();
+      cleanupRetry?.();
+      if (redirectTimer) {
+        clearTimeout(redirectTimer);
+      }
     };
-  }, [router, supabase]);
+  }, [nextPath, router, searchParams, supabase]);
 
   return (
     <AuthShell
@@ -61,5 +121,13 @@ export default function AuthCallbackPage() {
         <p className="text-[15px] leading-7 text-neutral-600">{status}</p>
       </div>
     </AuthShell>
+  );
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-[#f7f7f5]" />}>
+      <AuthCallbackContent />
+    </Suspense>
   );
 }

@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchApiProfile } from "@/lib/api/profile";
 import { mapSignInError } from "@/lib/auth/errors";
-import { getSignupRedirectUrl } from "@/lib/auth/redirects";
+import { getAuthCallbackUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   AuthDivider,
@@ -69,7 +69,7 @@ function SignInContent() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: getSignupRedirectUrl()
+          redirectTo: getAuthCallbackUrl(nextPath)
         }
       });
 
