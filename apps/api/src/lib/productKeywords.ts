@@ -7,23 +7,38 @@ export type ProductKeywordSnapshot = {
   tags: string[];
   resourceType?: string | null;
   subjects?: string[];
+  seedKeywords?: string[];
+  suggestedKeywords?: string[];
+};
+
+type RankCacheRow = {
+  product_id: string;
+  keyword_text: string;
+  rank_position: number | null;
+  result_page: number | null;
+  status: "ranked" | "beyond_page_3";
+  confidence: "high" | "medium" | "low";
+  search_url: string;
+  checked_at: string;
+  expires_at: string;
 };
 
 type Candidate = {
-  phrase: string;
+  keyword: string;
   score: number;
-  sources: Set<string>;
+  source: "seed" | "suggestion";
 };
 
 export type RankedKeyword = {
   keyword: string;
   score: number;
-  sourceCount: number;
-  sources: string[];
-  rankPosition: number | null;
+  source: "seed" | "suggestion";
+  rankPosition: number;
   resultPage: number | null;
-  status: "ranked" | "not_found";
+  status: "ranked" | "beyond_page_3";
+  confidence: "high" | "medium" | "low";
   searchUrl: string;
+  checkedAt: string;
 };
 
 export type ProductKeywordAnalysis = {
@@ -34,14 +49,29 @@ export type ProductKeywordAnalysis = {
   };
   summary: {
     generatedKeywords: number;
+    checkedKeywords: number;
     rankedKeywords: number;
-    bestRank: number | null;
+    bestRank: number;
     analyzedAt: string;
+    cooldownMinutes: number;
+    cacheHitCount: number;
+    note: string;
   };
   keywords: RankedKeyword[];
 };
 
+type AnalyzeOptions = {
+  db: D1Database;
+  cooldownMinutes?: number;
+  cacheHours?: number;
+};
+
 const TPT_BASE_URL = "https://www.teacherspayteachers.com";
+const MAX_SEARCH_PAGES = 3;
+const MAX_KEYWORDS = 20;
+const DEFAULT_COOLDOWN_MINUTES = 30;
+const DEFAULT_CACHE_HOURS = 24;
+const NOT_FOUND_RANK = 74;
 const STOP_WORDS = new Set([
   "a",
   "about",
@@ -109,113 +139,83 @@ function titleCaseKeyword(value: string) {
     .join(" ");
 }
 
-function addCandidate(map: Map<string, Candidate>, rawPhrase: string, score: number, source: string) {
-  const phrase = normalizeText(rawPhrase);
-  if (!phrase || phrase.length < 4) {
-    return;
-  }
-
-  const tokens = phrase.split(" ");
-  if (tokens.length < 2 || tokens.length > 5) {
-    return;
-  }
-
-  if (tokens.every((token) => token.length < 3)) {
-    return;
-  }
-
-  const current = map.get(phrase);
-  if (!current) {
-    map.set(phrase, {
-      phrase,
-      score,
-      sources: new Set([source])
-    });
-    return;
-  }
-
-  current.score += score;
-  current.sources.add(source);
-}
-
-function buildNgrams(tokens: string[], minSize: number, maxSize: number) {
-  const phrases: string[] = [];
-
-  for (let start = 0; start < tokens.length; start += 1) {
-    for (let size = minSize; size <= maxSize; size += 1) {
-      const slice = tokens.slice(start, start + size);
-      if (slice.length === size) {
-        phrases.push(slice.join(" "));
-      }
-    }
-  }
-
-  return phrases;
+function isoFromNow(minutes: number) {
+  return new Date(Date.now() + minutes * 60 * 1000).toISOString();
 }
 
 function extractProductId(value: string) {
   return value.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
 }
 
-function generateKeywordCandidates(snapshot: ProductKeywordSnapshot) {
-  const candidates = new Map<string, Candidate>();
+function buildSeedKeywords(snapshot: ProductKeywordSnapshot) {
   const titleTokens = tokenize(snapshot.title);
-  const descriptionTokens = tokenize(snapshot.descriptionExcerpt).slice(0, 40);
-  const gradeTokens = snapshot.grades.flatMap((item) => tokenize(item));
-  const subjectTokens = (snapshot.subjects ?? []).flatMap((item) => tokenize(item));
-  const resourceTokens = snapshot.resourceType ? tokenize(snapshot.resourceType) : [];
+  const gradePhrases = snapshot.grades.map(normalizeText).filter(Boolean).slice(0, 4);
+  const tagPhrases = snapshot.tags.map(normalizeText).filter(Boolean).slice(0, 6);
+  const seeds = new Set<string>();
 
-  if (titleTokens.length >= 2) {
-    addCandidate(candidates, titleTokens.join(" "), 40, "title-full");
+  for (let start = 0; start < titleTokens.length; start += 1) {
+    for (let size = 1; size <= 4; size += 1) {
+      const slice = titleTokens.slice(start, start + size);
+      if (!slice.length) {
+        continue;
+      }
+
+      const phrase = slice.join(" ");
+      if (slice.length === size && phrase.length >= 4) {
+        seeds.add(phrase);
+      }
+    }
   }
 
-  buildNgrams(titleTokens, 2, 5).forEach((phrase) => addCandidate(candidates, phrase, phrase.split(" ").length >= 3 ? 20 : 16, "title-gram"));
-  buildNgrams(descriptionTokens, 2, 4).forEach((phrase) => addCandidate(candidates, phrase, 8, "description"));
-  snapshot.tags.forEach((tag) => addCandidate(candidates, tag, 22, "tag"));
-
-  const topicalPhrases = [...new Set([...snapshot.tags.map(normalizeText), ...buildNgrams(titleTokens, 2, 3)].filter(Boolean))].slice(0, 10);
-  const gradePhrases = [...new Set(snapshot.grades.map(normalizeText).filter(Boolean))];
-  const subjectPhrases = [...new Set((snapshot.subjects ?? []).map(normalizeText).filter(Boolean))];
-
-  topicalPhrases.forEach((phrase) => {
-    gradePhrases.forEach((grade) => addCandidate(candidates, `${phrase} ${grade}`, 18, "grade-combo"));
-    subjectPhrases.forEach((subject) => addCandidate(candidates, `${subject} ${phrase}`, 14, "subject-combo"));
-    if (snapshot.resourceType) {
-      addCandidate(candidates, `${phrase} ${snapshot.resourceType}`, 14, "resource-combo");
-    }
+  const titleSeeds = [...seeds].slice(0, 10);
+  titleSeeds.forEach((seed) => {
+    gradePhrases.forEach((grade) => seeds.add(`${seed} ${grade}`));
+    tagPhrases.forEach((tag) => seeds.add(`${seed} ${tag}`));
   });
 
-  if (resourceTokens.length) {
-    buildNgrams(resourceTokens, 1, 3).forEach((phrase) => addCandidate(candidates, phrase, 10, "resource"));
-  }
+  return [...seeds].slice(0, 26);
+}
 
-  if (subjectTokens.length) {
-    buildNgrams(subjectTokens, 1, 3).forEach((phrase) => addCandidate(candidates, phrase, 9, "subject"));
-  }
+function buildCandidates(snapshot: ProductKeywordSnapshot) {
+  const candidates = new Map<string, Candidate>();
+  const seeds = (snapshot.seedKeywords?.length ? snapshot.seedKeywords : buildSeedKeywords(snapshot))
+    .map(normalizeText)
+    .filter(Boolean);
+  const suggestions = (snapshot.suggestedKeywords ?? []).map(normalizeText).filter(Boolean);
 
-  if (gradeTokens.length) {
-    buildNgrams(gradeTokens, 1, 3).forEach((phrase) => addCandidate(candidates, phrase, 7, "grade"));
-  }
+  seeds.forEach((keyword, index) => {
+    candidates.set(keyword, {
+      keyword,
+      score: Math.max(40 - index, 10),
+      source: "seed"
+    });
+  });
+
+  suggestions.forEach((keyword, index) => {
+    const existing = candidates.get(keyword);
+    const nextScore = Math.max(100 - index, 50);
+    if (existing) {
+      existing.score = Math.max(existing.score, nextScore);
+      existing.source = "suggestion";
+      return;
+    }
+
+    candidates.set(keyword, {
+      keyword,
+      score: nextScore,
+      source: "suggestion"
+    });
+  });
 
   return [...candidates.values()]
-    .map((candidate) => {
-      const tokenCount = candidate.phrase.split(" ").length;
-      const specificityBonus = tokenCount === 2 ? 10 : tokenCount <= 4 ? 16 : 6;
-      const sourceBonus = candidate.sources.size * 8;
-      const broadPenalty = tokenCount === 1 ? 20 : 0;
+    .sort((left, right) => {
+      if (left.source !== right.source) {
+        return left.source === "suggestion" ? -1 : 1;
+      }
 
-      return {
-        keyword: candidate.phrase,
-        score: Math.max(candidate.score + specificityBonus + sourceBonus - broadPenalty, 0),
-        sources: [...candidate.sources]
-      };
+      return right.score - left.score;
     })
-    .sort((left, right) => right.score - left.score)
-    .filter((candidate, index, items) => {
-      const duplicate = items.findIndex((item) => item.keyword === candidate.keyword);
-      return duplicate === index;
-    })
-    .slice(0, 20);
+    .slice(0, MAX_KEYWORDS);
 }
 
 function decodeHtmlEntities(value: string) {
@@ -248,19 +248,120 @@ function extractProductUrlsFromSearchHtml(html: string) {
   return urls;
 }
 
-async function lookupKeywordRank(keyword: string, productId: string | null) {
-  const searchUrl = `${TPT_BASE_URL}/browse?search=${encodeURIComponent(keyword)}`;
+async function readRankCache(db: D1Database, productId: string, keyword: string) {
+  return db
+    .prepare(
+      `SELECT product_id, keyword_text, rank_position, result_page, status, confidence, search_url, checked_at, expires_at
+       FROM product_keyword_rank_cache
+       WHERE product_id = ?1
+         AND keyword_text = ?2
+         AND datetime(expires_at) > datetime('now')
+       LIMIT 1`
+    )
+    .bind(productId, keyword)
+    .first<RankCacheRow>();
+}
+
+async function persistRankCache(db: D1Database, productId: string, keyword: string, result: RankedKeyword, cacheHours: number) {
+  await db
+    .prepare(
+      `INSERT INTO product_keyword_rank_cache (
+         product_id,
+         keyword_text,
+         rank_position,
+         result_page,
+         status,
+         confidence,
+         search_url,
+         checked_at,
+         expires_at
+       )
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+       ON CONFLICT(product_id, keyword_text) DO UPDATE SET
+         rank_position = excluded.rank_position,
+         result_page = excluded.result_page,
+         status = excluded.status,
+         confidence = excluded.confidence,
+         search_url = excluded.search_url,
+         checked_at = excluded.checked_at,
+         expires_at = excluded.expires_at`
+    )
+    .bind(
+      productId,
+      keyword,
+      result.rankPosition,
+      result.resultPage,
+      result.status,
+      result.confidence,
+      result.searchUrl,
+      result.checkedAt,
+      isoFromNow(cacheHours * 60)
+    )
+    .run();
+}
+
+function buildSearchResult(payload: {
+  keyword: string;
+  score: number;
+  source: "seed" | "suggestion";
+  searchUrl: string;
+  rankPosition: number;
+  resultPage: number | null;
+  status: "ranked" | "beyond_page_3";
+  confidence: "high" | "medium" | "low";
+  checkedAt: string;
+}): RankedKeyword {
+  return {
+    keyword: titleCaseKeyword(payload.keyword),
+    score: payload.score,
+    source: payload.source,
+    rankPosition: payload.rankPosition,
+    resultPage: payload.resultPage,
+    status: payload.status,
+    confidence: payload.confidence,
+    searchUrl: payload.searchUrl,
+    checkedAt: payload.checkedAt
+  };
+}
+
+async function lookupKeywordRank(
+  db: D1Database,
+  productId: string | null,
+  candidate: Candidate,
+  cacheHours: number
+) {
+  const searchUrl = `${TPT_BASE_URL}/browse?search=${encodeURIComponent(candidate.keyword)}`;
 
   if (!productId) {
-    return {
-      rankPosition: null,
+    return buildSearchResult({
+      keyword: candidate.keyword,
+      score: candidate.score,
+      source: candidate.source,
+      searchUrl,
+      rankPosition: NOT_FOUND_RANK,
       resultPage: null,
-      status: "not_found" as const,
-      searchUrl
-    };
+      status: "beyond_page_3",
+      confidence: "low",
+      checkedAt: new Date().toISOString()
+    });
   }
 
-  for (let page = 1; page <= 3; page += 1) {
+  const cached = await readRankCache(db, productId, candidate.keyword);
+  if (cached) {
+    return buildSearchResult({
+      keyword: candidate.keyword,
+      score: candidate.score,
+      source: candidate.source,
+      searchUrl: cached.search_url,
+      rankPosition: cached.rank_position ?? NOT_FOUND_RANK,
+      resultPage: cached.result_page,
+      status: cached.status,
+      confidence: cached.confidence,
+      checkedAt: cached.checked_at
+    });
+  }
+
+  for (let page = 1; page <= MAX_SEARCH_PAGES; page += 1) {
     const pageUrl = page === 1 ? searchUrl : `${searchUrl}&page=${page}`;
     const response = await fetch(pageUrl, {
       headers: {
@@ -277,22 +378,37 @@ async function lookupKeywordRank(keyword: string, productId: string | null) {
 
     for (let index = 0; index < urls.length; index += 1) {
       if (extractProductId(urls[index]) === productId) {
-        return {
+        const ranked = buildSearchResult({
+          keyword: candidate.keyword,
+          score: candidate.score,
+          source: candidate.source,
+          searchUrl,
           rankPosition: (page - 1) * urls.length + index + 1,
           resultPage: page,
-          status: "ranked" as const,
-          searchUrl
-        };
+          status: "ranked",
+          confidence: page === 1 ? "high" : "medium",
+          checkedAt: new Date().toISOString()
+        });
+
+        await persistRankCache(db, productId, candidate.keyword, ranked, cacheHours);
+        return ranked;
       }
     }
   }
 
-  return {
-    rankPosition: null,
+  const missing = buildSearchResult({
+    keyword: candidate.keyword,
+    score: candidate.score,
+    source: candidate.source,
+    searchUrl,
+    rankPosition: NOT_FOUND_RANK,
     resultPage: null,
-    status: "not_found" as const,
-    searchUrl
-  };
+    status: "beyond_page_3",
+    confidence: "low",
+    checkedAt: new Date().toISOString()
+  });
+  await persistRankCache(db, productId, candidate.keyword, missing, cacheHours);
+  return missing;
 }
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, mapper: (item: T) => Promise<R>) {
@@ -311,41 +427,81 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, mapper: (item
   return results;
 }
 
-export async function analyzeProductKeywords(snapshot: ProductKeywordSnapshot): Promise<ProductKeywordAnalysis> {
+export async function findRecentProductRun(db: D1Database, userId: string, productId: string | null, productUrl: string, cooldownMinutes = DEFAULT_COOLDOWN_MINUTES) {
+  const row = await db
+    .prepare(
+      `SELECT id, product_id, product_url, title_text, summary_json, keywords_json, created_at
+       FROM product_keyword_runs
+       WHERE user_id = ?1
+         AND (
+           (?2 IS NOT NULL AND product_id = ?2)
+           OR product_url = ?3
+         )
+         AND datetime(created_at) >= datetime('now', ?4)
+       ORDER BY datetime(created_at) DESC
+       LIMIT 1`
+    )
+    .bind(userId, productId, productUrl, `-${cooldownMinutes} minutes`)
+    .first<{
+      id: string;
+      product_id: string | null;
+      product_url: string;
+      title_text: string;
+      summary_json: string;
+      keywords_json: string;
+      created_at: string;
+    }>();
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    runId: row.id,
+    analysis: {
+      product: {
+        id: row.product_id,
+        url: row.product_url,
+        title: row.title_text
+      },
+      summary: JSON.parse(row.summary_json),
+      keywords: JSON.parse(row.keywords_json)
+    } satisfies ProductKeywordAnalysis,
+    createdAt: row.created_at
+  };
+}
+
+export async function analyzeProductKeywords(snapshot: ProductKeywordSnapshot, options: AnalyzeOptions): Promise<ProductKeywordAnalysis> {
+  const cooldownMinutes = options.cooldownMinutes ?? DEFAULT_COOLDOWN_MINUTES;
+  const cacheHours = options.cacheHours ?? DEFAULT_CACHE_HOURS;
   const productId = snapshot.productId ?? extractProductId(snapshot.productUrl);
-  const candidates = generateKeywordCandidates(snapshot);
-  const ranked = await mapWithConcurrency(candidates, 4, async (candidate) => {
-    const rank = await lookupKeywordRank(candidate.keyword, productId);
+  const candidates = buildCandidates(snapshot);
+  let cacheHitCount = 0;
 
-    return {
-      keyword: titleCaseKeyword(candidate.keyword),
-      score: candidate.score,
-      sourceCount: candidate.sources.length,
-      sources: candidate.sources,
-      rankPosition: rank.rankPosition,
-      resultPage: rank.resultPage,
-      status: rank.status,
-      searchUrl: rank.searchUrl
-    } satisfies RankedKeyword;
+  const ranked = await mapWithConcurrency(candidates, 3, async (candidate) => {
+    const cached = productId ? await readRankCache(options.db, productId, candidate.keyword) : null;
+
+    if (cached) {
+      cacheHitCount += 1;
+      return buildSearchResult({
+        keyword: candidate.keyword,
+        score: candidate.score,
+        source: candidate.source,
+        searchUrl: cached.search_url,
+        rankPosition: cached.rank_position ?? NOT_FOUND_RANK,
+        resultPage: cached.result_page,
+        status: cached.status,
+        confidence: cached.confidence,
+        checkedAt: cached.checked_at
+      });
+    }
+
+    return lookupKeywordRank(options.db, productId, candidate, cacheHours);
   });
 
-  ranked.sort((left, right) => {
-    if (left.rankPosition == null && right.rankPosition == null) {
-      return right.score - left.score;
-    }
+  ranked.sort((left, right) => left.rankPosition - right.rankPosition || (left.source === "suggestion" && right.source === "seed" ? -1 : 1));
 
-    if (left.rankPosition == null) {
-      return 1;
-    }
-
-    if (right.rankPosition == null) {
-      return -1;
-    }
-
-    return left.rankPosition - right.rankPosition || right.score - left.score;
-  });
-
-  const found = ranked.filter((item) => item.rankPosition != null);
+  const found = ranked.filter((item) => item.status === "ranked");
 
   return {
     product: {
@@ -354,10 +510,14 @@ export async function analyzeProductKeywords(snapshot: ProductKeywordSnapshot): 
       title: snapshot.title
     },
     summary: {
-      generatedKeywords: ranked.length,
+      generatedKeywords: candidates.length,
+      checkedKeywords: ranked.length,
       rankedKeywords: found.length,
-      bestRank: found[0]?.rankPosition ?? null,
-      analyzedAt: new Date().toISOString()
+      bestRank: found[0]?.rankPosition ?? NOT_FOUND_RANK,
+      analyzedAt: new Date().toISOString(),
+      cooldownMinutes,
+      cacheHitCount,
+      note: "Keyword sources come from TPT autocomplete when available. Exact rank is checked only in the first 3 result pages; anything deeper is shown as >73."
     },
     keywords: ranked
   };

@@ -192,7 +192,7 @@ function extractProductSnapshot() {
   const subjectsValue = findLabelValue("Subjects");
   const resourceTypeValue = findLabelValue("Resource type");
 
-  if (!title || !descriptionExcerpt) {
+  if (!title) {
     return {
       ok: false,
       error: "Knowlense could not read the core product details on this page."
@@ -209,9 +209,111 @@ function extractProductSnapshot() {
       grades: splitList(gradesValue),
       tags: splitList(tagsValue),
       subjects: splitList(subjectsValue),
-      resourceType: resourceTypeValue || null
+      resourceType: resourceTypeValue || null,
+      seedKeywords: []
     }
   };
+}
+
+function buildSeedKeywords(snapshot) {
+  const normalizedTitle = normalizeText(snapshot.title)
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(" ")
+    .filter((token) => token.length > 2);
+  const seeds = new Set();
+  const titleSeeds = [];
+
+  for (let index = 0; index < normalizedTitle.length; index += 1) {
+    for (let size = 1; size <= 4; size += 1) {
+      const phrase = normalizedTitle.slice(index, index + size).join(" ").trim();
+      if (!phrase || phrase.length < 4) {
+        continue;
+      }
+
+      if (size === 1 || size === 2 || size === 3 || size === 4) {
+        titleSeeds.push(phrase);
+      }
+    }
+  }
+
+  titleSeeds.slice(0, 10).forEach((value) => seeds.add(value));
+  snapshot.grades.slice(0, 4).forEach((grade) => seeds.add(normalizeText(grade)));
+  snapshot.tags.slice(0, 6).forEach((tag) => seeds.add(normalizeText(tag)));
+
+  titleSeeds.slice(0, 8).forEach((titleSeed) => {
+    snapshot.grades.slice(0, 3).forEach((grade) => seeds.add(`${titleSeed} ${normalizeText(grade)}`));
+    snapshot.tags.slice(0, 4).forEach((tag) => seeds.add(`${titleSeed} ${normalizeText(tag)}`));
+  });
+
+  return [...seeds]
+    .map((item) => normalizeText(item))
+    .filter((item) => item.length >= 4)
+    .slice(0, 24);
+}
+
+function findSearchInput() {
+  return document.querySelector("input[type='search'], input[name='search'], input[placeholder*='Search']");
+}
+
+function collectSuggestionTexts(seed) {
+  const selectors = [
+    "[role='listbox'] [role='option']",
+    "[role='listbox'] li",
+    "[data-testid*='search'] li",
+    "[data-testid*='autocomplete'] li",
+    "[class*='autocomplete'] li",
+    "[class*='Autocomplete'] li",
+    "[class*='suggest'] li",
+    "[class*='search'] [role='option']"
+  ];
+  const texts = new Set();
+
+  selectors.forEach((selector) => {
+    document.querySelectorAll(selector).forEach((node) => {
+      const text = textFromNode(node);
+      if (!text || text.length < 4 || text.length > 90 || /\$\d/.test(text)) {
+        return;
+      }
+
+      if (normalizeText(text).includes(normalizeText(seed))) {
+        texts.add(text);
+      }
+    });
+  });
+
+  return [...texts];
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function collectTptSuggestions(snapshot) {
+  const input = findSearchInput();
+  const seeds = buildSeedKeywords(snapshot);
+
+  if (!input || seeds.length === 0) {
+    return [];
+  }
+
+  const originalValue = input.value;
+  const suggestions = new Set();
+
+  for (const seed of seeds) {
+    input.focus();
+    input.value = seed;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "a" }));
+    await wait(650);
+
+    collectSuggestionTexts(seed).forEach((item) => suggestions.add(item));
+  }
+
+  input.value = originalValue;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.blur();
+
+  return [...suggestions].slice(0, 14);
 }
 
 function injectStyles() {
@@ -462,8 +564,8 @@ function createPanel() {
     <div class="knowlense-panel-shell">
       <div class="knowlense-panel-header">
         <div class="knowlense-panel-eyebrow">Knowlense SEO</div>
-        <h3 class="knowlense-panel-title">Keyword rankings</h3>
-        <p class="knowlense-panel-subtitle">Generate ranked keyword candidates from this product and check where it appears in TPT search.</p>
+        <h3 class="knowlense-panel-title">TPT keyword rankings</h3>
+        <p class="knowlense-panel-subtitle">Use TPT search suggestions first, then check the exact rank within the first 3 result pages. Deeper results are shown as &gt;73.</p>
       </div>
       <div class="knowlense-panel-body">
         <section class="knowlense-panel-section knowlense-panel-meta"></section>
@@ -472,7 +574,7 @@ function createPanel() {
           <div class="knowlense-panel-status">Connect the extension through the website, then run the analysis.</div>
         </section>
         <section class="knowlense-panel-section">
-          <div class="knowlense-panel-empty">No product keyword analysis yet. Run the check to generate the top keyword set and current TPT rank positions.</div>
+          <div class="knowlense-panel-empty">No product keyword analysis yet. Run the check to generate a limited keyword set and sampled TPT rank positions.</div>
           <ul class="knowlense-keyword-list" hidden></ul>
         </section>
       </div>
@@ -545,7 +647,7 @@ function renderResults(payload) {
 
   PANEL_STATE.body.hidden = false;
   PANEL_STATE.results.hidden = false;
-  PANEL_STATE.body.textContent = `${summary.rankedKeywords} of ${summary.generatedKeywords} keywords found in the sampled TPT search results. Best rank: ${summary.bestRank ?? "not found"}.`;
+  PANEL_STATE.body.textContent = `${summary.rankedKeywords} of ${summary.checkedKeywords} keywords were found in the first 3 TPT result pages. Best rank: ${summary.bestRank > 73 ? ">73" : `#${summary.bestRank}`}. ${summary.note || "Positions can change over time."}`;
 
   keywords.forEach((item) => {
     const element = document.createElement("li");
@@ -553,12 +655,13 @@ function renderResults(payload) {
     element.innerHTML = `
       <div class="knowlense-keyword-top">
         <div class="knowlense-keyword-name">${item.keyword}</div>
-        <div class="knowlense-keyword-rank ${item.status === "ranked" ? "ranked" : "missing"}">${item.status === "ranked" ? `#${item.rankPosition}` : "Not found"}</div>
+        <div class="knowlense-keyword-rank ${item.status === "ranked" ? "ranked" : "missing"}">${item.status === "ranked" ? `#${item.rankPosition}` : ">73"}</div>
       </div>
       <div class="knowlense-keyword-meta">
         <span class="knowlense-chip">Score ${item.score}</span>
-        <span class="knowlense-chip">${item.sourceCount} sources</span>
-        <span class="knowlense-chip">${item.resultPage ? `Page ${item.resultPage}` : "Top 3 pages checked"}</span>
+        <span class="knowlense-chip">${item.source === "suggestion" ? "TPT suggestion" : "Seed keyword"}</span>
+        <span class="knowlense-chip">${item.resultPage ? `Page ${item.resultPage}` : "Checked through page 3"}</span>
+        <span class="knowlense-chip">Confidence ${item.confidence}</span>
       </div>
       <a class="knowlense-keyword-link" href="${item.searchUrl}" target="_blank" rel="noreferrer">Open TPT search</a>
     `;
@@ -585,6 +688,10 @@ async function analyzeCurrentProduct() {
   if (!extracted.ok) {
     throw new Error(extracted.error);
   }
+
+  const suggestedKeywords = await collectTptSuggestions(extracted.snapshot).catch(() => []);
+  extracted.snapshot.seedKeywords = buildSeedKeywords(extracted.snapshot);
+  extracted.snapshot.suggestedKeywords = suggestedKeywords;
 
   const response = await fetch(`${sessionState.apiUrl.replace(/\/$/, "")}/v1/product-keywords/analyze`, {
     method: "POST",
@@ -619,13 +726,17 @@ async function handleAnalyzeClick() {
 
   PANEL_STATE.action.disabled = true;
   PANEL_STATE.action.textContent = "Analyzing...";
-  setPanelStatus("Generating the top keyword set and checking TPT rank positions...", "");
+  setPanelStatus("Collecting TPT suggestions and checking exact rank through page 3...", "");
 
   try {
     const result = await analyzeCurrentProduct();
     renderMeta(result.snapshot);
     renderResults(result.payload);
-    setPanelStatus(result.payload.warning || "Product keyword analysis completed.", result.payload.warning ? "error" : "success");
+    if (result.payload.cached) {
+      setPanelStatus(`Showing a recent cached result from the last ${result.payload.cooldownMinutes} minutes. Positions may shift over time.`, "success");
+    } else {
+      setPanelStatus(result.payload.warning || "Product keyword analysis completed. Positions may shift over time.", result.payload.warning ? "error" : "success");
+    }
   } catch (error) {
     setPanelStatus(error.message, "error");
   } finally {

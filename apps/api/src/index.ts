@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createClient } from "@supabase/supabase-js";
 import { analyzeKeywordSnapshot, type SearchSnapshot } from "./lib/keywordFinder";
-import { analyzeProductKeywords, type ProductKeywordSnapshot } from "./lib/productKeywords";
+import { analyzeProductKeywords, findRecentProductRun, type ProductKeywordSnapshot } from "./lib/productKeywords";
 
 type Bindings = {
   CORS_ORIGIN?: string;
@@ -63,9 +63,13 @@ type StoredProductKeywordRun = {
   title_text: string;
   summary: {
     generatedKeywords: number;
+    checkedKeywords: number;
     rankedKeywords: number;
     bestRank: number | null;
     analyzedAt: string;
+    cooldownMinutes: number;
+    cacheHitCount: number;
+    note: string;
   };
   keywords: Array<{
     keyword: string;
@@ -75,7 +79,9 @@ type StoredProductKeywordRun = {
     rankPosition: number | null;
     resultPage: number | null;
     status: "ranked" | "not_found";
+    confidence: "high" | "medium" | "low";
     searchUrl: string;
+    checkedAt: string;
   }>;
   created_at: string;
 };
@@ -942,7 +948,24 @@ app.post("/v1/product-keywords/analyze", async (c) => {
   }
 
   const user = c.get("user");
-  const analysis = await analyzeProductKeywords(body);
+  const productId = body.productId ?? body.productUrl.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
+  const recentRun = await findRecentProductRun(c.env.DB, user.id, productId, body.productUrl, 30).catch(() => null);
+
+  if (recentRun) {
+    return c.json({
+      runId: recentRun.runId,
+      persisted: true,
+      cached: true,
+      cooldownMinutes: recentRun.analysis.summary.cooldownMinutes,
+      analysis: recentRun.analysis
+    });
+  }
+
+  const analysis = await analyzeProductKeywords(body, {
+    db: c.env.DB,
+    cooldownMinutes: 30,
+    cacheHours: 24
+  });
   const runId = crypto.randomUUID();
   let persisted = false;
   let warning: string | null = null;
@@ -972,6 +995,8 @@ app.post("/v1/product-keywords/analyze", async (c) => {
   return c.json({
     runId,
     persisted,
+    cached: false,
+    cooldownMinutes: analysis.summary.cooldownMinutes,
     warning,
     analysis
   });
