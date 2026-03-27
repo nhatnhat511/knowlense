@@ -184,6 +184,25 @@ const TOPIC_STOP_WORDS = new Set([
   "writing"
 ]);
 const GENERIC_ENTITY_TAILS = new Set(["animal", "animals", "plant", "plants", "resource", "resources"]);
+const TOPIC_ARTICLES = new Set(["a", "an", "the"]);
+const CANONICAL_TOPIC_PATTERNS = [
+  "compare and contrast",
+  "cause and effect",
+  "main idea",
+  "text evidence",
+  "reading comprehension",
+  "close reading",
+  "opinion writing",
+  "informational writing",
+  "narrative writing",
+  "parts of speech",
+  "states of matter",
+  "water cycle",
+  "plant life cycle",
+  "frog life cycle",
+  "butterfly life cycle",
+  "sunflower life cycle"
+];
 
 function normalizeText(value: string) {
   return value
@@ -282,6 +301,44 @@ function cleanEntity(value: string) {
   return tokens.join(" ").trim();
 }
 
+function stripLeadingArticles(value: string) {
+  const tokens = normalizeText(value)
+    .split(" ")
+    .filter(Boolean)
+    .filter((token, index) => !(index === 0 && TOPIC_ARTICLES.has(token)));
+
+  return tokens.join(" ").trim();
+}
+
+function extractPatternTopicsFromText(value: string) {
+  const topics = new Set<string>();
+  const normalized = normalizeText(value);
+
+  const ofPatterns: Array<{ regex: RegExp; build: (entity: string) => string }> = [
+    { regex: /\blife cycle of (?:a |an |the )?([a-z0-9\s-]{2,40})/g, build: (entity) => `${entity} life cycle` },
+    { regex: /\bparts of (?:a |an |the )?([a-z0-9\s-]{2,40})/g, build: (entity) => `parts of ${entity}` },
+    { regex: /\btypes of (?:a |an |the )?([a-z0-9\s-]{2,40})/g, build: (entity) => `types of ${entity}` },
+    { regex: /\bstages of (?:a |an |the )?([a-z0-9\s-]{2,40})/g, build: (entity) => `stages of ${entity}` }
+  ];
+
+  ofPatterns.forEach(({ regex, build }) => {
+    [...normalized.matchAll(regex)].forEach((match) => {
+      const entity = cleanEntity(stripLeadingArticles(match[1] ?? ""));
+      if (entity) {
+        topics.add(build(entity));
+      }
+    });
+  });
+
+  CANONICAL_TOPIC_PATTERNS.forEach((pattern) => {
+    if (normalized.includes(pattern)) {
+      topics.add(pattern);
+    }
+  });
+
+  return [...topics];
+}
+
 function stripFormatPhrases(value: string) {
   let stripped = ` ${normalizeText(value)} `;
 
@@ -310,17 +367,12 @@ function extractCanonicalTopics(snapshot: ProductKeywordSnapshot) {
   const topicChunk = formatIndex > 0 ? lowerTitle.slice(0, formatIndex).trim() : lowerTitle;
   const descriptionChunk = stripFormatPhrases(lowerDescription);
 
-  const cycleMatch = topicChunk.match(/\blife cycle of (?:a |an |the )?([a-z0-9\s-]+)/);
-  if (cycleMatch?.[1]) {
-    const entity = cleanEntity(cycleMatch[1]);
-    if (entity) {
-      topics.add(`${entity} life cycle`);
-    }
-  }
+  extractPatternTopicsFromText(topicChunk).forEach((topic) => topics.add(topic));
+  extractPatternTopicsFromText(lowerDescription).forEach((topic) => topics.add(topic));
 
   const directCycleMatches = [...topicChunk.matchAll(/\b([a-z0-9\s-]{2,40}?) life cycle\b/g)];
   directCycleMatches.forEach((match) => {
-    const entity = cleanEntity(match[1] ?? "");
+    const entity = cleanEntity(stripLeadingArticles(match[1] ?? ""));
     if (entity) {
       topics.add(`${entity} life cycle`);
     }
@@ -352,7 +404,7 @@ function extractCanonicalTopics(snapshot: ProductKeywordSnapshot) {
   return [...topics]
     .map((topic) => normalizeText(topic))
     .filter((topic) => topic.length >= 6 && topic.split(" ").length <= 4)
-    .slice(0, 6);
+    .slice(0, 3);
 }
 
 function scoreTopicPhrase(phrase: string, titleText: string, descriptionText: string) {
@@ -390,7 +442,7 @@ function extractProductIntent(snapshot: ProductKeywordSnapshot): ProductIntent {
     }))
     .filter((item) => item.score >= 35)
     .sort((left, right) => right.score - left.score)
-    .slice(0, 5)
+    .slice(0, 3)
     .map((item) => item.phrase);
 
   const formats = dedupe([
@@ -408,7 +460,7 @@ function extractProductIntent(snapshot: ProductKeywordSnapshot): ProductIntent {
     .map((item) => normalizeText(item))
     .filter((item) => item.length >= 5 && item.split(" ").length <= 4)
     .sort((left, right) => left.split(" ").length - right.split(" ").length || left.length - right.length)
-    .slice(0, 8);
+    .slice(0, 3);
 
   return {
     topics: topicCandidates,

@@ -245,6 +245,25 @@ const FORMAT_HINTS = [
 ];
 const GENERIC_TAILS = new Set(["animal", "animals", "plant", "plants", "resource", "resources"]);
 const TITLE_NOISE = new Set(["mostly", "used", "with", "grade", "grades"]);
+const TOPIC_ARTICLES = new Set(["a", "an", "the"]);
+const CANONICAL_TOPIC_PATTERNS = [
+  "compare and contrast",
+  "cause and effect",
+  "main idea",
+  "text evidence",
+  "reading comprehension",
+  "close reading",
+  "opinion writing",
+  "informational writing",
+  "narrative writing",
+  "parts of speech",
+  "states of matter",
+  "water cycle",
+  "plant life cycle",
+  "frog life cycle",
+  "butterfly life cycle",
+  "sunflower life cycle"
+];
 
 function tokenize(value) {
   return normalizeText(value)
@@ -272,7 +291,44 @@ function cleanEntity(value) {
   return tokens.join(" ").trim();
 }
 
-function buildCoreTopic(title) {
+function stripLeadingArticles(value) {
+  return normalizeText(value)
+    .split(" ")
+    .filter(Boolean)
+    .filter((token, index) => !(index === 0 && TOPIC_ARTICLES.has(token)))
+    .join(" ")
+    .trim();
+}
+
+function extractPatternTopicsFromText(value) {
+  const topics = new Set();
+  const normalized = normalizeText(value);
+  const patterns = [
+    { regex: /\blife cycle of (?:a |an |the )?([a-z0-9\s-]{2,40})/g, build: (entity) => `${entity} life cycle` },
+    { regex: /\bparts of (?:a |an |the )?([a-z0-9\s-]{2,40})/g, build: (entity) => `parts of ${entity}` },
+    { regex: /\btypes of (?:a |an |the )?([a-z0-9\s-]{2,40})/g, build: (entity) => `types of ${entity}` },
+    { regex: /\bstages of (?:a |an |the )?([a-z0-9\s-]{2,40})/g, build: (entity) => `stages of ${entity}` }
+  ];
+
+  patterns.forEach(({ regex, build }) => {
+    for (const match of normalized.matchAll(regex)) {
+      const entity = cleanEntity(stripLeadingArticles(match[1] || ""));
+      if (entity) {
+        topics.add(build(entity));
+      }
+    }
+  });
+
+  CANONICAL_TOPIC_PATTERNS.forEach((pattern) => {
+    if (normalized.includes(pattern)) {
+      topics.add(pattern);
+    }
+  });
+
+  return [...topics];
+}
+
+function buildCoreTopic(title, descriptionExcerpt = "") {
   const normalized = normalizeText(cleanGradeText(title));
   const formatIndex = FORMAT_HINTS.reduce((lowest, hint) => {
     const index = normalized.indexOf(hint);
@@ -284,9 +340,14 @@ function buildCoreTopic(title) {
   }, -1);
 
   const topicChunk = formatIndex > 0 ? normalized.slice(0, formatIndex).trim() : normalized;
+  const patternTopic = extractPatternTopicsFromText(topicChunk)[0] || extractPatternTopicsFromText(descriptionExcerpt)[0];
+  if (patternTopic) {
+    return patternTopic;
+  }
+
   const cycleMatch = topicChunk.match(/\blife cycle of (?:a |an |the )?([a-z0-9\s-]+)/);
   if (cycleMatch?.[1]) {
-    const entity = cleanEntity(cycleMatch[1]);
+    const entity = cleanEntity(stripLeadingArticles(cycleMatch[1]));
     if (entity) {
       return `${entity} life cycle`;
     }
@@ -294,7 +355,16 @@ function buildCoreTopic(title) {
 
   const directMatch = topicChunk.match(/\b([a-z0-9\s-]{2,40}?) life cycle\b/);
   if (directMatch?.[1]) {
-    const entity = cleanEntity(directMatch[1]);
+    const entity = cleanEntity(stripLeadingArticles(directMatch[1]));
+    if (entity) {
+      return `${entity} life cycle`;
+    }
+  }
+
+  const normalizedDescription = normalizeText(descriptionExcerpt || "");
+  const descriptionCycleMatch = normalizedDescription.match(/\blife cycle of (?:a |an |the )?([a-z0-9\s-]{2,40})/);
+  if (descriptionCycleMatch?.[1]) {
+    const entity = cleanEntity(stripLeadingArticles(descriptionCycleMatch[1]));
     if (entity) {
       return `${entity} life cycle`;
     }
@@ -320,7 +390,7 @@ function buildNgrams(tokens, minSize, maxSize) {
 
 function buildCoreTopics(snapshot) {
   const topics = new Set();
-  const mainTopic = buildCoreTopic(snapshot.title);
+  const mainTopic = buildCoreTopic(snapshot.title, snapshot.descriptionExcerpt);
   if (mainTopic) {
     topics.add(mainTopic);
   }
@@ -349,7 +419,7 @@ function buildCoreTopics(snapshot) {
     .map((item) => normalizeText(item))
     .filter((item) => item.length >= 6 && item.split(" ").length <= 4)
     .sort((left, right) => left.split(" ").length - right.split(" ").length || left.length - right.length)
-    .slice(0, 8);
+    .slice(0, 3);
 }
 
 function findSearchInput() {
