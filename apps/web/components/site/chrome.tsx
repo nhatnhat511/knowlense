@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import { BrandLockup } from "@/components/brand/brand";
 
 type NavItem = {
   href: string;
@@ -78,13 +79,7 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
       </a>
 
       <div className="shell topbar" ref={menuRef}>
-        <Link aria-label="Knowlense home" href="/" className="brand-lockup">
-          <span className="brand-mark">K</span>
-          <span className="brand">
-            <span className="brand-name">Knowlense</span>
-            <span className="brand-tag">{tag}</span>
-          </span>
-        </Link>
+        <BrandLockup className="brand-lockup" compact subtitle={tag} />
 
         <nav aria-label="Primary navigation" className="nav nav-desktop">
           {navItems.map((item) => (
@@ -150,7 +145,7 @@ export function SiteFooter() {
       <div className="shell footer-shell">
         <div className="footer-grid">
           <div>
-            <div className="footer-title">Knowlense</div>
+            <BrandLockup className="mb-4" compact dark subtitle="TPT seller intelligence" />
             <p className="footer-copy">
               Knowlense helps Teachers Pay Teachers sellers move from scattered research to a structured workflow across the
               website and Chrome extension.

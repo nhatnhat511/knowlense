@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { BrandMarkOnly } from "@/components/brand/brand";
 
 type AuthShellProps = {
   title: string;
@@ -12,16 +13,7 @@ type AuthShellProps = {
 };
 
 export function AuthLogoMark({ className = "mb-8 flex justify-center" }: { className?: string }) {
-  return (
-    <div className={className}>
-      <div className="grid h-10 w-10 grid-cols-2 gap-1 rounded-full bg-black p-1.5">
-        <span className="rounded-full bg-white" />
-        <span className="rounded-full bg-white" />
-        <span className="rounded-full bg-white" />
-        <span className="rounded-full bg-white" />
-      </div>
-    </div>
-  );
+  return <BrandMarkOnly centered className={className} size={50} />;
 }
 
 export function AuthShell({ title, subtitle, children, footer, legal }: AuthShellProps) {

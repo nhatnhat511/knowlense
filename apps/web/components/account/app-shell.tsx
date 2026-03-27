@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { AuthLogoMark } from "@/components/auth/auth-shell";
+import { BrandLockup } from "@/components/brand/brand";
 
 type AppShellProps = {
   title: string;
@@ -25,17 +25,7 @@ export function AppShell({ title, subtitle, actions, children }: AppShellProps) 
     <main className="min-h-screen bg-[#f7f7f5] px-4 py-6 text-[#171717] sm:px-6">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
         <header className="flex flex-col gap-4 rounded-[28px] border border-black/8 bg-white/90 px-5 py-4 shadow-[0_1px_0_rgba(0,0,0,0.03),0_18px_45px_rgba(0,0,0,0.04)] sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="shrink-0 scale-[0.82]">
-              <AuthLogoMark className="flex justify-center" />
-            </div>
-            <div className="-ml-2">
-              <Link className="text-lg font-semibold tracking-[-0.04em] text-black" href="/">
-                Knowlense
-              </Link>
-              <div className="text-sm text-neutral-500">Website account and billing workspace</div>
-            </div>
-          </div>
+          <BrandLockup compact subtitle="Website account and billing workspace" />
 
           <nav aria-label="App navigation" className="flex flex-wrap items-center gap-2">
             {navItems.map((item) => {
