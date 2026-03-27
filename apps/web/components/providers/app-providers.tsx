@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 
 export type AppUser = {
   id: string;
@@ -44,12 +44,25 @@ function ToastViewport({ items }: { items: ToastItem[] }) {
 export function AppProviders({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const lastToastRef = useRef<{ message: string; timestamp: number } | null>(null);
 
   const sessionValue = useMemo(() => ({ user, setUser }), [user]);
 
   const toastValue = useMemo(
     () => ({
       showToast(message: string) {
+        const now = Date.now();
+        const previousToast = lastToastRef.current;
+
+        if (previousToast && previousToast.message === message && now - previousToast.timestamp < 6000) {
+          return;
+        }
+
+        lastToastRef.current = {
+          message,
+          timestamp: now
+        };
+
         const id = crypto.randomUUID();
         setToasts((current) => [...current, { id, title: message }]);
         window.setTimeout(() => {

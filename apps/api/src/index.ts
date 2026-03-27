@@ -123,6 +123,60 @@ function normalizeSupabaseUser(user: {
   };
 }
 
+function getDefaultDashboardMetrics(billingConfigured: boolean) {
+  return {
+    metrics: {
+      websiteSessions: {
+        value: 0,
+        delta: "--"
+      },
+      billing: {
+        status: "free" as const,
+        readiness: billingConfigured ? "Upgrade" : "Setup",
+        ctaLabel: billingConfigured ? "Upgrade" : "Configure",
+        delta: billingConfigured ? "--" : "Action needed"
+      },
+      keywordRuns: {
+        used: 0,
+        limit: 10,
+        remaining: 10,
+        disabled: false,
+        delta: "--"
+      },
+      extensionStatus: {
+        status: "alert" as const,
+        label: "Alert",
+        delta: "Reconnect"
+      }
+    }
+  };
+}
+
+function getDefaultDashboardOverview(user: Variables["user"]) {
+  return {
+    overview: {
+      currentAccount: {
+        value: user.email ?? user.id,
+        status: "active"
+      },
+      latestQuery: {
+        value: "Waiting",
+        status: "waiting" as const,
+        updatedAt: null
+      },
+      nextAction: {
+        value: "Connect"
+      },
+      recentRuns: [],
+      quota: {
+        used: 0,
+        limit: 10,
+        atLimit: false
+      }
+    }
+  };
+}
+
 async function authenticateSupabaseToken(env: Bindings, token: string) {
   const supabase = createAdminClient(env);
   const { data, error } = await supabase.auth.getUser(token);
@@ -738,6 +792,7 @@ app.use("/v1/dashboard/*", async (c, next) => {
 
 app.get("/v1/dashboard/metrics", async (c) => {
   const user = c.get("user");
+  const billingConfigured = Boolean(c.env.PADDLE_PRICE_ID_MONTHLY && c.env.PADDLE_PRICE_ID_YEARLY);
 
   try {
     const [keywordRunCountResult, extensionSessionCountResult] = await Promise.all([
@@ -756,7 +811,6 @@ app.get("/v1/dashboard/metrics", async (c) => {
     const runsUsed = Number(keywordRunCountResult?.total ?? 0);
     const runsLimit = 10;
     const extensionActive = Number(extensionSessionCountResult?.total ?? 0) > 0;
-    const billingConfigured = Boolean(c.env.PADDLE_PRICE_ID_MONTHLY && c.env.PADDLE_PRICE_ID_YEARLY);
 
     return c.json({
       metrics: {
@@ -785,7 +839,10 @@ app.get("/v1/dashboard/metrics", async (c) => {
       }
     });
   } catch {
-    return c.json({ error: "Unable to load dashboard metrics." }, 500);
+    return c.json({
+      ...getDefaultDashboardMetrics(billingConfigured),
+      warning: "Dashboard metrics are temporarily unavailable."
+    });
   }
 });
 
@@ -811,7 +868,12 @@ app.get("/v1/dashboard/extension-status", async (c) => {
       connected: active
     });
   } catch {
-    return c.json({ error: "Unable to load extension status." }, 500);
+    return c.json({
+      status: "alert",
+      label: "Alert",
+      connected: false,
+      warning: "Extension status is temporarily unavailable."
+    });
   }
 });
 
@@ -898,7 +960,10 @@ app.get("/v1/dashboard/overview", async (c) => {
       }
     });
   } catch {
-    return c.json({ error: "Unable to load dashboard overview." }, 500);
+    return c.json({
+      ...getDefaultDashboardOverview(user),
+      warning: "Dashboard overview is temporarily unavailable."
+    });
   }
 });
 

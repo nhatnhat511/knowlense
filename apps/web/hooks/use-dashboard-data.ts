@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchDashboardMetrics, fetchDashboardOverview, type DashboardMetrics, type DashboardOverview } from "@/lib/api/dashboard";
 import { useToast } from "@/components/providers/app-providers";
 
@@ -11,6 +11,7 @@ export function useDashboardData(accessToken: string, enabled: boolean) {
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const lastToastMessageRef = useRef("");
 
   useEffect(() => {
     if (!enabled || !accessToken) {
@@ -36,6 +37,7 @@ export function useDashboardData(accessToken: string, enabled: boolean) {
 
         setMetrics(metricsResult);
         setOverview(overviewResult);
+        lastToastMessageRef.current = "";
       } catch (error) {
         if (!active) {
           return;
@@ -43,7 +45,10 @@ export function useDashboardData(accessToken: string, enabled: boolean) {
 
         const message = error instanceof Error ? error.message : "Unable to load dashboard data.";
         setError(message);
-        showToast(message);
+        if (lastToastMessageRef.current !== message) {
+          showToast(message);
+          lastToastMessageRef.current = message;
+        }
       } finally {
         if (active) {
           setLoading(false);

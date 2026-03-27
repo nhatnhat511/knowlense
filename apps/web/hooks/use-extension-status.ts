@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchExtensionStatus } from "@/lib/api/dashboard";
 import { useToast } from "@/components/providers/app-providers";
 
@@ -11,6 +11,7 @@ export function useExtensionStatus(accessToken: string, enabled: boolean) {
     label: string;
     connected: boolean;
   } | null>(null);
+  const lastToastMessageRef = useRef("");
 
   useEffect(() => {
     if (!enabled || !accessToken) {
@@ -28,12 +29,22 @@ export function useExtensionStatus(accessToken: string, enabled: boolean) {
         }
 
         setStatus(nextStatus);
+        lastToastMessageRef.current = "";
       } catch (error) {
         if (!active) {
           return;
         }
 
-        showToast(error instanceof Error ? error.message : "Unable to refresh extension status.");
+        const message = error instanceof Error ? error.message : "Unable to refresh extension status.";
+        setStatus({
+          status: "alert",
+          label: "Alert",
+          connected: false
+        });
+        if (lastToastMessageRef.current !== message) {
+          showToast(message);
+          lastToastMessageRef.current = message;
+        }
       }
     }
 

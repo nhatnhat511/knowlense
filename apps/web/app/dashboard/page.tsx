@@ -181,12 +181,6 @@ export default function DashboardPage() {
     window.localStorage.setItem("knowlense-dashboard-theme", theme);
   }, [theme]);
 
-  useEffect(() => {
-    if (error) {
-      showToast(error);
-    }
-  }, [error, showToast]);
-
   const dark = theme === "dark";
   const firstName = user?.name ?? "there";
   const initials = firstName.slice(0, 2).toUpperCase() || "KN";
