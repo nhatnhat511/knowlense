@@ -138,32 +138,47 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
 }
 
 export function SiteFooter() {
+  const currentYear = new Date().getFullYear();
+
   return (
-    <footer className="shell site-footer">
-      <div className="footer-grid">
-        <div>
-          <div className="footer-title">Knowlense</div>
-          <p className="footer-copy">
-            Knowlense helps Teachers Pay Teachers sellers move from scattered research to a structured workflow across the
-            website and Chrome extension.
-          </p>
-        </div>
-        <div>
-          <div className="footer-list-title">Product</div>
-          <div className="footer-links">
-            <Link href="/pricing">Pricing</Link>
-            <Link href="/about">About</Link>
-            <Link href="/dashboard">Dashboard</Link>
-            <Link href="/account">Account</Link>
+    <footer className="site-footer site-footer-dark">
+      <div className="shell footer-shell">
+        <div className="footer-grid">
+          <div>
+            <div className="footer-title">Knowlense</div>
+            <p className="footer-copy">
+              Knowlense helps Teachers Pay Teachers sellers move from scattered research to a structured workflow across the
+              website and Chrome extension.
+            </p>
+            <a className="footer-inline-link" href="mailto:support@knowlense.com">
+              support@knowlense.com
+            </a>
+          </div>
+          <div>
+            <div className="footer-list-title">Product</div>
+            <div className="footer-links">
+              <Link href="/pricing">Pricing</Link>
+              <Link href="/about">About</Link>
+              <Link href="/dashboard">Dashboard</Link>
+              <Link href="/account">Account</Link>
+            </div>
+          </div>
+          <div>
+            <div className="footer-list-title">Company</div>
+            <div className="footer-links">
+              <Link href="/contact">Contact</Link>
+              <Link href="/privacy">Privacy Policy</Link>
+              <Link href="/terms">Terms &amp; Condition</Link>
+              <Link href="/refund-policy">Refund policy</Link>
+            </div>
           </div>
         </div>
-        <div>
-          <div className="footer-list-title">Company</div>
-          <div className="footer-links">
-            <Link href="/contact">Contact</Link>
-            <Link href="/privacy">Privacy</Link>
-            <Link href="/terms">Terms</Link>
-            <Link href="/refund-policy">Refund policy</Link>
+
+        <div className="footer-bottom">
+          <p className="footer-copyright">© {currentYear} Knowlense. All rights reserved.</p>
+          <div className="footer-meta-links">
+            <Link href="/privacy">Privacy Policy</Link>
+            <Link href="/terms">Terms &amp; Condition</Link>
           </div>
         </div>
       </div>
