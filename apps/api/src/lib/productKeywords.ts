@@ -355,6 +355,9 @@ function extractCanonicalTopics(snapshot: ProductKeywordSnapshot) {
   const lowerDescription = normalizeText(snapshot.descriptionExcerpt);
   const topics = new Set<string>();
 
+  extractPatternTopicsFromText(lowerTitle).forEach((topic) => topics.add(topic));
+  extractPatternTopicsFromText(lowerDescription).forEach((topic) => topics.add(topic));
+
   const formatIndex = FORMAT_HINTS.reduce((lowest, hint) => {
     const index = lowerTitle.indexOf(hint);
     if (index === -1) {
@@ -366,9 +369,6 @@ function extractCanonicalTopics(snapshot: ProductKeywordSnapshot) {
 
   const topicChunk = formatIndex > 0 ? lowerTitle.slice(0, formatIndex).trim() : lowerTitle;
   const descriptionChunk = stripFormatPhrases(lowerDescription);
-
-  extractPatternTopicsFromText(topicChunk).forEach((topic) => topics.add(topic));
-  extractPatternTopicsFromText(lowerDescription).forEach((topic) => topics.add(topic));
 
   const directCycleMatches = [...topicChunk.matchAll(/\b([a-z0-9\s-]{2,40}?) life cycle\b/g)];
   directCycleMatches.forEach((match) => {

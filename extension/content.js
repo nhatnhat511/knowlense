@@ -330,6 +330,11 @@ function extractPatternTopicsFromText(value) {
 
 function buildCoreTopic(title, descriptionExcerpt = "") {
   const normalized = normalizeText(cleanGradeText(title));
+  const patternTopic = extractPatternTopicsFromText(normalized)[0] || extractPatternTopicsFromText(descriptionExcerpt)[0];
+  if (patternTopic) {
+    return patternTopic;
+  }
+
   const formatIndex = FORMAT_HINTS.reduce((lowest, hint) => {
     const index = normalized.indexOf(hint);
     if (index === -1) {
@@ -340,11 +345,6 @@ function buildCoreTopic(title, descriptionExcerpt = "") {
   }, -1);
 
   const topicChunk = formatIndex > 0 ? normalized.slice(0, formatIndex).trim() : normalized;
-  const patternTopic = extractPatternTopicsFromText(topicChunk)[0] || extractPatternTopicsFromText(descriptionExcerpt)[0];
-  if (patternTopic) {
-    return patternTopic;
-  }
-
   const cycleMatch = topicChunk.match(/\blife cycle of (?:a |an |the )?([a-z0-9\s-]+)/);
   if (cycleMatch?.[1]) {
     const entity = cleanEntity(stripLeadingArticles(cycleMatch[1]));
