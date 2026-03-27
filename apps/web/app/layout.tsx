@@ -11,6 +11,9 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "Knowlense",
   description: "Knowlense helps TPT sellers audit listings, find keyword gaps, and turn store data into action.",
+  verification: {
+    google: "iOSBsOjz8-WFYBpQCvnQ9NtEPnt1uXNhOoDH98q_N4g"
+  },
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",
