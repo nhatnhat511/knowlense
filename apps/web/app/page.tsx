@@ -71,7 +71,7 @@ export default function HomePage() {
 
       <section className="shell hero-simple">
         <div className="hero-copy-block">
-          <span className="eyebrow">Built for Teachers Pay Teachers sellers</span>
+          <span className="eyebrow hero-eyebrow">Built for Teachers Pay Teachers sellers</span>
           <h1 className="page-title hero-headline">One cleaner system for TPT research, account access, and extension workflows.</h1>
           <p className="page-copy hero-copy-text">
             Knowlense gives sellers a calmer way to work: website-first account management, secure extension connection, and

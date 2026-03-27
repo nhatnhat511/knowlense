@@ -332,6 +332,13 @@ button {
   font-weight: 700;
 }
 
+.hero-eyebrow {
+  width: max-content;
+  max-width: 100%;
+  padding-inline: 16px;
+  white-space: nowrap;
+}
+
 .page-title,
 .section-title {
   margin: 14px 0 0;
