@@ -1,17 +1,18 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { validatePassword } from "@/lib/auth/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { AuthField, AuthPasswordToggleIcon, AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
 
 export default function UpdatePasswordPage() {
   const router = useRouter();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [status, setStatus] = useState("Open this page from the password reset email sent by Supabase.");
   const [statusKind, setStatusKind] = useState<"idle" | "error" | "success">("idle");
   const [loading, setLoading] = useState(false);
@@ -108,36 +109,79 @@ export default function UpdatePasswordPage() {
   }
 
   return (
-    <main className="app-shell">
-      <SiteHeader tag="Update password" navItems={[{ href: "/auth/sign-in", label: "Sign in" }, { href: "/contact", label: "Support" }]} />
-
-      <section className="shell auth-surface single-card">
-        <section className="auth-card">
-          <span className="eyebrow">Password update</span>
-          <h1 className="page-title" style={{ fontSize: "2.4rem" }}>Set a new password</h1>
-          <form onSubmit={handleSubmit}>
-            <div className="field">
-              <label htmlFor="password">New password</label>
-              <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-            </div>
-            <div className="field">
-              <label htmlFor="confirm-password">Confirm new password</label>
+    <AuthShell
+      footer={
+        <>
+          Back to <AuthTextLink href="/auth/sign-in">sign in</AuthTextLink>
+        </>
+      }
+      subtitle="Use the recovery session from your email to set a new password for your account."
+      title="Set a new password"
+    >
+      <form className="space-y-5" onSubmit={handleSubmit}>
+        <AuthField
+          hint="Must be at least 8 characters long."
+          id="update-password"
+          input={
+            <div className="relative">
               <input
-                id="confirm-password"
-                type="password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                required
+                className="h-12 w-full rounded-2xl border border-black/10 bg-white px-4 pr-12 text-[17px] outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/10"
+                id="update-password"
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="New password"
+                type={showPassword ? "text" : "password"}
+                value={password}
               />
+              <button
+                className="absolute inset-y-0 right-3 my-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-neutral-500"
+                onClick={() => setShowPassword((current) => !current)}
+                type="button"
+              >
+                <AuthPasswordToggleIcon visible={showPassword} />
+              </button>
             </div>
-            <div className={`status ${statusKind !== "idle" ? statusKind : ""}`}>{status}</div>
-            <button className="primary-button wide-button" disabled={loading} type="submit">
-              {loading ? "Updating..." : "Update password"}
-            </button>
-          </form>
-        </section>
-      </section>
-      <SiteFooter />
-    </main>
+          }
+          label="Password"
+        />
+
+        <AuthField
+          id="update-confirm-password"
+          input={
+            <div className="relative">
+              <input
+                className="h-12 w-full rounded-2xl border border-black/10 bg-white px-4 pr-12 text-[17px] outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/10"
+                id="update-confirm-password"
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder="Confirm password"
+                type={showConfirmPassword ? "text" : "password"}
+                value={confirmPassword}
+              />
+              <button
+                className="absolute inset-y-0 right-3 my-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-neutral-500"
+                onClick={() => setShowConfirmPassword((current) => !current)}
+                type="button"
+              >
+                <AuthPasswordToggleIcon visible={showConfirmPassword} />
+              </button>
+            </div>
+          }
+          label="Confirm Password"
+        />
+
+        {status ? (
+          <p className={`text-[15px] ${statusKind === "error" ? "text-red-600" : statusKind === "success" ? "text-emerald-600" : "text-neutral-500"}`}>
+            {status}
+          </p>
+        ) : null}
+
+        <button
+          className="inline-flex h-12 w-full items-center justify-center rounded-full bg-black px-5 text-[17px] font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-70"
+          disabled={loading}
+          type="submit"
+        >
+          {loading ? "Updating..." : "Update password"}
+        </button>
+      </form>
+    </AuthShell>
   );
 }

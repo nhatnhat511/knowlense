@@ -52,7 +52,7 @@ const pricingPlans: PricingPlan[] = [
   {
     name: "Pro",
     description: "The main plan for recurring TPT research and a stable website-to-extension workflow.",
-    badge: "Khuyên dùng",
+    badge: "Recommended",
     featured: true,
     cta: "Choose Pro",
     features: [
@@ -157,9 +157,9 @@ export function PricingSection() {
 
   return (
     <section className="space-y-8">
-      <div className="flex flex-col items-start justify-between gap-5 rounded-[28px] border border-slate-200/80 bg-white/90 p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)] sm:flex-row sm:items-center">
+      <div className="flex flex-col items-start justify-between gap-5 rounded-[28px] border border-black/8 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)] sm:flex-row sm:items-center">
         <div>
-          <div className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-700">Pricing</div>
+          <div className="text-sm font-semibold uppercase tracking-[0.18em] text-neutral-500">Pricing</div>
           <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950 sm:text-4xl">
             Flexible billing for every stage of the workflow.
           </h2>
@@ -168,7 +168,7 @@ export function PricingSection() {
           </p>
         </div>
 
-        <div className="rounded-full border border-slate-200 bg-slate-50 p-1">
+        <div className="rounded-full border border-black/8 bg-neutral-50 p-1">
           <div className="flex items-center gap-1">
             <button
               className={`rounded-full px-4 py-2 text-sm font-medium transition ${
@@ -177,7 +177,7 @@ export function PricingSection() {
               onClick={() => setBillingCycle("monthly")}
               type="button"
             >
-              Hàng tháng
+              Monthly
             </button>
             <button
               className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
@@ -186,10 +186,8 @@ export function PricingSection() {
               onClick={() => setBillingCycle("yearly")}
               type="button"
             >
-              Hàng năm
-              {billingCycle === "yearly" ? (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">-20%</span>
-              ) : null}
+              Yearly
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${billingCycle === "yearly" ? "bg-emerald-100 text-emerald-700" : "bg-neutral-200 text-neutral-500"}`}>-20%</span>
             </button>
           </div>
         </div>
@@ -210,15 +208,15 @@ export function PricingSection() {
               <article
                 className={`min-w-[285px] snap-center rounded-[28px] border bg-white p-7 shadow-[0_18px_44px_rgba(15,23,42,0.06)] md:min-w-0 ${
                   isFeatured
-                    ? "border-blue-600 shadow-[0_24px_55px_rgba(37,99,235,0.18)] md:scale-[1.05]"
-                    : "border-slate-200"
+                    ? "border-black shadow-[0_24px_55px_rgba(0,0,0,0.12)] md:scale-[1.05]"
+                    : "border-black/8"
                 }`}
                 key={plan.name}
               >
                 <div className="flex min-h-[32px] items-center justify-between gap-3">
                   <span className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400">{plan.name}</span>
                   {isFeatured ? (
-                    <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white">{plan.badge ?? "Khuyên dùng"}</span>
+                    <span className="rounded-full bg-black px-3 py-1 text-xs font-semibold text-white">{plan.badge ?? "Recommended"}</span>
                   ) : null}
                 </div>
 
@@ -232,7 +230,7 @@ export function PricingSection() {
                 <ul className="mt-8 space-y-3">
                   {plan.features.map((feature) => (
                     <li className="flex items-start gap-3 text-sm leading-6 text-slate-700" key={feature}>
-                      <span className="mt-2 h-2 w-2 rounded-full bg-blue-600" />
+                      <span className="mt-2 h-2 w-2 rounded-full bg-black" />
                       <span>{feature}</span>
                     </li>
                   ))}
@@ -243,7 +241,7 @@ export function PricingSection() {
                     <button
                       className={`inline-flex h-12 w-full items-center justify-center rounded-2xl px-5 text-sm font-semibold transition-all duration-200 ${
                         isFeatured
-                          ? "bg-blue-600 text-white shadow-[0_14px_30px_rgba(37,99,235,0.24)] hover:-translate-y-0.5 hover:bg-blue-700"
+                          ? "bg-black text-white shadow-[0_14px_30px_rgba(0,0,0,0.16)] hover:-translate-y-0.5 hover:bg-neutral-800"
                           : "bg-slate-900 text-white hover:-translate-y-0.5 hover:bg-slate-800"
                       }`}
                       disabled={loadingPlan === effectiveInterval}

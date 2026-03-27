@@ -1,27 +1,23 @@
 "use client";
 
-import Link from "next/link";
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { useMemo, useState } from "react";
 import { getPasswordResetRedirectUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { AuthField, AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
 
 export default function ForgotPasswordPage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("");
-  const [statusKind, setStatusKind] = useState<"idle" | "error" | "success">("idle");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     setStatus("");
-    setStatusKind("idle");
 
     if (!supabase) {
       setStatus("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.");
-      setStatusKind("error");
       setLoading(false);
       return;
     }
@@ -33,54 +29,53 @@ export default function ForgotPasswordPage() {
 
       if (error) {
         setStatus(error.message);
-        setStatusKind("error");
         return;
       }
 
       setStatus("Password reset email sent. Check your inbox.");
-      setStatusKind("success");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to send password reset email.");
-      setStatusKind("error");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="app-shell">
-      <SiteHeader tag="Forgot password" navItems={[{ href: "/auth/sign-in", label: "Sign in" }, { href: "/auth/sign-up", label: "Create account" }]} />
+    <AuthShell
+      footer={
+        <>
+          <AuthTextLink href="/auth/sign-in">Back to sign in</AuthTextLink>
+        </>
+      }
+      title="Reset password"
+      subtitle="Enter your email address and we&apos;ll send you a link to reset your password"
+    >
+      <form className="space-y-5" onSubmit={handleSubmit}>
+        <AuthField
+          id="forgot-email"
+          input={
+            <input
+              className="h-12 w-full rounded-2xl border border-black/10 bg-white px-4 text-[17px] outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/10"
+              id="forgot-email"
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+              type="email"
+              value={email}
+            />
+          }
+          label="Email"
+        />
 
-      <section className="shell auth-surface single-card">
-        <section className="auth-card">
-          <span className="eyebrow">Password recovery</span>
-          <h1 className="page-title auth-title">Request a reset email</h1>
-          <p className="page-copy">
-            Enter the email tied to your Knowlense account. If it exists, Supabase will send a recovery link to the
-            configured reset route.
-          </p>
-          <form onSubmit={handleSubmit}>
-            <div className="field">
-              <label htmlFor="email">Email</label>
-              <input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
-            </div>
-            <div className={`status ${statusKind !== "idle" ? statusKind : ""}`}>{status}</div>
-            <button className="primary-button wide-button" disabled={loading} type="submit">
-              {loading ? "Sending..." : "Send reset email"}
-            </button>
-          </form>
-          <div className="stack-row">
-            <Link className="nav-link" href="/auth/sign-in">
-              Back to sign in
-            </Link>
-          </div>
-          <p className="auth-support-note">
-            If you do not receive the email, confirm that you used the correct address and check any spam or promotions
-            folders before trying again.
-          </p>
-        </section>
-      </section>
-      <SiteFooter />
-    </main>
+        {status ? <p className="text-[15px] text-neutral-500">{status}</p> : null}
+
+        <button
+          className="inline-flex h-12 w-full items-center justify-center rounded-full bg-black px-5 text-[17px] font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-70"
+          disabled={loading}
+          type="submit"
+        >
+          {loading ? "Sending..." : "Send reset link"}
+        </button>
+      </form>
+    </AuthShell>
   );
 }

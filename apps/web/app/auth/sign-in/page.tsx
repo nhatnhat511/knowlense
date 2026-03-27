@@ -1,24 +1,33 @@
 "use client";
 
-import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
-import { mapSignInError } from "@/lib/auth/errors";
 import { fetchApiProfile } from "@/lib/api/profile";
+import { mapSignInError } from "@/lib/auth/errors";
+import { getSignupRedirectUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import {
+  AuthDivider,
+  AuthField,
+  AuthPasswordToggleIcon,
+  AuthShell,
+  AuthSocialButton,
+  AuthTextLink,
+  GithubIcon,
+  GoogleIcon
+} from "@/components/auth/auth-shell";
 
 function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const nextPath = searchParams.get("next") || "/dashboard";
-  const isAccountGate = nextPath === "/account";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState("");
-  const [statusKind, setStatusKind] = useState<"idle" | "error" | "success">("idle");
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<"google" | "github" | "">("");
 
   useEffect(() => {
     if (!supabase) {
@@ -47,15 +56,40 @@ function SignInContent() {
     };
   }, [nextPath, router, supabase]);
 
+  async function handleOAuth(provider: "google" | "github") {
+    if (!supabase) {
+      setStatus("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+      return;
+    }
+
+    setOauthLoading(provider);
+    setStatus("");
+
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: getSignupRedirectUrl()
+        }
+      });
+
+      if (error) {
+        setStatus(error.message);
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to start social sign-in.");
+    } finally {
+      setOauthLoading("");
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     setStatus("");
-    setStatusKind("idle");
 
     if (!supabase) {
       setStatus("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.");
-      setStatusKind("error");
       setLoading(false);
       return;
     }
@@ -64,9 +98,7 @@ function SignInContent() {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
-        const mappedMessage = mapSignInError(error.message);
-        setStatus(mappedMessage);
-        setStatusKind("error");
+        setStatus(mapSignInError(error.message));
         return;
       }
 
@@ -74,97 +106,100 @@ function SignInContent() {
 
       if (!accessToken) {
         setStatus("Supabase did not return an access token.");
-        setStatusKind("error");
         return;
       }
 
       const profile = await fetchApiProfile(accessToken);
       setStatus(`Signed in as ${profile.email ?? profile.id}. Redirecting...`);
-      setStatusKind("success");
       router.push(nextPath);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to sign in.");
-      setStatusKind("error");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="app-shell">
-      <SiteHeader tag="Sign in" navItems={[{ href: "/pricing", label: "Pricing" }, { href: "/auth/sign-up", label: "Create account" }]} />
+    <AuthShell
+      footer={
+        <>
+          Don&apos;t have an account? <AuthTextLink href="/auth/sign-up">Sign up</AuthTextLink>
+        </>
+      }
+      title="Welcome back"
+    >
+      <div className="space-y-3">
+        <AuthSocialButton disabled={oauthLoading !== ""} onClick={() => handleOAuth("google")}>
+          <GoogleIcon />
+          {oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
+        </AuthSocialButton>
+        <AuthSocialButton disabled={oauthLoading !== ""} onClick={() => handleOAuth("github")}>
+          <GithubIcon />
+          {oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
+        </AuthSocialButton>
+      </div>
 
-      <section className="shell auth-surface">
-        <section className="auth-intro">
-          <div className="section-heading">
-            <span className="section-label">Website Access</span>
-            <h1 className="page-title auth-title">{isAccountGate ? "Sign in to access your account center." : "Sign in and continue on the website."}</h1>
-            <p className="page-copy">
-              {isAccountGate
-                ? "Your account center, billing entry points, and extension connection controls are available after website sign-in."
-                : "Knowlense uses the website as the primary account surface. The extension is connected later through a separate approval step."}
-            </p>
+      <AuthDivider />
+
+      <form className="space-y-5" onSubmit={handleSubmit}>
+        <AuthField
+          id="email"
+          input={
+            <input
+              className="h-12 w-full rounded-2xl border border-black/10 bg-white px-4 text-[17px] outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/10"
+              id="email"
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="Your email address"
+              type="email"
+              value={email}
+            />
+          }
+          label="Email"
+        />
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-4">
+            <label className="block text-[15px] font-medium text-black" htmlFor="password">
+              Password
+            </label>
+            <AuthTextLink href="/auth/forgot-password">Forgot password?</AuthTextLink>
           </div>
-
-          <div className="info-stack">
-            <article className="info-card">
-              <strong>Why sign-in happens here</strong>
-              <span>Authentication, password recovery, and email verification are handled on the web app instead of the extension popup.</span>
-            </article>
-            <article className="info-card">
-              <strong>What happens after sign-in</strong>
-              <span>From the dashboard or account page, you can approve a dedicated extension session through the connect flow.</span>
-            </article>
-            <article className="info-card">
-              <strong>If access is blocked</strong>
-              <span>Use the verify-email or forgot-password routes instead of retrying the same form repeatedly.</span>
-            </article>
-          </div>
-        </section>
-
-        <section className="auth-card">
-          <span className="eyebrow">Website sign in</span>
-          <h1 className="page-title auth-title">Access your account</h1>
-          <p className="page-copy">Sign in on the website first, then connect the extension from a separate approval flow.</p>
-          <form onSubmit={handleSubmit}>
-            <div className="field">
-              <label htmlFor="email">Email</label>
-              <input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
-            </div>
-            <div className="field">
-              <label htmlFor="password">Password</label>
-              <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-            </div>
-            <div className={`status ${statusKind !== "idle" ? statusKind : ""}`}>{status}</div>
-            <button className="primary-button wide-button" disabled={loading} type="submit">
-              {loading ? "Signing in..." : "Sign in"}
+          <div className="relative">
+            <input
+              className="h-12 w-full rounded-2xl border border-black/10 bg-white px-4 pr-12 text-[17px] outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/10"
+              id="password"
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Your password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+            />
+            <button
+              className="absolute inset-y-0 right-3 my-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-neutral-500"
+              onClick={() => setShowPassword((current) => !current)}
+              type="button"
+            >
+              <AuthPasswordToggleIcon visible={showPassword} />
             </button>
-          </form>
-          <div className="stack-row">
-            <Link className="nav-link" href="/auth/sign-up">
-              Create account
-            </Link>
-            <Link className="nav-link" href={`/auth/verify-email${email ? `?email=${encodeURIComponent(email)}` : ""}`}>
-              Verify email
-            </Link>
-            <Link className="nav-link" href="/auth/forgot-password">
-              Forgot password
-            </Link>
           </div>
-          <p className="auth-support-note">
-            If your email has not been confirmed yet, use the verification flow first. Password recovery and account
-            updates are handled on dedicated website routes.
-          </p>
-        </section>
-      </section>
-      <SiteFooter />
-    </main>
+        </div>
+
+        {status ? <p className="text-[15px] text-neutral-500">{status}</p> : null}
+
+        <button
+          className="inline-flex h-12 w-full items-center justify-center rounded-full bg-black px-5 text-[17px] font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-70"
+          disabled={loading}
+          type="submit"
+        >
+          {loading ? "Logging in..." : "Login"}
+        </button>
+      </form>
+    </AuthShell>
   );
 }
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={<main className="app-shell"><section className="shell auth-surface single-card"><div className="empty-state">Loading sign-in...</div></section></main>}>
+    <Suspense fallback={<main className="min-h-screen bg-[#f7f7f5]" />}>
       <SignInContent />
     </Suspense>
   );

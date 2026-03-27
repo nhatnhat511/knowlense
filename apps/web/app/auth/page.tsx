@@ -1,48 +1,38 @@
 import Link from "next/link";
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import { AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
 
 const routes = [
-  { href: "/auth/sign-in", title: "Sign in", copy: "Access your account from the website." },
-  { href: "/auth/sign-up", title: "Create account", copy: "Register a new Knowlense account." },
-  { href: "/auth/verify-email", title: "Verify email", copy: "Check status or resend the confirmation email." },
-  { href: "/auth/forgot-password", title: "Forgot password", copy: "Request a reset email from Supabase." },
-  { href: "/auth/change-password", title: "Change password", copy: "Update the password while signed in." },
-  { href: "/auth/update-password", title: "Update password", copy: "Set a new password after recovery." }
+  { href: "/auth/sign-in", title: "Sign in", copy: "Access your website account and open the app workspace." },
+  { href: "/auth/sign-up", title: "Create account", copy: "Register a new Knowlense account from the website." },
+  { href: "/auth/verify-email", title: "Verify email", copy: "Resend the confirmation email or check verification status." },
+  { href: "/auth/forgot-password", title: "Forgot password", copy: "Request a recovery email and restore account access." },
+  { href: "/auth/change-password", title: "Change password", copy: "Update your password while already signed in." },
+  { href: "/auth/update-password", title: "Update password", copy: "Set a new password after opening the recovery link." }
 ];
 
 export default function AuthIndexPage() {
   return (
-    <main className="app-shell">
-      <SiteHeader
-        tag="Authentication"
-        navItems={[
-          { href: "/pricing", label: "Pricing" },
-          { href: "/contact", label: "Contact" },
-          { href: "/auth/sign-in", label: "Sign in" }
-        ]}
-        primaryCta={{ href: "/auth/sign-up", label: "Create account" }}
-      />
-
-      <section className="shell auth-index-surface">
-        <div className="section-heading">
-          <span className="section-label">Account Flows</span>
-          <h1 className="page-title">Every account state has a dedicated website flow.</h1>
-          <p className="page-copy">
-            Sign up, sign in, verify email, recover access, and update credentials through purpose-built routes instead of
-            one overloaded form.
-          </p>
-        </div>
-        <div className="module-grid auth-route-grid">
-          {routes.map((route) => (
-            <Link className="module-card" href={route.href} key={route.href}>
-              <span className="module-meta">Auth route</span>
-              <h3>{route.title}</h3>
-              <p>{route.copy}</p>
-            </Link>
-          ))}
-        </div>
-      </section>
-      <SiteFooter />
-    </main>
+    <AuthShell
+      footer={
+        <>
+          Need the product overview? <AuthTextLink href="/">Go to homepage</AuthTextLink>
+        </>
+      }
+      subtitle="Each account state uses a dedicated route so sign-in, verification, and recovery stay clear."
+      title="Authentication flows"
+    >
+      <div className="space-y-3">
+        {routes.map((route) => (
+          <Link
+            className="block rounded-[20px] border border-black/10 px-4 py-4 transition hover:border-black/15 hover:bg-neutral-50"
+            href={route.href}
+            key={route.href}
+          >
+            <div className="text-base font-medium text-black">{route.title}</div>
+            <div className="mt-1 text-sm leading-6 text-neutral-500">{route.copy}</div>
+          </Link>
+        ))}
+      </div>
+    </AuthShell>
   );
 }

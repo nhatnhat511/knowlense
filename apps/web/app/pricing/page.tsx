@@ -1,63 +1,60 @@
 "use client";
 
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import Link from "next/link";
+import { AppPanel, AppPanelTitle, AppShell } from "@/components/account/app-shell";
 import { PricingSection } from "@/components/site/pricing-section";
 
 export default function PricingPage() {
   return (
-    <main className="app-shell">
-      <SiteHeader
-        tag="Pricing"
-        navItems={[
-          { href: "/about", label: "About" },
-          { href: "/contact", label: "Contact" },
-          { href: "/account", label: "Account" }
-        ]}
-      />
+    <AppShell
+      actions={
+        <>
+          <Link
+            className="inline-flex h-11 items-center rounded-full border border-black/10 bg-white px-4 text-sm font-medium text-black transition hover:bg-neutral-50"
+            href="/contact"
+          >
+            Contact sales
+          </Link>
+          <Link
+            className="inline-flex h-11 items-center rounded-full bg-black px-4 text-sm font-semibold text-white transition hover:bg-neutral-800"
+            href="/auth/sign-up"
+          >
+            Start free
+          </Link>
+        </>
+      }
+      subtitle="Choose the plan that matches your current stage. Start free, then upgrade through a Worker-created Paddle checkout when you are ready."
+      title="Pricing"
+    >
+      <PricingSection />
 
-      <section className="shell marketing-surface">
-        <PricingSection />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <AppPanel>
+          <AppPanelTitle
+            badge="Free plan"
+            copy="The free tier is intentionally practical. It should be enough to verify the product workflow before you pay."
+            title="What free is for"
+          />
+          <ul className="space-y-3 text-sm leading-6 text-neutral-600">
+            <li className="rounded-[20px] border border-black/8 bg-[#fafafa] px-4 py-3">Create a website account and verify the full sign-up flow.</li>
+            <li className="rounded-[20px] border border-black/8 bg-[#fafafa] px-4 py-3">Connect the extension for the first time and approve a browser session safely.</li>
+            <li className="rounded-[20px] border border-black/8 bg-[#fafafa] px-4 py-3">Evaluate whether Knowlense fits the way you research TPT listings.</li>
+          </ul>
+        </AppPanel>
 
-        <div className="mt-8 grid gap-5 md:grid-cols-2">
-          <article className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_18px_44px_rgba(15,23,42,0.06)]">
-            <h2 className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">What free is for</h2>
-            <ul className="mt-5 space-y-3">
-              <li className="flex items-start gap-3 text-sm leading-6 text-slate-700">
-                <span className="mt-2 h-2 w-2 rounded-full bg-blue-600" />
-                <span>Create an account and verify the website auth flow.</span>
-              </li>
-              <li className="flex items-start gap-3 text-sm leading-6 text-slate-700">
-                <span className="mt-2 h-2 w-2 rounded-full bg-blue-600" />
-                <span>Connect the extension for the first time.</span>
-              </li>
-              <li className="flex items-start gap-3 text-sm leading-6 text-slate-700">
-                <span className="mt-2 h-2 w-2 rounded-full bg-blue-600" />
-                <span>Evaluate whether the product fits your seller workflow.</span>
-              </li>
-            </ul>
-          </article>
-
-          <article className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_18px_44px_rgba(15,23,42,0.06)]">
-            <h2 className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">Billing details</h2>
-            <ul className="mt-5 space-y-3">
-              <li className="flex items-start gap-3 text-sm leading-6 text-slate-700">
-                <span className="mt-2 h-2 w-2 rounded-full bg-blue-600" />
-                <span>Paddle handles subscription checkout, invoices, taxes, and payment details.</span>
-              </li>
-              <li className="flex items-start gap-3 text-sm leading-6 text-slate-700">
-                <span className="mt-2 h-2 w-2 rounded-full bg-blue-600" />
-                <span>Monthly and yearly self-serve checkouts are created through Cloudflare Workers.</span>
-              </li>
-              <li className="flex items-start gap-3 text-sm leading-6 text-slate-700">
-                <span className="mt-2 h-2 w-2 rounded-full bg-blue-600" />
-                <span>Refund handling follows the policy published on the refund page and the linked Paddle transaction.</span>
-              </li>
-            </ul>
-          </article>
-        </div>
-      </section>
-
-      <SiteFooter />
-    </main>
+        <AppPanel>
+          <AppPanelTitle
+            badge="Billing"
+            copy="Billing stays separate from the website UI, but the plan selection and checkout session start here."
+            title="Billing details"
+          />
+          <ul className="space-y-3 text-sm leading-6 text-neutral-600">
+            <li className="rounded-[20px] border border-black/8 bg-[#fafafa] px-4 py-3">Paddle handles subscription checkout, taxes, payment methods, and invoices.</li>
+            <li className="rounded-[20px] border border-black/8 bg-[#fafafa] px-4 py-3">Monthly and yearly checkout sessions are created by Cloudflare Workers using your configured Paddle price IDs.</li>
+            <li className="rounded-[20px] border border-black/8 bg-[#fafafa] px-4 py-3">Refund and billing questions should reference the account email plus the Paddle transaction where possible.</li>
+          </ul>
+        </AppPanel>
+      </div>
+    </AppShell>
   );
 }

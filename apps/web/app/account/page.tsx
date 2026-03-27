@@ -3,9 +3,17 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { fetchApiProfile, type ApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { AppMenuLink, AppPanel, AppPanelTitle, AppShell } from "@/components/account/app-shell";
+
+function initialsFromEmail(email: string | null) {
+  if (!email) {
+    return "K";
+  }
+
+  return email.slice(0, 2).toUpperCase();
+}
 
 export default function AccountPage() {
   const router = useRouter();
@@ -13,10 +21,12 @@ export default function AccountPage() {
   const [profile, setProfile] = useState<ApiProfile | null>(null);
   const [status, setStatus] = useState("Checking account status...");
   const [emailConfirmed, setEmailConfirmed] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!supabase) {
       setStatus("Missing Supabase configuration.");
+      setLoading(false);
       return;
     }
 
@@ -48,7 +58,15 @@ export default function AccountPage() {
         setEmailConfirmed(Boolean(authResult.data.user?.email_confirmed_at));
         setStatus("Your website account is active and ready.");
       } catch (error) {
+        if (!active) {
+          return;
+        }
+
         setStatus(error instanceof Error ? error.message : "Unable to load account.");
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
     }
 
@@ -69,161 +87,151 @@ export default function AccountPage() {
   }
 
   return (
-    <main className="app-shell">
-      <SiteHeader
-        tag="Account"
-        navItems={[
-          { href: "/dashboard", label: "Dashboard" },
-          { href: "/pricing", label: "Pricing" },
-          { href: "/contact", label: "Support" }
-        ]}
-        primaryCta={{ href: "/connect", label: "Connect extension" }}
-      />
-
-      <section className="shell dashboard-surface">
-        <div className="section-heading">
-          <span className="section-label">Account Center</span>
-          <h1 className="page-title">Manage identity, security, billing entry points, and extension access.</h1>
-          <p className="page-copy">{status}</p>
-        </div>
-
-        <div className="stats-strip">
-          <article className="stat-chip-card">
-            <span className="stat-label">Website session</span>
-            <strong>{profile ? "Active" : "Inactive"}</strong>
-            <span className="stat-help">Your main account session lives on the website.</span>
-          </article>
-          <article className="stat-chip-card">
-            <span className="stat-label">Email verification</span>
-            <strong>{emailConfirmed === null ? "Checking..." : emailConfirmed ? "Verified" : "Pending"}</strong>
-            <span className="stat-help">Verification is required for a fully trusted account workflow.</span>
-          </article>
-          <article className="stat-chip-card">
-            <span className="stat-label">Recommended next step</span>
-            <strong>Connect extension</strong>
-            <span className="stat-help">Approve a separate extension session after signing in here.</span>
-          </article>
-        </div>
-
-        <div className="dashboard-layout">
-          <article className="dashboard-panel">
-            <div className="panel-header">
+    <AppShell
+      actions={
+        <>
+          <Link
+            className="inline-flex h-11 items-center rounded-full border border-black/10 bg-white px-4 text-sm font-medium text-black transition hover:bg-neutral-50"
+            href="/connect"
+          >
+            Connect extension
+          </Link>
+          <button
+            className="inline-flex h-11 items-center rounded-full bg-black px-4 text-sm font-semibold text-white transition hover:bg-neutral-800"
+            onClick={handleSignOut}
+            type="button"
+          >
+            Log out
+          </button>
+        </>
+      }
+      subtitle="Manage your website session, subscription entry points, billing links, and extension access from one place."
+      title="Account"
+    >
+      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+        <AppPanel>
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-neutral-100 text-xl font-semibold text-black">
+                {initialsFromEmail(profile?.email ?? null)}
+              </div>
               <div>
-                <h2>Profile</h2>
-                <p className="panel-copy">Core identity details and current website account state.</p>
-              </div>
-              <span className="panel-badge">Identity</span>
-            </div>
-            <div className="data-list">
-              <div className="data-item">
-                <span>Email</span>
-                <strong>{profile?.email ?? "No active session"}</strong>
-              </div>
-              <div className="data-item">
-                <span>User ID</span>
-                <strong>{profile?.id ?? "Unavailable"}</strong>
-              </div>
-              <div className="data-item">
-                <span>Verification state</span>
-                <strong>{emailConfirmed === null ? "Checking..." : emailConfirmed ? "Verified" : "Not verified"}</strong>
+                <div className="text-xl font-semibold tracking-[-0.04em] text-black">
+                  {loading ? "Loading account..." : profile?.email ?? "No active account"}
+                </div>
+                <div className="mt-1 text-sm text-neutral-500">{status}</div>
               </div>
             </div>
-          </article>
+            <span className="inline-flex h-9 items-center rounded-full border border-black/10 bg-neutral-50 px-3 text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
+              {emailConfirmed === null ? "Checking" : emailConfirmed ? "Verified" : "Pending verification"}
+            </span>
+          </div>
 
-          <article className="dashboard-panel">
-            <div className="panel-header">
-              <div>
-                <h2>Security and access</h2>
-                <p className="panel-copy">Website credentials stay on the web app. The extension receives its own session after approval.</p>
-              </div>
-              <span className="panel-badge">Security</span>
+          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+            <div className="rounded-[22px] border border-black/8 bg-[#fafafa] p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-400">Plan</div>
+              <div className="mt-2 text-lg font-semibold text-black">Free</div>
+              <div className="mt-1 text-sm text-neutral-500">Upgrade when you want recurring research usage.</div>
             </div>
-            <div className="stack-row">
-              <Link className="primary-button" href="/connect">
-                Connect extension
-              </Link>
-              <Link className="secondary-button" href="/auth/change-password">
-                Change password
-              </Link>
-              <button className="secondary-button" onClick={handleSignOut} type="button">
-                Sign out
-              </button>
+            <div className="rounded-[22px] border border-black/8 bg-[#fafafa] p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-400">Website session</div>
+              <div className="mt-2 text-lg font-semibold text-black">{profile ? "Active" : "Inactive"}</div>
+              <div className="mt-1 text-sm text-neutral-500">The website stays the primary sign-in surface.</div>
             </div>
-            <div className="panel-list">
-              <div className="panel-list-item">
-                <strong>Website-first sign-in</strong>
-                <p>Knowlense does not ask users to enter website credentials directly in the extension popup.</p>
-              </div>
-              <div className="panel-list-item">
-                <strong>Separate extension session</strong>
-                <p>The extension uses a Worker-issued session so web auth and extension access remain distinct.</p>
-              </div>
+            <div className="rounded-[22px] border border-black/8 bg-[#fafafa] p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-400">Extension access</div>
+              <div className="mt-2 text-lg font-semibold text-black">Approval based</div>
+              <div className="mt-1 text-sm text-neutral-500">Each browser session is connected from the website.</div>
             </div>
-          </article>
-        </div>
+          </div>
+        </AppPanel>
 
-        <div className="dashboard-layout">
-          <article className="dashboard-panel">
-            <div className="panel-header">
+        <AppPanel>
+          <AppPanelTitle badge="Menu" copy="These are the actions most users look for after signing in." title="Account shortcuts" />
+          <div className="space-y-3">
+            <AppMenuLink description="Update profile state and review identity details." href="/account" label="Account" />
+            <AppMenuLink description="Review plans and switch between monthly or yearly billing." href="/pricing" label="Subscription" />
+            <AppMenuLink description="Read billing policy and contact support for invoice issues." href="/refund-policy" label="Billing & invoices" />
+            <AppMenuLink description="Reach support and review privacy or service terms." href="/contact" label="Support" />
+            <button
+              className="flex w-full items-center justify-between rounded-[20px] border border-red-100 bg-red-50 px-4 py-4 text-left text-red-700 transition hover:border-red-200 hover:bg-red-100"
+              onClick={handleSignOut}
+              type="button"
+            >
               <div>
-                <h2>Billing</h2>
-                <p className="panel-copy">Billing is initiated from the website and processed through Paddle checkout.</p>
+                <div className="text-base font-medium">Log out</div>
+                <div className="mt-1 text-sm text-red-600/80">End the current website session.</div>
               </div>
-              <span className="panel-badge">Plans</span>
-            </div>
-            <div className="panel-list">
-              <div className="panel-list-item">
-                <strong>Free</strong>
-                <p>Use the product and validate the workflow before moving into paid usage.</p>
-              </div>
-              <div className="panel-list-item">
-                <strong>Monthly or yearly</strong>
-                <p>Paid plans are routed through Worker-created Paddle transactions rather than hard-coded client links.</p>
-              </div>
-            </div>
-            <div className="stack-row">
-              <Link className="primary-button" href="/pricing">
-                Manage plans
-              </Link>
-              <Link className="secondary-button" href="/refund-policy">
-                Refund policy
-              </Link>
-            </div>
-          </article>
+              <span className="text-lg leading-none">↗</span>
+            </button>
+          </div>
+        </AppPanel>
+      </div>
 
-          <article className="dashboard-panel">
-            <div className="panel-header">
-              <div>
-                <h2>Support and policy</h2>
-                <p className="panel-copy">The account page should give users a fast path to help, privacy details, and service terms.</p>
-              </div>
-              <span className="panel-badge">Support</span>
+      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+        <AppPanel>
+          <AppPanelTitle
+            badge="Subscription"
+            copy="Paddle handles checkout, taxes, and invoices. The Worker creates the correct checkout session for the selected plan."
+            title="Plan and billing"
+          />
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-[22px] border border-black/8 bg-white p-5">
+              <div className="text-sm font-medium text-neutral-500">Current plan</div>
+              <div className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-black">Free</div>
+              <p className="mt-3 text-sm leading-6 text-neutral-600">Good for validating the website auth flow, account setup, and first extension connection.</p>
             </div>
-            <div className="stack-row">
-              <Link className="secondary-button" href="/contact">
-                Contact support
-              </Link>
-              <Link className="secondary-button" href="/privacy">
-                Privacy
-              </Link>
-              <Link className="secondary-button" href="/terms">
-                Terms
-              </Link>
+            <div className="rounded-[22px] border border-black/8 bg-[#fafafa] p-5">
+              <div className="text-sm font-medium text-neutral-500">Upgrade options</div>
+              <div className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-black">$4.99</div>
+              <p className="mt-3 text-sm leading-6 text-neutral-600">$41.9 yearly is also available for a lower effective monthly cost.</p>
             </div>
-            <div className="panel-list">
-              <div className="panel-list-item">
-                <strong>Access issues</strong>
-                <p>Include your account email and the flow involved so support can trace the issue quickly.</p>
-              </div>
-              <div className="panel-list-item">
-                <strong>Billing questions</strong>
-                <p>Support can review payment issues using your account email and the Paddle transaction reference.</p>
-              </div>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link
+              className="inline-flex h-11 items-center rounded-full bg-black px-4 text-sm font-semibold text-white transition hover:bg-neutral-800"
+              href="/pricing"
+            >
+              Manage subscription
+            </Link>
+            <Link
+              className="inline-flex h-11 items-center rounded-full border border-black/10 bg-white px-4 text-sm font-medium text-black transition hover:bg-neutral-50"
+              href="/refund-policy"
+            >
+              Refund policy
+            </Link>
+          </div>
+        </AppPanel>
+
+        <AppPanel>
+          <AppPanelTitle badge="Security" copy="Password changes, email verification, and extension approval all start from the website." title="Security and access" />
+          <div className="space-y-3 text-sm leading-6 text-neutral-600">
+            <div className="rounded-[20px] border border-black/8 bg-[#fafafa] p-4">
+              Use <span className="font-medium text-black">Change password</span> when you already have an active session and want to rotate credentials.
             </div>
-          </article>
-        </div>
-      </section>
-      <SiteFooter />
-    </main>
+            <div className="rounded-[20px] border border-black/8 bg-[#fafafa] p-4">
+              Use <span className="font-medium text-black">Verify email</span> if the account exists but the confirmation step has not been completed yet.
+            </div>
+            <div className="rounded-[20px] border border-black/8 bg-[#fafafa] p-4">
+              Use <span className="font-medium text-black">Connect extension</span> to approve a browser session without exposing website credentials inside the popup.
+            </div>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link
+              className="inline-flex h-11 items-center rounded-full border border-black/10 bg-white px-4 text-sm font-medium text-black transition hover:bg-neutral-50"
+              href="/auth/change-password"
+            >
+              Change password
+            </Link>
+            <Link
+              className="inline-flex h-11 items-center rounded-full border border-black/10 bg-white px-4 text-sm font-medium text-black transition hover:bg-neutral-50"
+              href="/auth/verify-email"
+            >
+              Verify email
+            </Link>
+          </div>
+        </AppPanel>
+      </div>
+    </AppShell>
   );
 }

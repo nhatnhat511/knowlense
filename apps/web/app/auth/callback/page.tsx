@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
@@ -30,12 +29,12 @@ export default function AuthCallbackPage() {
       }
 
       if (session?.access_token) {
-        setStatus("Email confirmed. Redirecting to the dashboard...");
+        setStatus("Email confirmed. Redirecting to your dashboard...");
         setTimeout(() => router.replace("/dashboard"), 1200);
         return;
       }
 
-      setStatus("The callback did not produce a session. Return to sign in if needed.");
+      setStatus("The callback completed, but no active session was created. Return to sign in if needed.");
     }
 
     void completeCallback();
@@ -46,22 +45,21 @@ export default function AuthCallbackPage() {
   }, [router, supabase]);
 
   return (
-    <main className="app-shell">
-      <SiteHeader tag="Auth callback" navItems={[{ href: "/auth/sign-in", label: "Sign in" }]} />
-
-      <section className="shell auth-surface single-card">
-        <section className="auth-card">
-          <span className="eyebrow">Supabase callback</span>
-          <h1 className="page-title" style={{ fontSize: "2.3rem" }}>Completing authentication</h1>
-          <p className="page-copy">{status}</p>
-          <div className="stack-row">
-            <Link className="secondary-button" href="/auth/sign-in">
-              Go to sign in
-            </Link>
-          </div>
-        </section>
-      </section>
-      <SiteFooter />
-    </main>
+    <AuthShell
+      footer={
+        <>
+          Return to <AuthTextLink href="/auth/sign-in">sign in</AuthTextLink>
+        </>
+      }
+      subtitle="We are finishing the secure handoff from Supabase and preparing your website session."
+      title="Completing authentication"
+    >
+      <div className="space-y-5 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-black/10">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-black border-t-transparent" />
+        </div>
+        <p className="text-[15px] leading-7 text-neutral-600">{status}</p>
+      </div>
+    </AuthShell>
   );
 }

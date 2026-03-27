@@ -1,11 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { validatePassword } from "@/lib/auth/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { AuthField, AuthShell } from "@/components/auth/auth-shell";
 
 export default function ChangePasswordPage() {
   const router = useRouter();
@@ -13,14 +12,12 @@ export default function ChangePasswordPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState("Checking website session...");
-  const [statusKind, setStatusKind] = useState<"idle" | "error" | "success">("idle");
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!supabase) {
       setStatus("Missing Supabase configuration.");
-      setStatusKind("error");
       return;
     }
 
@@ -43,7 +40,6 @@ export default function ChangePasswordPage() {
 
       setReady(true);
       setStatus("Set a new password for your account.");
-      setStatusKind("success");
     }
 
     void hydrate();
@@ -59,13 +55,11 @@ export default function ChangePasswordPage() {
     const passwordValidation = validatePassword(password, confirmPassword);
     if (passwordValidation) {
       setStatus(passwordValidation.message);
-      setStatusKind(passwordValidation.kind === "error" ? "error" : "idle");
       return;
     }
 
     if (!ready || !supabase) {
       setStatus("A valid session was not found.");
-      setStatusKind("error");
       return;
     }
 
@@ -76,51 +70,60 @@ export default function ChangePasswordPage() {
 
       if (error) {
         setStatus(error.message);
-        setStatusKind("error");
         return;
       }
 
       setStatus("Password updated successfully.");
-      setStatusKind("success");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to update password.");
-      setStatusKind("error");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="app-shell">
-      <SiteHeader tag="Change password" navItems={[{ href: "/account", label: "Account" }, { href: "/contact", label: "Support" }]} />
+    <AuthShell title="Change password" subtitle="Set a new password for your account.">
+      <form className="space-y-5" onSubmit={handleSubmit}>
+        <AuthField
+          id="change-password"
+          input={
+            <input
+              className="h-12 w-full rounded-2xl border border-black/10 bg-white px-4 text-[17px] outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/10"
+              id="change-password"
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="New password"
+              type="password"
+              value={password}
+            />
+          }
+          label="New password"
+        />
 
-      <section className="shell auth-surface single-card">
-        <section className="auth-card">
-          <span className="eyebrow">Account security</span>
-          <h1 className="page-title" style={{ fontSize: "2.4rem" }}>Change your password</h1>
-          <form onSubmit={handleSubmit}>
-            <div className="field">
-              <label htmlFor="password">New password</label>
-              <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-            </div>
-            <div className="field">
-              <label htmlFor="confirm-password">Confirm new password</label>
-              <input
-                id="confirm-password"
-                type="password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                required
-              />
-            </div>
-            <div className={`status ${statusKind !== "idle" ? statusKind : ""}`}>{status}</div>
-            <button className="primary-button wide-button" disabled={loading} type="submit">
-              {loading ? "Updating..." : "Change password"}
-            </button>
-          </form>
-        </section>
-      </section>
-      <SiteFooter />
-    </main>
+        <AuthField
+          id="change-password-confirm"
+          input={
+            <input
+              className="h-12 w-full rounded-2xl border border-black/10 bg-white px-4 text-[17px] outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/10"
+              id="change-password-confirm"
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              placeholder="Confirm new password"
+              type="password"
+              value={confirmPassword}
+            />
+          }
+          label="Confirm new password"
+        />
+
+        {status ? <p className="text-[15px] text-neutral-500">{status}</p> : null}
+
+        <button
+          className="inline-flex h-12 w-full items-center justify-center rounded-full bg-black px-5 text-[17px] font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-70"
+          disabled={loading}
+          type="submit"
+        >
+          {loading ? "Updating..." : "Change password"}
+        </button>
+      </form>
+    </AuthShell>
   );
 }
