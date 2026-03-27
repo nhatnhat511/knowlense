@@ -72,7 +72,7 @@ function Card({ dark, title, description, children }: { dark: boolean; title: st
 
 function Metric({ dark, loading, title, value, delta, icon, action }: { dark: boolean; loading?: boolean; title: string; value: string; delta: string; icon: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <Card dark={dark} title="" >
+    <article className={cn("rounded-2xl border p-6 shadow-[0_20px_55px_rgba(15,23,42,0.08)]", dark ? "border-white/10 bg-[#111318]" : "border-gray-100 bg-white")}>
       <div className={cn("inline-flex h-10 w-10 items-center justify-center rounded-xl", dark ? "bg-white/8 text-[#c6b7ff]" : "bg-[#f5f1ff] text-[#7c68ff]")}>{icon}</div>
       {loading ? <Skeleton className="mt-5 h-10 w-24" /> : <div className={cn("mt-5 text-[2.2rem] font-bold tracking-[-0.07em]", dark ? "text-white" : "text-gray-900")}>{value}</div>}
       <div className="mt-2 flex items-center justify-between gap-4">
@@ -80,7 +80,7 @@ function Metric({ dark, loading, title, value, delta, icon, action }: { dark: bo
         {loading ? <Skeleton className="h-5 w-14" /> : <span className="text-sm font-medium text-green-600">{delta}</span>}
       </div>
       {action ? <div className="mt-4">{action}</div> : null}
-    </Card>
+    </article>
   );
 }
 
@@ -242,14 +242,12 @@ function DashboardContent() {
             ].map((item) => <div className={cn("rounded-[22px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")} key={item.label}><div className={cn("text-xs font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>{item.label}</div><div className={cn("mt-2 text-lg font-semibold", dark ? "text-white" : "text-black")}>{item.value}</div><div className={cn("mt-1 text-sm", dark ? "text-white/55" : "text-neutral-500")}>{item.copy}</div></div>)}
           </div>
         </Card>
-        <Card dark={dark} title="Account actions" description="Switch to other in-dashboard sections instead of leaving the workspace.">
-          <div className="space-y-3">
-            {[
-              { label: "Subscription", copy: "Review free, trial, and premium states in this workspace.", next: "subscription" as Section },
-              { label: "Connect extension", copy: "Approve extension requests from this dashboard.", next: "connect" as Section },
-              { label: "Support", copy: "Troubleshoot auth, billing, and extension issues here.", next: "support" as Section },
-              { label: "Privacy", copy: "Review the data and privacy posture here.", next: "privacy" as Section }
-            ].map((item) => <button className={cn("flex w-full items-center justify-between rounded-[20px] border px-4 py-4 text-left transition", dark ? "border-white/10 bg-white/4 hover:bg-white/8" : "border-black/8 bg-white hover:bg-neutral-50")} key={item.label} onClick={() => setSection(item.next)} type="button"><div><div className={cn("text-base font-medium", dark ? "text-white" : "text-black")}>{item.label}</div><div className={cn("mt-1 text-sm", dark ? "text-white/55" : "text-neutral-500")}>{item.copy}</div></div><span>{">"}</span></button>)}
+        <Card dark={dark} title="Workspace controls" description="Keep the important account actions close without repeating full navigation cards.">
+          <div className="flex flex-wrap gap-3">
+            <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-white/8 text-white hover:bg-white/12" : "bg-gray-100 text-gray-900 hover:bg-gray-200")} onClick={() => setSection("subscription")} type="button">Open subscription</button>
+            <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-white/8 text-white hover:bg-white/12" : "bg-gray-100 text-gray-900 hover:bg-gray-200")} onClick={() => setSection("connect")} type="button">Connect extension</button>
+            <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-white/8 text-white hover:bg-white/12" : "bg-gray-100 text-gray-900 hover:bg-gray-200")} onClick={() => setSection("support")} type="button">Open support</button>
+            <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-red-500/15 text-red-200 hover:bg-red-500/20" : "bg-red-50 text-red-700 hover:bg-red-100")} onClick={handleSignOut} type="button">Log out</button>
           </div>
         </Card>
       </div>
@@ -313,7 +311,7 @@ function DashboardContent() {
   }
 
   function textPanel(title: string, items: string[]) {
-    return <div className="mt-8 grid gap-5 xl:grid-cols-2"><Card dark={dark} title={title} description="Embedded directly in the workspace to avoid forcing a page change."><div className="space-y-3 text-sm leading-6">{items.map((item) => <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>{item}</div>)}</div></Card><Card dark={dark} title="Next step" description="Use the dashboard sections as the main navigation path."><div className="space-y-3">{["Account", "Subscription", "Connect extension"].map((item) => <button className={cn("flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm transition", dark ? "bg-white/4 text-white hover:bg-white/8" : "bg-gray-50 text-gray-900 hover:bg-white")} key={item} onClick={() => setSection(item === "Account" ? "account" : item === "Subscription" ? "subscription" : "connect")} type="button"><span>{item}</span><span>{">"}</span></button>)}</div></Card></div>;
+    return <div className="mt-8"><Card dark={dark} title={title} description="Embedded directly in the workspace to avoid forcing a page change."><div className="space-y-3 text-sm leading-6">{items.map((item) => <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>{item}</div>)}</div></Card></div>;
   }
 
   return (
@@ -328,15 +326,15 @@ function DashboardContent() {
         <section className="min-w-0">
           <header className={cn("border-b px-8 py-5 sm:px-10", dark ? "border-white/10 bg-[#0f1116]" : "border-gray-100 bg-white")}>
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-              <div><h1 className={cn("text-[2.6rem] font-extrabold tracking-[-0.09em]", dark ? "text-white" : "text-gray-900")}>{sectionMeta.title}</h1><p className={cn("mt-1 text-sm", dark ? "text-white/55" : "text-gray-500")}>Welcome back, {authLoading ? "..." : firstName}. Your workspace stays clean, focused, and readable.</p></div>
+              <div><h1 className={cn("text-[2.6rem] font-extrabold tracking-[-0.09em]", dark ? "text-white" : "text-gray-900")}>Dashboard</h1><p className={cn("mt-1 text-sm", dark ? "text-white/55" : "text-gray-500")}>{section === "overview" ? `Welcome back, ${authLoading ? "..." : firstName}. Your workspace stays clean, focused, and readable.` : `${sectionMeta.title} is now part of your dashboard workspace.`}</p></div>
               <div className="flex items-center gap-3 self-start lg:self-auto"><TopButton active={theme === "light"} dark={dark} label="Light mode" onClick={() => setTheme("light")}><Sun size={18} /></TopButton><TopButton active={theme === "dark"} dark={dark} label="Dark mode" onClick={() => setTheme("dark")}><Moon size={18} /></TopButton><TopButton dark={dark} label="Refresh dashboard" onClick={refresh}><RefreshCw size={18} /></TopButton><TopButton dark={dark} label="Notifications" onClick={() => showToast(overview?.recentRuns[0] ? `Latest run: ${overview.recentRuns[0].query}` : "No new dashboard notifications.")}><Bell size={18} /></TopButton><button className={cn("inline-flex items-center gap-3 rounded-xl border px-3 py-2 transition", dark ? "border-white/10 bg-[#111318] hover:bg-white/6" : "border-gray-200 bg-white hover:bg-gray-50")} onClick={() => setSection("account")} type="button"><span className="grid h-9 w-9 place-items-center rounded-full bg-[#eef2ff] text-sm font-semibold text-[#6f5cff]">{initials}</span><span className={cn("text-sm font-medium", dark ? "text-white" : "text-gray-900")}>{authLoading ? "Loading" : firstName}</span></button></div>
             </div>
           </header>
 
           <div className={cn("px-8 py-8 sm:px-10", dark ? "bg-[#0e1014]" : "bg-gray-50")}>
             <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-              <div><h2 className={cn("text-[2.2rem] font-extrabold tracking-[-0.08em]", dark ? "text-white" : "text-gray-900")}>{sectionMeta.title}</h2><p className={cn("mt-2 max-w-3xl text-sm leading-7", dark ? "text-white/55" : "text-gray-500")}>{sectionMeta.description}</p></div>
-              <div className={cn("pt-1 text-sm", dark ? "text-white/40" : "text-gray-500")}>Home / Dashboard / {sectionMeta.title}</div>
+              <div><h2 className={cn("text-[1.85rem] font-extrabold tracking-[-0.07em]", dark ? "text-white" : "text-gray-900")}>{sectionMeta.title}</h2><p className={cn("mt-2 max-w-3xl text-sm leading-7", dark ? "text-white/55" : "text-gray-500")}>{sectionMeta.description}</p></div>
+              <div className={cn("pt-1 text-sm", dark ? "text-white/40" : "text-gray-500")}>{section === "overview" ? "Home / Dashboard" : `Home / Dashboard / ${sectionMeta.title}`}</div>
             </div>
 
             {section === "overview" ? overviewView() : null}
