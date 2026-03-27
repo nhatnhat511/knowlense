@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createClient } from "@supabase/supabase-js";
 import { analyzeKeywordSnapshot, type SearchSnapshot } from "./lib/keywordFinder";
+import { analyzeProductKeywords, type ProductKeywordSnapshot } from "./lib/productKeywords";
 
 type Bindings = {
   CORS_ORIGIN?: string;
@@ -51,6 +52,30 @@ type StoredKeywordRun = {
     score: number;
     type: "adjacent" | "underserved";
     reason: string;
+  }>;
+  created_at: string;
+};
+
+type StoredProductKeywordRun = {
+  id: string;
+  product_id: string | null;
+  product_url: string;
+  title_text: string;
+  summary: {
+    generatedKeywords: number;
+    rankedKeywords: number;
+    bestRank: number | null;
+    analyzedAt: string;
+  };
+  keywords: Array<{
+    keyword: string;
+    score: number;
+    sourceCount: number;
+    sources: string[];
+    rankPosition: number | null;
+    resultPage: number | null;
+    status: "ranked" | "not_found";
+    searchUrl: string;
   }>;
   created_at: string;
 };
@@ -800,6 +825,15 @@ app.use("/v1/keyword-finder/*", async (c, next) => {
   await next();
 });
 
+app.use("/v1/product-keywords/*", async (c, next) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  await next();
+});
+
 app.post("/v1/keyword-finder/analyze", async (c) => {
   const body = (await c.req.json().catch(() => null)) as SearchSnapshot | null;
 
@@ -896,6 +930,90 @@ app.get("/v1/keyword-finder/runs", async (c) => {
     return c.json({
       runs: [],
       warning: "Keyword Finder history is unavailable until the D1 database is bound and migrated."
+    });
+  }
+});
+
+app.post("/v1/product-keywords/analyze", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as ProductKeywordSnapshot | null;
+
+  if (!body?.productUrl || !body?.title || !body?.descriptionExcerpt) {
+    return c.json({ error: "Invalid product snapshot payload." }, 400);
+  }
+
+  const user = c.get("user");
+  const analysis = await analyzeProductKeywords(body);
+  const runId = crypto.randomUUID();
+  let persisted = false;
+  let warning: string | null = null;
+
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO product_keyword_runs (id, user_id, product_id, product_url, title_text, snapshot_json, summary_json, keywords_json)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+    )
+      .bind(
+        runId,
+        user.id,
+        analysis.product.id,
+        analysis.product.url,
+        analysis.product.title,
+        JSON.stringify(body),
+        JSON.stringify(analysis.summary),
+        JSON.stringify(analysis.keywords)
+      )
+      .run();
+
+    persisted = true;
+  } catch {
+    warning = "Analysis completed, but persistence failed. Confirm the D1 migration is applied.";
+  }
+
+  return c.json({
+    runId,
+    persisted,
+    warning,
+    analysis
+  });
+});
+
+app.get("/v1/product-keywords/runs", async (c) => {
+  const user = c.get("user");
+
+  try {
+    const result = await c.env.DB.prepare(
+      `SELECT id, product_id, product_url, title_text, summary_json, keywords_json, created_at
+       FROM product_keyword_runs
+       WHERE user_id = ?1
+       ORDER BY datetime(created_at) DESC
+       LIMIT 10`
+    )
+      .bind(user.id)
+      .all<{
+        id: string;
+        product_id: string | null;
+        product_url: string;
+        title_text: string;
+        summary_json: string;
+        keywords_json: string;
+        created_at: string;
+      }>();
+
+    const runs: StoredProductKeywordRun[] = (result.results ?? []).map((row) => ({
+      id: row.id,
+      product_id: row.product_id,
+      product_url: row.product_url,
+      title_text: row.title_text,
+      summary: JSON.parse(row.summary_json),
+      keywords: JSON.parse(row.keywords_json),
+      created_at: row.created_at
+    }));
+
+    return c.json({ runs });
+  } catch {
+    return c.json({
+      runs: [],
+      warning: "Product keyword history is unavailable until the D1 migration is applied."
     });
   }
 });
