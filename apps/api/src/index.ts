@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { createClient } from "@supabase/supabase-js";
 import { analyzeKeywordSnapshot, type SearchSnapshot } from "./lib/keywordFinder";
 import { analyzeProductKeywords, findRecentProductRun, type ProductKeywordSnapshot } from "./lib/productKeywords";
+import { analyzeProductSeoAudit, findRecentSeoAudit, type ProductSeoAuditSnapshot } from "./lib/seoAuditor";
 
 type Bindings = {
   CORS_ORIGIN?: string;
@@ -90,6 +91,44 @@ type StoredProductKeywordRun = {
     searchUrl: string;
     checkedAt: string;
   }>;
+  created_at: string;
+};
+
+type StoredProductSeoAudit = {
+  id: string;
+  product_id: string | null;
+  product_url: string;
+  title_text: string;
+  primary_keyword: string | null;
+  audit: {
+    seoScore: number;
+    primaryKeyword: string | null;
+    placements: {
+      title: boolean;
+      snippet: boolean;
+      description: boolean;
+      preview: boolean;
+    };
+    tagCompleteness: {
+      score: number;
+      totalTags: number;
+      matchedTags: string[];
+      status: "strong" | "needs_work";
+    };
+    cannibalization: {
+      status: "none" | "possible";
+      similarListings: Array<{
+        productId: string | null;
+        productUrl: string;
+        title: string;
+        primaryKeyword: string;
+      }>;
+    };
+    actionItems: string[];
+    analyzedAt: string;
+    cooldownMinutes: number;
+    note: string;
+  };
   created_at: string;
 };
 
@@ -1050,6 +1089,120 @@ app.get("/v1/product-keywords/runs", async (c) => {
     return c.json({
       runs: [],
       warning: "Product keyword history is unavailable until the D1 migration is applied."
+    });
+  }
+});
+
+app.use("/v1/product-seo-audit/*", async (c, next) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  await next();
+});
+
+app.post("/v1/product-seo-audit/analyze", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as ProductSeoAuditSnapshot | null;
+
+  if (!body?.productUrl || !body?.title) {
+    return c.json({ error: "Invalid SEO audit snapshot payload." }, 400);
+  }
+
+  const user = c.get("user");
+  const productId = body.productId ?? body.productUrl.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
+  const recentRun = await findRecentSeoAudit(c.env.DB, user.id, productId, body.productUrl, 30).catch(() => null);
+
+  if (recentRun) {
+    return c.json({
+      runId: recentRun.runId,
+      persisted: true,
+      cached: true,
+      cooldownMinutes: recentRun.analysis.audit.cooldownMinutes,
+      analysis: recentRun.analysis
+    });
+  }
+
+  const analysis = await analyzeProductSeoAudit(body, {
+    db: c.env.DB,
+    userId: user.id,
+    cooldownMinutes: 30
+  });
+
+  const runId = crypto.randomUUID();
+  let persisted = false;
+  let warning: string | null = null;
+
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO product_seo_audits (
+         id, user_id, seller_name, product_id, product_url, title_text, primary_keyword, audit_json
+       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+    )
+      .bind(
+        runId,
+        user.id,
+        analysis.product.sellerName,
+        analysis.product.id,
+        analysis.product.url,
+        analysis.product.title,
+        analysis.audit.primaryKeyword,
+        JSON.stringify(analysis)
+      )
+      .run();
+
+    persisted = true;
+  } catch {
+    warning = "SEO audit completed, but persistence failed. Confirm the D1 migration is applied.";
+  }
+
+  return c.json({
+    runId,
+    persisted,
+    cached: false,
+    cooldownMinutes: analysis.audit.cooldownMinutes,
+    warning,
+    analysis
+  });
+});
+
+app.get("/v1/product-seo-audit/runs", async (c) => {
+  const user = c.get("user");
+
+  try {
+    const result = await c.env.DB.prepare(
+      `SELECT id, product_id, product_url, title_text, primary_keyword, audit_json, created_at
+       FROM product_seo_audits
+       WHERE user_id = ?1
+       ORDER BY datetime(created_at) DESC
+       LIMIT 10`
+    )
+      .bind(user.id)
+      .all<{
+        id: string;
+        product_id: string | null;
+        product_url: string;
+        title_text: string;
+        primary_keyword: string | null;
+        audit_json: string;
+        created_at: string;
+      }>();
+
+    const runs: StoredProductSeoAudit[] = (result.results ?? []).map((row) => ({
+      id: row.id,
+      product_id: row.product_id,
+      product_url: row.product_url,
+      title_text: row.title_text,
+      primary_keyword: row.primary_keyword,
+      audit: JSON.parse(row.audit_json).audit,
+      created_at: row.created_at
+    }));
+
+    return c.json({ runs });
+  } catch {
+    return c.json({
+      runs: [],
+      warning: "Product SEO audit history is unavailable until the D1 migration is applied."
     });
   }
 });

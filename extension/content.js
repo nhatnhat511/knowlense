@@ -20,6 +20,10 @@ function normalizeText(value) {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function dedupe(items) {
+  return [...new Set(items)];
+}
+
 function cleanGradeText(value) {
   return value
     .replace(/\bMostly used with\b.*$/i, "")
@@ -193,6 +197,34 @@ function extractDescriptionExcerpt() {
   return chunks.join(" ").slice(0, 300).trim();
 }
 
+function extractSellerName() {
+  const sellerLink = [...document.querySelectorAll("a")]
+    .find((anchor) => /seller|store/i.test(anchor.href || "") || /followers?/i.test(textFromNode(anchor.parentElement || null)));
+
+  return textFromNode(sellerLink) || "";
+}
+
+function extractPreviewData() {
+  const previewButton = [...document.querySelectorAll("button, a")]
+    .find((node) => /view preview/i.test(textFromNode(node)));
+  const thumbs = [...document.querySelectorAll("img")]
+    .filter((image) => {
+      const alt = textFromNode(image);
+      const src = image.getAttribute("src") || "";
+      return /preview|page|thumbnail|product/i.test(`${alt} ${src}`);
+    })
+    .slice(0, 8);
+
+  return {
+    buttonVisible: Boolean(previewButton),
+    thumbCount: thumbs.length,
+    textHints: dedupe([
+      ...(previewButton ? [textFromNode(previewButton)] : []),
+      ...thumbs.map((image) => image.getAttribute("alt") || "")
+    ]).filter(Boolean)
+  };
+}
+
 function extractProductSnapshot() {
   const title = textFromNode(document.querySelector("h1"));
   const descriptionExcerpt = extractDescriptionExcerpt();
@@ -213,12 +245,14 @@ function extractProductSnapshot() {
     snapshot: {
       productId: extractProductId(window.location.href),
       productUrl: window.location.href,
+      sellerName: extractSellerName(),
       title,
       descriptionExcerpt,
       grades: splitList(gradesValue, "grades"),
       tags: splitList(tagsValue),
       subjects: splitList(subjectsValue),
       resourceType: resourceTypeValue || null,
+      preview: extractPreviewData(),
       seedKeywords: []
     }
   };
@@ -512,7 +546,7 @@ function injectStyles() {
       background: rgba(255, 255, 255, 0.98);
       box-shadow: 0 30px 80px rgba(15, 23, 42, 0.16);
       backdrop-filter: blur(14px);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: Plus Jakarta Sans, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: #0f172a;
     }
 
@@ -710,6 +744,28 @@ function injectStyles() {
       text-decoration: underline;
     }
 
+    .knowlense-score {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .knowlense-score strong {
+      font-size: 34px;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: #111827;
+    }
+
+    .knowlense-score span {
+      font-size: 12px;
+      color: #64748b;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
     .knowlense-panel-empty {
       font-size: 13px;
       line-height: 1.55;
@@ -739,18 +795,18 @@ function createPanel() {
     <div class="knowlense-panel-shell">
       <div class="knowlense-panel-header">
         <div class="knowlense-panel-eyebrow">Knowlense SEO</div>
-        <h3 class="knowlense-panel-title">TPT keyword rankings</h3>
-        <p class="knowlense-panel-subtitle">Use TPT search suggestions first, then check the exact rank within the first 3 result pages. Deeper results are shown as &gt;73.</p>
+        <h3 class="knowlense-panel-title">TPT Listing SEO Auditor</h3>
+        <p class="knowlense-panel-subtitle">Audit keyword focus, placement, preview alignment, tag coverage, and overlap inside the analyzed store.</p>
       </div>
       <div class="knowlense-panel-body">
         <section class="knowlense-panel-section knowlense-panel-meta"></section>
         <section class="knowlense-panel-section knowlense-panel-intent"></section>
         <section class="knowlense-panel-section">
-          <button class="knowlense-panel-action" type="button">Analyze this product</button>
-          <div class="knowlense-panel-status">Connect the extension through the website, then run the analysis.</div>
+          <button class="knowlense-panel-action" type="button">Run SEO audit</button>
+          <div class="knowlense-panel-status">Connect the extension through the website, then run the SEO audit.</div>
         </section>
         <section class="knowlense-panel-section">
-          <div class="knowlense-panel-empty">No product keyword analysis yet. Run the check to extract product-derived keywords, expand them with TPT suggestions, and check rank through page 3.</div>
+          <div class="knowlense-panel-empty">No SEO audit yet. Run the check to score this listing, identify the primary keyword, and generate 5 clear action items.</div>
           <ul class="knowlense-keyword-list" hidden></ul>
         </section>
       </div>
@@ -786,8 +842,8 @@ function renderMeta(snapshot) {
     </div>
     <div class="knowlense-meta-row" style="margin-top:10px">
       <div>
-        <span>Grades</span>
-        <strong>${snapshot.grades.length ? snapshot.grades.join(", ") : "Not found"}</strong>
+        <span>Store</span>
+        <strong>${snapshot.sellerName || "Unknown"}</strong>
       </div>
       <div style="text-align:right">
         <span>Tags</span>
@@ -802,8 +858,8 @@ function renderIntent(analysis) {
     return;
   }
 
-  const intent = analysis?.intent;
-  if (!intent) {
+  const audit = analysis?.audit;
+  if (!audit) {
     PANEL_STATE.intent.innerHTML = "";
     return;
   }
@@ -814,10 +870,31 @@ function renderIntent(analysis) {
       : '<span class="knowlense-chip">None</span>';
 
   PANEL_STATE.intent.innerHTML = `
-    <div style="font-size:12px;color:#64748b;margin-bottom:8px">Core topic keywords</div>
-    <div class="knowlense-keyword-meta">${chipMarkup(intent.mainSeeds.slice(0, 8))}</div>
-    <div style="font-size:12px;color:#64748b;margin:12px 0 8px">Detected topic focus</div>
-    <div class="knowlense-keyword-meta">${chipMarkup(intent.topics.slice(0, 6))}</div>
+    <div class="knowlense-score">
+      <strong>${audit.seoScore}</strong>
+      <span>SEO score</span>
+    </div>
+    <div style="font-size:12px;color:#64748b;margin:14px 0 8px">Primary keyword</div>
+    <div class="knowlense-keyword-meta">${chipMarkup(audit.primaryKeyword ? [audit.primaryKeyword] : [])}</div>
+    <div style="font-size:12px;color:#64748b;margin:12px 0 8px">Placement checks</div>
+    <div class="knowlense-keyword-meta">
+      ${chipMarkup([
+        audit.placements.title ? "Title: yes" : "Title: missing",
+        audit.placements.snippet ? "Snippet: yes" : "Snippet: missing",
+        audit.placements.description ? "Description: yes" : "Description: missing",
+        audit.placements.preview ? "Preview: yes" : "Preview: missing"
+      ])}
+    </div>
+    <div style="font-size:12px;color:#64748b;margin:12px 0 8px">Tags and store overlap</div>
+    <div class="knowlense-keyword-meta">
+      ${chipMarkup([
+        `Tags score ${audit.tagCompleteness.score}`,
+        `${audit.tagCompleteness.totalTags} tags`,
+        audit.cannibalization.status === "possible"
+          ? `${audit.cannibalization.similarListings.length} similar listing${audit.cannibalization.similarListings.length > 1 ? "s" : ""}`
+          : "No overlap flagged"
+      ])}
+    </div>
   `;
 }
 
@@ -835,36 +912,29 @@ function renderResults(payload) {
     return;
   }
 
-  const keywords = payload?.analysis?.keywords ?? [];
-  const summary = payload?.analysis?.summary;
+  const audit = payload?.analysis?.audit;
+  const actions = audit?.actionItems ?? [];
   PANEL_STATE.results.innerHTML = "";
 
-  if (!keywords.length) {
+  if (!audit || !actions.length) {
     PANEL_STATE.body.hidden = false;
     PANEL_STATE.results.hidden = true;
-    PANEL_STATE.body.textContent = "No stable keyword candidates were generated for this product yet.";
+    PANEL_STATE.body.textContent = "No SEO action items were generated for this product yet.";
     return;
   }
 
   PANEL_STATE.body.hidden = false;
   PANEL_STATE.results.hidden = false;
-  PANEL_STATE.body.textContent = `${summary.rankedKeywords} of ${summary.checkedKeywords} keywords were found in the first 3 TPT result pages. Best rank: ${summary.bestRank > 73 ? ">73" : `#${summary.bestRank}`}. ${summary.note || "Positions can change over time."}`;
+  PANEL_STATE.body.textContent = audit.note || "Review the SEO checks and action items below.";
 
-  keywords.forEach((item) => {
+  actions.forEach((item, index) => {
     const element = document.createElement("li");
     element.className = "knowlense-keyword-item";
     element.innerHTML = `
       <div class="knowlense-keyword-top">
-        <div class="knowlense-keyword-name">${item.keyword}</div>
-        <div class="knowlense-keyword-rank ${item.status === "ranked" ? "ranked" : "missing"}">${item.status === "ranked" ? `#${item.rankPosition}` : ">73"}</div>
+        <div class="knowlense-keyword-name">${item}</div>
+        <div class="knowlense-keyword-rank ranked">Step ${index + 1}</div>
       </div>
-      <div class="knowlense-keyword-meta">
-        <span class="knowlense-chip">Score ${item.score}</span>
-        <span class="knowlense-chip">${item.source === "tpt" ? "TPT suggestion" : "Product keyword"}</span>
-        <span class="knowlense-chip">${item.resultPage ? `Page ${item.resultPage}` : "Checked through page 3"}</span>
-        <span class="knowlense-chip">Confidence ${item.confidence}</span>
-      </div>
-      <a class="knowlense-keyword-link" href="${item.searchUrl}" target="_blank" rel="noreferrer">Open TPT search</a>
     `;
     PANEL_STATE.results.appendChild(element);
   });
@@ -882,7 +952,7 @@ async function analyzeCurrentProduct() {
   const sessionState = await loadExtensionSession();
 
   if (!sessionState.session?.sessionToken) {
-    throw new Error("Connect the extension through the website before running product ranking analysis.");
+    throw new Error("Connect the extension through the website before running the SEO audit.");
   }
 
   const extracted = extractProductSnapshot();
@@ -890,11 +960,7 @@ async function analyzeCurrentProduct() {
     throw new Error(extracted.error);
   }
 
-  const suggestedKeywords = await collectTptSuggestions(extracted.snapshot).catch(() => []);
-  extracted.snapshot.seedKeywords = buildCoreTopics(extracted.snapshot);
-  extracted.snapshot.suggestedKeywords = suggestedKeywords;
-
-  const response = await fetch(`${sessionState.apiUrl.replace(/\/$/, "")}/v1/product-keywords/analyze`, {
+  const response = await fetch(`${sessionState.apiUrl.replace(/\/$/, "")}/v1/product-seo-audit/analyze`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${sessionState.session.sessionToken}`,
@@ -911,7 +977,7 @@ async function analyzeCurrentProduct() {
   }
 
   if (!response.ok || !payload?.analysis) {
-    throw new Error(payload?.error || "Knowlense could not complete the product keyword analysis.");
+    throw new Error(payload?.error || "Knowlense could not complete the SEO audit.");
   }
 
   return {
@@ -927,7 +993,7 @@ async function handleAnalyzeClick() {
 
   PANEL_STATE.action.disabled = true;
   PANEL_STATE.action.textContent = "Analyzing...";
-  setPanelStatus("Detecting core topics, collecting TPT suggestions, and checking exact rank through page 3...", "");
+  setPanelStatus("Scoring the listing, checking keyword placement, and building action items...", "");
 
   try {
     const result = await analyzeCurrentProduct();
@@ -935,15 +1001,15 @@ async function handleAnalyzeClick() {
     renderIntent(result.payload.analysis);
     renderResults(result.payload);
     if (result.payload.cached) {
-      setPanelStatus(`Showing a recent cached result from the last ${result.payload.cooldownMinutes} minutes. Positions may shift over time.`, "success");
+      setPanelStatus(`Showing a recent cached SEO audit from the last ${result.payload.cooldownMinutes} minutes.`, "success");
     } else {
-      setPanelStatus(result.payload.warning || "Product keyword analysis completed. Positions may shift over time.", result.payload.warning ? "error" : "success");
+      setPanelStatus(result.payload.warning || "SEO audit completed.", result.payload.warning ? "error" : "success");
     }
   } catch (error) {
     setPanelStatus(error.message, "error");
   } finally {
     PANEL_STATE.action.disabled = false;
-    PANEL_STATE.action.textContent = "Analyze this product";
+    PANEL_STATE.action.textContent = "Run SEO audit";
   }
 }
 
