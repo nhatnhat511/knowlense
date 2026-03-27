@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { fetchKeywordRuns, type KeywordRun } from "@/lib/api/keyword-finder";
 import { fetchApiProfile, type ApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [sessionState, setSessionState] = useState<ApiProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,8 +35,7 @@ export default function DashboardPage() {
       }
 
       if (!session?.access_token) {
-        setSessionState(null);
-        setLoading(false);
+        router.replace("/auth/sign-in?next=/dashboard");
         return;
       }
 
@@ -75,7 +76,7 @@ export default function DashboardPage() {
       active = false;
       subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, [router, supabase]);
 
   async function handleSignOut() {
     if (!supabase) {

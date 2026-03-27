@@ -85,18 +85,10 @@ export default function HomePage() {
               View pricing
             </Link>
           </div>
-
-          <div className="hero-proof-grid">
-            {proofPoints.map((point) => (
-              <article className="metric-card" key={point.label}>
-                <span className="metric-label">{point.label}</span>
-                <strong className="metric-value">{point.value}</strong>
-                <span className="metric-copy">{point.copy}</span>
-              </article>
-            ))}
-          </div>
         </div>
+      </section>
 
+      <section className="shell marketing-surface">
         <div className="hero-panel-clean">
           <div>
             <div className="panel-kicker">What the product does well</div>
@@ -122,6 +114,18 @@ export default function HomePage() {
               Learn more
             </Link>
           </div>
+        </div>
+      </section>
+
+      <section className="shell marketing-surface">
+        <div className="hero-proof-grid">
+          {proofPoints.map((point) => (
+            <article className="metric-card" key={point.label}>
+              <span className="metric-label">{point.label}</span>
+              <strong className="metric-value">{point.value}</strong>
+              <span className="metric-copy">{point.copy}</span>
+            </article>
+          ))}
         </div>
       </section>
 

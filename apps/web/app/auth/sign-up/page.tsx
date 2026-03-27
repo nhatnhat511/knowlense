@@ -117,10 +117,10 @@ export default function SignUpPage() {
             </button>
           </form>
           <div className="stack-row">
-            <Link className="nav-link" href="/auth/sign-in">
+            <Link className="ghost-button" href="/auth/sign-in">
               Already have an account
             </Link>
-            <Link className="nav-link" href="/auth/forgot-password">
+            <Link className="ghost-button" href="/auth/forgot-password">
               Forgot password
             </Link>
           </div>
