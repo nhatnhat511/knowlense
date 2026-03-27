@@ -61,11 +61,19 @@ type StoredProductKeywordRun = {
   product_id: string | null;
   product_url: string;
   title_text: string;
+  intent: {
+    topics: string[];
+    formats: string[];
+    contexts: string[];
+    grades: string[];
+    subjects: string[];
+    mainSeeds: string[];
+  };
   summary: {
     generatedKeywords: number;
     checkedKeywords: number;
     rankedKeywords: number;
-    bestRank: number | null;
+    bestRank: number;
     analyzedAt: string;
     cooldownMinutes: number;
     cacheHitCount: number;
@@ -74,11 +82,10 @@ type StoredProductKeywordRun = {
   keywords: Array<{
     keyword: string;
     score: number;
-    sourceCount: number;
-    sources: string[];
-    rankPosition: number | null;
+    source: "product" | "tpt";
+    rankPosition: number;
     resultPage: number | null;
-    status: "ranked" | "not_found";
+    status: "ranked" | "beyond_page_3";
     confidence: "high" | "medium" | "low";
     searchUrl: string;
     checkedAt: string;
@@ -1029,7 +1036,8 @@ app.get("/v1/product-keywords/runs", async (c) => {
       product_id: row.product_id,
       product_url: row.product_url,
       title_text: row.title_text,
-      summary: JSON.parse(row.summary_json),
+      intent: JSON.parse(row.summary_json).intent,
+      summary: JSON.parse(row.summary_json).summary,
       keywords: JSON.parse(row.keywords_json),
       created_at: row.created_at
     }));

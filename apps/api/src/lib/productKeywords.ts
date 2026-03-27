@@ -7,7 +7,6 @@ export type ProductKeywordSnapshot = {
   tags: string[];
   resourceType?: string | null;
   subjects?: string[];
-  seedKeywords?: string[];
   suggestedKeywords?: string[];
 };
 
@@ -23,16 +22,25 @@ type RankCacheRow = {
   expires_at: string;
 };
 
+type ProductIntent = {
+  topics: string[];
+  formats: string[];
+  contexts: string[];
+  grades: string[];
+  subjects: string[];
+  mainSeeds: string[];
+};
+
 type Candidate = {
   keyword: string;
   score: number;
-  source: "seed" | "suggestion";
+  source: "product" | "tpt";
 };
 
 export type RankedKeyword = {
   keyword: string;
   score: number;
-  source: "seed" | "suggestion";
+  source: "product" | "tpt";
   rankPosition: number;
   resultPage: number | null;
   status: "ranked" | "beyond_page_3";
@@ -47,6 +55,7 @@ export type ProductKeywordAnalysis = {
     url: string;
     title: string;
   };
+  intent: ProductIntent;
   summary: {
     generatedKeywords: number;
     checkedKeywords: number;
@@ -103,6 +112,49 @@ const STOP_WORDS = new Set([
   "with",
   "your"
 ]);
+const FORMAT_HINTS = [
+  "activities",
+  "activity",
+  "anchor chart",
+  "assessment",
+  "booklet",
+  "bulletin board",
+  "centers",
+  "clipart",
+  "craft",
+  "craftivity",
+  "flipbook",
+  "graphic organizer",
+  "lesson",
+  "mini book",
+  "poster",
+  "printable",
+  "project",
+  "research",
+  "spinner",
+  "task cards",
+  "template",
+  "unit",
+  "worksheet",
+  "worksheets",
+  "writing activity"
+];
+const CONTEXT_HINTS = [
+  "back to school",
+  "biology",
+  "ela",
+  "fall",
+  "graphic arts",
+  "math",
+  "science",
+  "social studies",
+  "special education",
+  "speech therapy",
+  "spring",
+  "summer",
+  "winter",
+  "writing"
+];
 
 function normalizeText(value: string) {
   return value
@@ -147,47 +199,136 @@ function extractProductId(value: string) {
   return value.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
 }
 
-function buildSeedKeywords(snapshot: ProductKeywordSnapshot) {
-  const titleTokens = tokenize(snapshot.title);
-  const gradePhrases = snapshot.grades.map(normalizeText).filter(Boolean).slice(0, 4);
-  const tagPhrases = snapshot.tags.map(normalizeText).filter(Boolean).slice(0, 6);
-  const seeds = new Set<string>();
+function dedupe<T>(items: T[]) {
+  return [...new Set(items)];
+}
 
-  for (let start = 0; start < titleTokens.length; start += 1) {
-    for (let size = 1; size <= 4; size += 1) {
-      const slice = titleTokens.slice(start, start + size);
-      if (!slice.length) {
-        continue;
-      }
+function buildNgrams(tokens: string[], minSize: number, maxSize: number) {
+  const phrases: string[] = [];
 
-      const phrase = slice.join(" ");
-      if (slice.length === size && phrase.length >= 4) {
-        seeds.add(phrase);
+  for (let start = 0; start < tokens.length; start += 1) {
+    for (let size = minSize; size <= maxSize; size += 1) {
+      const slice = tokens.slice(start, start + size);
+      if (slice.length === size) {
+        phrases.push(slice.join(" "));
       }
     }
   }
 
-  const titleSeeds = [...seeds].slice(0, 10);
-  titleSeeds.forEach((seed) => {
-    gradePhrases.forEach((grade) => seeds.add(`${seed} ${grade}`));
-    tagPhrases.forEach((tag) => seeds.add(`${seed} ${tag}`));
-  });
-
-  return [...seeds].slice(0, 26);
+  return phrases;
 }
 
-function buildCandidates(snapshot: ProductKeywordSnapshot) {
+function extractMatchingPhrases(values: string[], dictionary: string[]) {
+  const matches = new Set<string>();
+
+  values.forEach((value) => {
+    const normalized = normalizeText(value);
+    dictionary.forEach((entry) => {
+      if (normalized.includes(entry)) {
+        matches.add(entry);
+      }
+    });
+  });
+
+  return [...matches];
+}
+
+function scoreTopicPhrase(phrase: string, titleText: string, tagText: string, descriptionText: string) {
+  let score = 0;
+
+  if (titleText.includes(phrase)) {
+    score += 45;
+  }
+
+  if (tagText.includes(phrase)) {
+    score += 25;
+  }
+
+  if (descriptionText.includes(phrase)) {
+    score += 12;
+  }
+
+  const tokenCount = phrase.split(" ").length;
+  if (tokenCount === 2) {
+    score += 8;
+  } else if (tokenCount === 3) {
+    score += 14;
+  } else if (tokenCount === 4) {
+    score += 10;
+  }
+
+  return score;
+}
+
+function extractProductIntent(snapshot: ProductKeywordSnapshot): ProductIntent {
+  const titleText = normalizeText(snapshot.title);
+  const tagText = snapshot.tags.map(normalizeText).join(" ");
+  const descriptionText = normalizeText(snapshot.descriptionExcerpt);
+  const titleTokens = tokenize(snapshot.title);
+  const titlePhrases = buildNgrams(titleTokens, 2, 4);
+
+  const topicCandidates = titlePhrases
+    .map((phrase) => ({
+      phrase,
+      score: scoreTopicPhrase(phrase, titleText, tagText, descriptionText)
+    }))
+    .filter((item) => item.score >= 45)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 8)
+    .map((item) => item.phrase);
+
+  const formats = dedupe([
+    ...extractMatchingPhrases([snapshot.title, ...(snapshot.tags ?? []), snapshot.resourceType ?? ""], FORMAT_HINTS)
+  ]).slice(0, 6);
+
+  const contexts = dedupe([
+    ...extractMatchingPhrases([snapshot.title, ...(snapshot.tags ?? []), ...(snapshot.subjects ?? []), snapshot.descriptionExcerpt], CONTEXT_HINTS)
+  ]).slice(0, 6);
+
+  const grades = dedupe(snapshot.grades.map(normalizeText).filter(Boolean)).slice(0, 4);
+  const subjects = dedupe((snapshot.subjects ?? []).map(normalizeText).filter(Boolean)).slice(0, 4);
+
+  const seedSet = new Set<string>();
+  topicCandidates.forEach((topic) => {
+    seedSet.add(topic);
+
+    formats.forEach((format) => seedSet.add(`${topic} ${format}`));
+    grades.forEach((grade) => seedSet.add(`${topic} ${grade}`));
+    contexts.forEach((context) => seedSet.add(`${topic} ${context}`));
+  });
+
+  topicCandidates.forEach((topic) => {
+    formats.slice(0, 3).forEach((format) => {
+      grades.slice(0, 2).forEach((grade) => seedSet.add(`${topic} ${format} ${grade}`));
+      contexts.slice(0, 2).forEach((context) => seedSet.add(`${topic} ${format} ${context}`));
+    });
+  });
+
+  const mainSeeds = [...seedSet]
+    .map((item) => normalizeText(item))
+    .filter((item) => item.length >= 5)
+    .sort((left, right) => right.split(" ").length - left.split(" ").length || right.length - left.length)
+    .slice(0, 20);
+
+  return {
+    topics: topicCandidates,
+    formats,
+    contexts,
+    grades,
+    subjects,
+    mainSeeds
+  };
+}
+
+function buildCandidates(intent: ProductIntent, snapshot: ProductKeywordSnapshot) {
   const candidates = new Map<string, Candidate>();
-  const seeds = (snapshot.seedKeywords?.length ? snapshot.seedKeywords : buildSeedKeywords(snapshot))
-    .map(normalizeText)
-    .filter(Boolean);
   const suggestions = (snapshot.suggestedKeywords ?? []).map(normalizeText).filter(Boolean);
 
-  seeds.forEach((keyword, index) => {
+  intent.mainSeeds.forEach((keyword, index) => {
     candidates.set(keyword, {
       keyword,
-      score: Math.max(40 - index, 10),
-      source: "seed"
+      score: Math.max(60 - index, 30),
+      source: "product"
     });
   });
 
@@ -196,21 +337,21 @@ function buildCandidates(snapshot: ProductKeywordSnapshot) {
     const nextScore = Math.max(100 - index, 50);
     if (existing) {
       existing.score = Math.max(existing.score, nextScore);
-      existing.source = "suggestion";
+      existing.source = "tpt";
       return;
     }
 
     candidates.set(keyword, {
       keyword,
       score: nextScore,
-      source: "suggestion"
+      source: "tpt"
     });
   });
 
   return [...candidates.values()]
     .sort((left, right) => {
       if (left.source !== right.source) {
-        return left.source === "suggestion" ? -1 : 1;
+        return left.source === "tpt" ? -1 : 1;
       }
 
       return right.score - left.score;
@@ -303,7 +444,7 @@ async function persistRankCache(db: D1Database, productId: string, keyword: stri
 function buildSearchResult(payload: {
   keyword: string;
   score: number;
-  source: "seed" | "suggestion";
+  source: "product" | "tpt";
   searchUrl: string;
   rankPosition: number;
   resultPage: number | null;
@@ -324,12 +465,7 @@ function buildSearchResult(payload: {
   };
 }
 
-async function lookupKeywordRank(
-  db: D1Database,
-  productId: string | null,
-  candidate: Candidate,
-  cacheHours: number
-) {
+async function lookupKeywordRank(db: D1Database, productId: string | null, candidate: Candidate, cacheHours: number) {
   const searchUrl = `${TPT_BASE_URL}/browse?search=${encodeURIComponent(candidate.keyword)}`;
 
   if (!productId) {
@@ -464,9 +600,17 @@ export async function findRecentProductRun(db: D1Database, userId: string, produ
         url: row.product_url,
         title: row.title_text
       },
-      summary: JSON.parse(row.summary_json),
+      intent: JSON.parse(row.summary_json).intent ?? {
+        topics: [],
+        formats: [],
+        contexts: [],
+        grades: [],
+        subjects: [],
+        mainSeeds: []
+      },
+      summary: JSON.parse(row.summary_json).summary ?? JSON.parse(row.summary_json),
       keywords: JSON.parse(row.keywords_json)
-    } satisfies ProductKeywordAnalysis,
+    } as ProductKeywordAnalysis,
     createdAt: row.created_at
   };
 }
@@ -475,7 +619,8 @@ export async function analyzeProductKeywords(snapshot: ProductKeywordSnapshot, o
   const cooldownMinutes = options.cooldownMinutes ?? DEFAULT_COOLDOWN_MINUTES;
   const cacheHours = options.cacheHours ?? DEFAULT_CACHE_HOURS;
   const productId = snapshot.productId ?? extractProductId(snapshot.productUrl);
-  const candidates = buildCandidates(snapshot);
+  const intent = extractProductIntent(snapshot);
+  const candidates = buildCandidates(intent, snapshot);
   let cacheHitCount = 0;
 
   const ranked = await mapWithConcurrency(candidates, 3, async (candidate) => {
@@ -499,7 +644,7 @@ export async function analyzeProductKeywords(snapshot: ProductKeywordSnapshot, o
     return lookupKeywordRank(options.db, productId, candidate, cacheHours);
   });
 
-  ranked.sort((left, right) => left.rankPosition - right.rankPosition || (left.source === "suggestion" && right.source === "seed" ? -1 : 1));
+  ranked.sort((left, right) => left.rankPosition - right.rankPosition || (left.source === "tpt" && right.source === "product" ? -1 : 1));
 
   const found = ranked.filter((item) => item.status === "ranked");
 
@@ -509,6 +654,7 @@ export async function analyzeProductKeywords(snapshot: ProductKeywordSnapshot, o
       url: snapshot.productUrl,
       title: snapshot.title
     },
+    intent,
     summary: {
       generatedKeywords: candidates.length,
       checkedKeywords: ranked.length,
@@ -517,7 +663,7 @@ export async function analyzeProductKeywords(snapshot: ProductKeywordSnapshot, o
       analyzedAt: new Date().toISOString(),
       cooldownMinutes,
       cacheHitCount,
-      note: "Keyword sources come from TPT autocomplete when available. Exact rank is checked only in the first 3 result pages; anything deeper is shown as >73."
+      note: "Product-derived keywords are extracted first, then expanded with TPT autocomplete suggestions. Exact rank is checked in the first 3 pages only; deeper results are shown as >73."
     },
     keywords: ranked
   };

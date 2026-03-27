@@ -6,6 +6,7 @@ const PANEL_STATE = {
   panel: null,
   status: null,
   meta: null,
+  intent: null,
   body: null,
   action: null,
   results: null
@@ -224,31 +225,35 @@ function buildSeedKeywords(snapshot) {
   const titleSeeds = [];
 
   for (let index = 0; index < normalizedTitle.length; index += 1) {
-    for (let size = 1; size <= 4; size += 1) {
+    for (let size = 1; size <= 5; size += 1) {
       const phrase = normalizedTitle.slice(index, index + size).join(" ").trim();
       if (!phrase || phrase.length < 4) {
         continue;
       }
 
-      if (size === 1 || size === 2 || size === 3 || size === 4) {
+      if (size === 1 || size === 2 || size === 3 || size === 4 || size === 5) {
         titleSeeds.push(phrase);
       }
     }
   }
 
-  titleSeeds.slice(0, 10).forEach((value) => seeds.add(value));
+  titleSeeds.slice(0, 14).forEach((value) => seeds.add(value));
   snapshot.grades.slice(0, 4).forEach((grade) => seeds.add(normalizeText(grade)));
   snapshot.tags.slice(0, 6).forEach((tag) => seeds.add(normalizeText(tag)));
 
-  titleSeeds.slice(0, 8).forEach((titleSeed) => {
+  titleSeeds
+    .filter((seed) => seed.split(" ").length >= 2)
+    .slice(0, 10)
+    .forEach((titleSeed) => {
     snapshot.grades.slice(0, 3).forEach((grade) => seeds.add(`${titleSeed} ${normalizeText(grade)}`));
     snapshot.tags.slice(0, 4).forEach((tag) => seeds.add(`${titleSeed} ${normalizeText(tag)}`));
-  });
+    });
 
   return [...seeds]
     .map((item) => normalizeText(item))
     .filter((item) => item.length >= 4)
-    .slice(0, 24);
+    .sort((left, right) => right.split(" ").length - left.split(" ").length || right.length - left.length)
+    .slice(0, 32);
 }
 
 function findSearchInput() {
@@ -272,6 +277,10 @@ function collectSuggestionTexts(seed) {
     document.querySelectorAll(selector).forEach((node) => {
       const text = textFromNode(node);
       if (!text || text.length < 4 || text.length > 90 || /\$\d/.test(text)) {
+        return;
+      }
+
+      if (/^see all results for\b/i.test(text)) {
         return;
       }
 
@@ -313,7 +322,7 @@ async function collectTptSuggestions(snapshot) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
   input.blur();
 
-  return [...suggestions].slice(0, 14);
+  return [...suggestions].slice(0, 20);
 }
 
 function injectStyles() {
@@ -569,12 +578,13 @@ function createPanel() {
       </div>
       <div class="knowlense-panel-body">
         <section class="knowlense-panel-section knowlense-panel-meta"></section>
+        <section class="knowlense-panel-section knowlense-panel-intent"></section>
         <section class="knowlense-panel-section">
           <button class="knowlense-panel-action" type="button">Analyze this product</button>
           <div class="knowlense-panel-status">Connect the extension through the website, then run the analysis.</div>
         </section>
         <section class="knowlense-panel-section">
-          <div class="knowlense-panel-empty">No product keyword analysis yet. Run the check to generate a limited keyword set and sampled TPT rank positions.</div>
+          <div class="knowlense-panel-empty">No product keyword analysis yet. Run the check to extract product-derived keywords, expand them with TPT suggestions, and check rank through page 3.</div>
           <ul class="knowlense-keyword-list" hidden></ul>
         </section>
       </div>
@@ -585,6 +595,7 @@ function createPanel() {
 
   PANEL_STATE.panel = panel;
   PANEL_STATE.meta = panel.querySelector(".knowlense-panel-meta");
+  PANEL_STATE.intent = panel.querySelector(".knowlense-panel-intent");
   PANEL_STATE.status = panel.querySelector(".knowlense-panel-status");
   PANEL_STATE.action = panel.querySelector(".knowlense-panel-action");
   PANEL_STATE.results = panel.querySelector(".knowlense-keyword-list");
@@ -617,6 +628,30 @@ function renderMeta(snapshot) {
         <strong>${snapshot.tags.length ? `${snapshot.tags.length} found` : "None"}</strong>
       </div>
     </div>
+  `;
+}
+
+function renderIntent(analysis) {
+  if (!PANEL_STATE.intent) {
+    return;
+  }
+
+  const intent = analysis?.intent;
+  if (!intent) {
+    PANEL_STATE.intent.innerHTML = "";
+    return;
+  }
+
+  const chipMarkup = (items) =>
+    items.length
+      ? items.map((item) => `<span class="knowlense-chip">${item}</span>`).join("")
+      : '<span class="knowlense-chip">None</span>';
+
+  PANEL_STATE.intent.innerHTML = `
+    <div style="font-size:12px;color:#64748b;margin-bottom:8px">Product-derived keywords</div>
+    <div class="knowlense-keyword-meta">${chipMarkup(intent.mainSeeds.slice(0, 8))}</div>
+    <div style="font-size:12px;color:#64748b;margin:12px 0 8px">Detected topic and format</div>
+    <div class="knowlense-keyword-meta">${chipMarkup([...intent.topics.slice(0, 4), ...intent.formats.slice(0, 4)])}</div>
   `;
 }
 
@@ -659,7 +694,7 @@ function renderResults(payload) {
       </div>
       <div class="knowlense-keyword-meta">
         <span class="knowlense-chip">Score ${item.score}</span>
-        <span class="knowlense-chip">${item.source === "suggestion" ? "TPT suggestion" : "Seed keyword"}</span>
+        <span class="knowlense-chip">${item.source === "tpt" ? "TPT suggestion" : "Product keyword"}</span>
         <span class="knowlense-chip">${item.resultPage ? `Page ${item.resultPage}` : "Checked through page 3"}</span>
         <span class="knowlense-chip">Confidence ${item.confidence}</span>
       </div>
@@ -731,6 +766,7 @@ async function handleAnalyzeClick() {
   try {
     const result = await analyzeCurrentProduct();
     renderMeta(result.snapshot);
+    renderIntent(result.payload.analysis);
     renderResults(result.payload);
     if (result.payload.cached) {
       setPanelStatus(`Showing a recent cached result from the last ${result.payload.cooldownMinutes} minutes. Positions may shift over time.`, "success");
