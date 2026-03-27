@@ -62,24 +62,24 @@ function TopButton({ dark, active, label, onClick, children }: { dark: boolean; 
 
 function Card({ dark, title, description, children }: { dark: boolean; title: string; description?: string; children: React.ReactNode }) {
   return (
-    <article className={cn("rounded-2xl border p-6 shadow-[0_20px_55px_rgba(15,23,42,0.08)]", dark ? "border-white/10 bg-[#111318]" : "border-gray-100 bg-white")}>
-      <h3 className={cn("text-lg font-bold tracking-[-0.05em]", dark ? "text-white" : "text-gray-900")}>{title}</h3>
+    <article className={cn("rounded-2xl border p-4 shadow-[0_20px_55px_rgba(15,23,42,0.08)] sm:p-5", dark ? "border-white/10 bg-[#111318]" : "border-gray-100 bg-white")}>
+      <h3 className={cn("text-base font-bold tracking-[-0.04em] sm:text-lg", dark ? "text-white" : "text-gray-900")}>{title}</h3>
       {description ? <p className={cn("mt-1 text-sm leading-6", dark ? "text-white/55" : "text-gray-500")}>{description}</p> : null}
-      <div className="mt-5">{children}</div>
+      <div className="mt-4">{children}</div>
     </article>
   );
 }
 
 function Metric({ dark, loading, title, value, delta, icon, action }: { dark: boolean; loading?: boolean; title: string; value: string; delta: string; icon: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <article className={cn("rounded-2xl border p-6 shadow-[0_20px_55px_rgba(15,23,42,0.08)]", dark ? "border-white/10 bg-[#111318]" : "border-gray-100 bg-white")}>
-      <div className={cn("inline-flex h-10 w-10 items-center justify-center rounded-xl", dark ? "bg-white/8 text-[#c6b7ff]" : "bg-[#f5f1ff] text-[#7c68ff]")}>{icon}</div>
-      {loading ? <Skeleton className="mt-5 h-10 w-24" /> : <div className={cn("mt-5 text-[2.2rem] font-bold tracking-[-0.07em]", dark ? "text-white" : "text-gray-900")}>{value}</div>}
-      <div className="mt-2 flex items-center justify-between gap-4">
+    <article className={cn("rounded-2xl border p-4 shadow-[0_20px_55px_rgba(15,23,42,0.08)] sm:p-5", dark ? "border-white/10 bg-[#111318]" : "border-gray-100 bg-white")}>
+      <div className={cn("inline-flex h-9 w-9 items-center justify-center rounded-xl", dark ? "bg-white/8 text-[#c6b7ff]" : "bg-[#f5f1ff] text-[#7c68ff]")}>{icon}</div>
+      {loading ? <Skeleton className="mt-4 h-9 w-20" /> : <div className={cn("mt-4 text-[1.9rem] font-bold tracking-[-0.06em] sm:text-[2.1rem]", dark ? "text-white" : "text-gray-900")}>{value}</div>}
+      <div className="mt-1.5 flex items-center justify-between gap-4">
         <span className={cn("text-sm", dark ? "text-white/55" : "text-gray-500")}>{title}</span>
         {loading ? <Skeleton className="h-5 w-14" /> : <span className="text-sm font-medium text-green-600">{delta}</span>}
       </div>
-      {action ? <div className="mt-4">{action}</div> : null}
+      {action ? <div className="mt-3">{action}</div> : null}
     </article>
   );
 }
@@ -181,7 +181,7 @@ function DashboardContent() {
   function overviewView() {
     return (
       <>
-        <div className="mt-8 grid gap-5 xl:grid-cols-4">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Metric dark={dark} loading={loading} title="Website sessions" value={metrics ? String(metrics.websiteSessions.value) : "..."} delta={metrics?.websiteSessions.delta ?? "--"} icon={<Sparkles size={18} />} />
           <Metric
             dark={dark}
@@ -214,10 +214,10 @@ function DashboardContent() {
 
         {error ? <div className={cn("mt-5 rounded-2xl border px-5 py-4 text-sm", dark ? "border-red-500/20 bg-red-500/10 text-red-200" : "border-red-200 bg-red-50 text-red-700")}>{error}</div> : null}
 
-        <div className="mt-8 grid gap-5 xl:grid-cols-3">
-          <Card dark={dark} title="Current account"><div className={cn("text-3xl font-bold tracking-[-0.07em]", dark ? "text-white" : "text-gray-900")}>{overview?.currentAccount.value ?? "..."}</div><p className={cn("mt-3 text-sm", dark ? "text-white/55" : "text-gray-500")}>{overview?.currentAccount.status ?? "Loading"}</p></Card>
-          <Card dark={dark} title="Latest query"><div className={cn("text-3xl font-bold tracking-[-0.07em]", dark ? "text-white" : "text-gray-900")}>{overview?.latestQuery.value ?? "..."}</div><p className={cn("mt-3 text-sm", dark ? "text-white/55" : "text-gray-500")}>{overview?.latestQuery.status === "waiting" || overview?.latestQuery.status === "processing" ? "Auto-refreshing until completed" : overview?.latestQuery.updatedAt ? new Date(overview.latestQuery.updatedAt).toLocaleString() : "No recent query"}</p></Card>
-          <Card dark={dark} title="Next action"><div className={cn("text-3xl font-bold tracking-[-0.07em]", dark ? "text-white" : "text-gray-900")}>{extensionStatus?.status === "active" ? overview?.nextAction.value ?? "Review runs" : "Connect"}</div><p className={cn("mt-3 text-sm", dark ? "text-white/55" : "text-gray-500")}>{quotaAtLimit ? "Upgrade to continue analyzing" : extensionStatus?.status === "active" ? "Extension connected" : "Extension needs connection"}</p></Card>
+        <div className="mt-6 grid gap-4 xl:grid-cols-3">
+          <Card dark={dark} title="Current account"><div className={cn("text-[1.8rem] font-bold tracking-[-0.06em] break-words sm:text-[2rem]", dark ? "text-white" : "text-gray-900")}>{overview?.currentAccount.value ?? "..."}</div><p className={cn("mt-2 text-sm", dark ? "text-white/55" : "text-gray-500")}>{overview?.currentAccount.status ?? "Loading"}</p></Card>
+          <Card dark={dark} title="Latest query"><div className={cn("text-[1.8rem] font-bold tracking-[-0.06em] break-words sm:text-[2rem]", dark ? "text-white" : "text-gray-900")}>{overview?.latestQuery.value ?? "..."}</div><p className={cn("mt-2 text-sm", dark ? "text-white/55" : "text-gray-500")}>{overview?.latestQuery.status === "waiting" || overview?.latestQuery.status === "processing" ? "Auto-refreshing until completed" : overview?.latestQuery.updatedAt ? new Date(overview.latestQuery.updatedAt).toLocaleString() : "No recent query"}</p></Card>
+          <Card dark={dark} title="Next action"><div className={cn("text-[1.8rem] font-bold tracking-[-0.06em] break-words sm:text-[2rem]", dark ? "text-white" : "text-gray-900")}>{extensionStatus?.status === "active" ? overview?.nextAction.value ?? "Review runs" : "Connect"}</div><p className={cn("mt-2 text-sm", dark ? "text-white/55" : "text-gray-500")}>{quotaAtLimit ? "Upgrade to continue analyzing" : extensionStatus?.status === "active" ? "Extension connected" : "Extension needs connection"}</p></Card>
         </div>
       </>
     );
@@ -225,21 +225,21 @@ function DashboardContent() {
 
   function accountView() {
     return (
-      <div className="mt-8 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="mt-6 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Card dark={dark} title="Account profile" description="Identity, session, and access state stay visible inside the dashboard.">
           <div className="flex items-center gap-4">
             <div className={cn("flex h-16 w-16 items-center justify-center rounded-full text-xl font-semibold", dark ? "bg-white/8 text-white" : "bg-gray-100 text-black")}>{initials}</div>
             <div>
-              <div className={cn("text-xl font-semibold tracking-[-0.04em]", dark ? "text-white" : "text-black")}>{overview?.currentAccount.value ?? user?.email ?? "Loading..."}</div>
+              <div className={cn("text-lg font-semibold tracking-[-0.04em] break-words sm:text-xl", dark ? "text-white" : "text-black")}>{overview?.currentAccount.value ?? user?.email ?? "Loading..."}</div>
               <div className={cn("mt-1 text-sm", dark ? "text-white/55" : "text-gray-500")}>{planLabel} plan with {extensionStatus?.status === "active" ? "an active extension session." : "website-first access."}</div>
             </div>
           </div>
-          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
             {[
               { label: "Plan", value: planLabel, copy: billing?.trialActive ? `${billing.trialDaysRemaining} days left in trial.` : "Upgrade when you want recurring research usage." },
               { label: "Website session", value: accessToken ? "Active" : "Inactive", copy: "The website remains the primary sign-in surface." },
               { label: "Extension access", value: extensionStatus?.status === "active" ? "Connected" : "Approval based", copy: "Each browser session is approved from this workspace." }
-            ].map((item) => <div className={cn("rounded-[22px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")} key={item.label}><div className={cn("text-xs font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>{item.label}</div><div className={cn("mt-2 text-lg font-semibold", dark ? "text-white" : "text-black")}>{item.value}</div><div className={cn("mt-1 text-sm", dark ? "text-white/55" : "text-neutral-500")}>{item.copy}</div></div>)}
+            ].map((item) => <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")} key={item.label}><div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>{item.label}</div><div className={cn("mt-2 text-base font-semibold sm:text-lg", dark ? "text-white" : "text-black")}>{item.value}</div><div className={cn("mt-1 text-sm leading-6", dark ? "text-white/55" : "text-neutral-500")}>{item.copy}</div></div>)}
           </div>
         </Card>
         <Card dark={dark} title="Workspace controls" description="Keep the important account actions close without repeating full navigation cards.">
@@ -256,13 +256,13 @@ function DashboardContent() {
 
   function subscriptionView() {
     return (
-      <div className="mt-8 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="mt-6 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Card dark={dark} title="Current subscription state" description="Free, trial, and Premium are surfaced directly by the workspace.">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className={cn("rounded-[22px] border p-5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Current plan</div><div className={cn("mt-3 text-3xl font-semibold tracking-[-0.05em]", dark ? "text-white" : "text-black")}>{planLabel}</div><p className={cn("mt-3 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{billing?.status === "trial" ? `Your trial is active with ${billing.trialDaysRemaining} days remaining.` : billing?.status === "active" ? "Premium is active for this account." : "Your account is on the free plan. Start a 7-day trial with no card required or upgrade directly to Premium."}</p></div>
-            <div className={cn("rounded-[22px] border p-5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Keyword usage</div><div className={cn("mt-3 text-3xl font-semibold tracking-[-0.05em]", dark ? "text-white" : "text-black")}>{metrics ? `${metrics.keywordRuns.used}/${metrics.keywordRuns.limit}` : "..."}</div><p className={cn("mt-3 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{quotaAtLimit ? "You have reached the current usage limit. Upgrade to continue." : `${metrics?.keywordRuns.remaining ?? 0} runs are still available on this account.`}</p></div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Current plan</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{planLabel}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{billing?.status === "trial" ? `Your trial is active with ${billing.trialDaysRemaining} days remaining.` : billing?.status === "active" ? "Premium is active for this account." : "Your account is on the free plan. Start a 7-day trial with no card required or upgrade directly to Premium."}</p></div>
+            <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Keyword usage</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{metrics ? `${metrics.keywordRuns.used}/${metrics.keywordRuns.limit}` : "..."}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{quotaAtLimit ? "You have reached the current usage limit. Upgrade to continue." : `${metrics?.keywordRuns.remaining ?? 0} runs are still available on this account.`}</p></div>
           </div>
-          <div className="mt-5 flex flex-wrap gap-3">
+          <div className="mt-4 flex flex-wrap gap-3">
             {billing?.status !== "active" && billing?.trialEligible ? <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={trialLoading} onClick={() => void handleTrial()} type="button">{trialLoading ? "Starting trial..." : "Start 7-day trial"}</button> : null}
             {billing?.status !== "active" ? <button className="inline-flex h-11 items-center rounded-full bg-[#7c68ff] px-4 text-sm font-semibold text-white transition hover:bg-[#6b57f5]" disabled={checkoutLoading !== ""} onClick={() => void handleUpgrade("monthly")} type="button">{checkoutLoading === "monthly" ? "Preparing..." : "Upgrade to Premium"}</button> : null}
             {billing?.status !== "active" ? <button className={cn("inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} disabled={checkoutLoading !== ""} onClick={() => void handleUpgrade("yearly")} type="button">{checkoutLoading === "yearly" ? "Preparing..." : "Choose yearly"}</button> : null}
@@ -284,13 +284,13 @@ function DashboardContent() {
 
   function connectView() {
     return (
-      <div className="mt-8 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="mt-6 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Card dark={dark} title="Connect extension" description="The extension does not ask for website credentials directly. Approval happens here.">
-          <div className={cn("rounded-[22px] border p-5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}>
+          <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}>
             <div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Current status</div>
-            <div className={cn("mt-3 text-3xl font-semibold tracking-[-0.05em]", dark ? "text-white" : "text-black")}>{extensionStatus?.status === "active" ? "Connected" : requestId ? "Pending approval" : "Waiting for request"}</div>
-            <p className={cn("mt-3 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{requestId ? "An extension request was detected. Approve it below and return to the popup." : "Open the extension popup and choose Connect via website. Once the popup sends a request, approve it here."}</p>
-            <div className="mt-5 flex flex-wrap gap-3">
+            <div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{extensionStatus?.status === "active" ? "Connected" : requestId ? "Pending approval" : "Waiting for request"}</div>
+            <p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{requestId ? "An extension request was detected. Approve it below and return to the popup." : "Open the extension popup and choose Connect via website. Once the popup sends a request, approve it here."}</p>
+            <div className="mt-4 flex flex-wrap gap-3">
               <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={!requestId || connectBusy} onClick={() => void handleConnect()} type="button">{connectBusy ? "Connecting..." : "Approve extension"}</button>
               <button className={cn("inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} onClick={refresh} type="button">Refresh status</button>
             </div>
@@ -311,7 +311,7 @@ function DashboardContent() {
   }
 
   function textPanel(title: string, items: string[]) {
-    return <div className="mt-8"><Card dark={dark} title={title} description="Embedded directly in the workspace to avoid forcing a page change."><div className="space-y-3 text-sm leading-6">{items.map((item) => <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>{item}</div>)}</div></Card></div>;
+    return <div className="mt-6"><Card dark={dark} title={title} description="Embedded directly in the workspace to avoid forcing a page change."><div className="space-y-3 text-sm leading-6">{items.map((item) => <div className={cn("rounded-[18px] border p-3.5", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>{item}</div>)}</div></Card></div>;
   }
 
   return (
