@@ -6,8 +6,6 @@ import { useRouter } from "next/navigation";
 import { createCheckout, type BillingInterval } from "@/lib/api/billing";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-type Cycle = "monthly" | "yearly";
-
 type PricingPlan = {
   name: string;
   description: string;
@@ -97,7 +95,6 @@ const pricingPlans: PricingPlan[] = [
 export function PricingSection() {
   const router = useRouter();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
-  const [billingCycle, setBillingCycle] = useState<Cycle>("monthly");
   const [accessToken, setAccessToken] = useState("");
   const [loadingPlan, setLoadingPlan] = useState<BillingInterval | "">("");
   const [status, setStatus] = useState("");
@@ -165,78 +162,50 @@ export function PricingSection() {
         </p>
       </div>
 
-      <div className="flex justify-center">
-        <div className="rounded-full border border-black/8 bg-neutral-100 p-1.5">
-          <div className="flex items-center gap-1">
-            <button
-              className={`rounded-full px-5 py-2.5 text-sm font-medium transition ${
-                billingCycle === "monthly" ? "bg-white text-black shadow-sm" : "text-neutral-500 hover:text-black"
-              }`}
-              onClick={() => setBillingCycle("monthly")}
-              type="button"
-            >
-              Monthly
-            </button>
-            <button
-              className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition ${
-                billingCycle === "yearly" ? "bg-white text-black shadow-sm" : "text-neutral-500 hover:text-black"
-              }`}
-              onClick={() => setBillingCycle("yearly")}
-              type="button"
-            >
-              Yearly
-              <span
-                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                  billingCycle === "yearly" ? "bg-emerald-100 text-emerald-700" : "bg-neutral-200 text-neutral-500"
-                }`}
-              >
-                -20%
-              </span>
-            </button>
-          </div>
-        </div>
-      </div>
-
       {status ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{status}</div> : null}
 
       <div className="-mx-4 overflow-x-auto px-4 pb-2 md:mx-0 md:overflow-visible md:px-0">
         <div className="flex snap-x snap-mandatory gap-5 md:grid md:grid-cols-3 md:gap-6">
           {pricingPlans.map((plan, index) => {
-            const effectiveInterval: BillingInterval | undefined =
-              plan.interval && billingCycle === "yearly" ? "yearly" : plan.interval;
+            const effectiveInterval: BillingInterval | undefined = plan.interval;
             const isFeatured = index === 1 || plan.featured;
-            const price = plan.price[billingCycle];
-            const note = plan.note[billingCycle];
+            const price = plan.price.monthly;
+            const note = plan.note.monthly;
 
             return (
               <article
                 className={`min-w-[285px] snap-center rounded-[30px] border p-8 md:min-w-0 ${
                   isFeatured
-                    ? "border-black bg-[#111111] text-white shadow-[0_28px_70px_rgba(0,0,0,0.18)] md:scale-[1.05]"
-                    : "border-black/10 bg-[#171717] text-white shadow-[0_20px_60px_rgba(0,0,0,0.12)]"
+                    ? "border-[#6ea7ff]/40 bg-[linear-gradient(180deg,#eef5ff_0%,#e7f0ff_100%)] text-black shadow-[0_28px_70px_rgba(109,153,255,0.16)] md:scale-[1.05]"
+                    : "border-[#d9e4ff] bg-[linear-gradient(180deg,#f8fbff_0%,#f1f6ff_100%)] text-black shadow-[0_20px_60px_rgba(116,146,196,0.10)]"
                 }`}
                 key={plan.name}
               >
                 <div className="flex min-h-[32px] items-center justify-between gap-3">
-                  <span className={`text-sm font-semibold uppercase tracking-[0.16em] ${isFeatured ? "text-white/65" : "text-white/60"}`}>{plan.name}</span>
+                  <span className={`text-sm font-semibold uppercase tracking-[0.16em] ${isFeatured ? "text-sky-700/80" : "text-slate-500"}`}>{plan.name}</span>
                   {isFeatured ? (
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-black">{plan.badge ?? "Recommended"}</span>
+                    <span className="rounded-full bg-black px-3 py-1 text-xs font-semibold text-white">{plan.badge ?? "Recommended"}</span>
                   ) : null}
                 </div>
 
-                <p className={`mt-4 text-base leading-7 ${isFeatured ? "text-white/72" : "text-white/68"}`}>{plan.description}</p>
+                <p className={`mt-4 text-base leading-7 ${isFeatured ? "text-slate-700" : "text-slate-600"}`}>{plan.description}</p>
 
                 <div className="mt-8">
                   <div className="flex items-end gap-2">
-                    <div className="text-5xl font-semibold tracking-[-0.07em] text-white">{price}</div>
-                    <div className="pb-1 text-lg text-white/70">{plan.name === "Free" || plan.name === "Enterprise" ? "" : billingCycle === "monthly" ? "per month" : "per year"}</div>
+                    <div className="text-5xl font-semibold tracking-[-0.07em] text-black">{price}</div>
+                    <div className="pb-1 text-lg text-slate-500">{plan.name === "Free" || plan.name === "Enterprise" ? "" : "per month"}</div>
                   </div>
-                  <div className="mt-2 text-sm text-white/55">{note}</div>
+                  <div className="mt-2 text-sm text-slate-500">{note}</div>
+                  {plan.interval ? (
+                    <div className="mt-2 text-sm text-slate-500">
+                      Or <span className="font-medium text-black">{plan.price.yearly}</span> yearly
+                    </div>
+                  ) : null}
                 </div>
 
                 <ul className="mt-8 space-y-3">
                   {plan.features.map((feature) => (
-                    <li className="flex items-start gap-3 text-[15px] leading-7 text-white/82" key={feature}>
+                    <li className="flex items-start gap-3 text-[15px] leading-7 text-slate-700" key={feature}>
                       <span className="mt-2 text-emerald-400">✓</span>
                       <span>{feature}</span>
                     </li>
@@ -248,8 +217,8 @@ export function PricingSection() {
                     <button
                       className={`inline-flex h-12 w-full items-center justify-center rounded-full px-5 text-sm font-semibold transition-all duration-200 ${
                         isFeatured
-                          ? "bg-white text-black shadow-[0_14px_30px_rgba(255,255,255,0.12)] hover:-translate-y-0.5 hover:bg-neutral-100"
-                          : "bg-white/10 text-white hover:-translate-y-0.5 hover:bg-white/16"
+                          ? "bg-black text-white shadow-[0_14px_30px_rgba(0,0,0,0.14)] hover:-translate-y-0.5 hover:bg-neutral-800"
+                          : "bg-white text-black ring-1 ring-black/8 hover:-translate-y-0.5 hover:bg-slate-50"
                       }`}
                       disabled={loadingPlan === effectiveInterval}
                       onClick={() => handleCheckout(effectiveInterval)}
@@ -261,8 +230,8 @@ export function PricingSection() {
                     <Link
                       className={`inline-flex h-12 w-full items-center justify-center rounded-full px-5 text-sm font-semibold transition-all duration-200 ${
                         plan.contact
-                          ? "bg-white/10 text-white hover:-translate-y-0.5 hover:bg-white/16"
-                          : "bg-white/10 text-white hover:-translate-y-0.5 hover:bg-white/16"
+                          ? "bg-white text-black ring-1 ring-black/8 hover:-translate-y-0.5 hover:bg-slate-50"
+                          : "bg-white text-black ring-1 ring-black/8 hover:-translate-y-0.5 hover:bg-slate-50"
                       }`}
                       href={plan.href}
                     >

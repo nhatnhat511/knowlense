@@ -25,15 +25,10 @@ function BrandIcon({
   dark?: boolean;
 }) {
   return (
-    <span
-      className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-[16px] ${
-        dark ? "bg-white/6 ring-1 ring-white/10" : "bg-white ring-1 ring-black/6"
-      } shadow-[0_8px_22px_rgba(0,0,0,0.08)]`}
-      style={{ height: size, width: size }}
-    >
+    <span className="relative inline-flex shrink-0 items-center justify-center overflow-hidden" style={{ height: size, width: size }}>
       <Image
         alt="Knowlense logo"
-        className="object-contain p-[3px]"
+        className="object-contain"
         priority
         sizes={`${size}px`}
         src={logoKnowlense}
@@ -53,7 +48,7 @@ export function BrandLockup({
   className = "",
   trailing
 }: BrandLockupProps) {
-  const size = compact ? 38 : 44;
+  const size = compact ? 44 : 52;
 
   return (
     <Link
