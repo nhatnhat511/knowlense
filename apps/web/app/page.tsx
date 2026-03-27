@@ -4,18 +4,18 @@ import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 const proofPoints = [
   {
     label: "Website-first auth",
-    value: "No login form in the extension",
-    copy: "Users authenticate on the web app first, then approve the extension from a dedicated connect flow."
+    value: "Safer account flow",
+    copy: "Users authenticate on the web app first, then approve the extension separately."
   },
   {
     label: "Worker-owned logic",
-    value: "API and scoring stay centralized",
-    copy: "Core logic runs through Cloudflare Workers instead of being duplicated across the website and extension."
+    value: "One central API layer",
+    copy: "Core logic stays in Cloudflare Workers instead of being scattered across surfaces."
   },
   {
     label: "Focused workflow",
-    value: "Built for TPT seller research",
-    copy: "Knowlense is shaped around keyword discovery, listing quality, and opportunity tracking."
+    value: "Built for TPT sellers",
+    copy: "Research, listing review, and next actions stay connected in one product flow."
   }
 ];
 
@@ -37,22 +37,10 @@ const modules = [
   }
 ];
 
-const workflow = [
-  {
-    step: "1",
-    title: "Sign in on the website",
-    copy: "Account creation, email verification, password resets, and billing all live in the web app."
-  },
-  {
-    step: "2",
-    title: "Connect the extension safely",
-    copy: "The popup opens a secure connect flow so the extension gets its own Worker-issued session afterward."
-  },
-  {
-    step: "3",
-    title: "Run live TPT research",
-    copy: "Use the extension while browsing TPT, then review recent analyses and next actions on the dashboard."
-  }
+const checklist = [
+  "Keep seller research in one cleaner workflow",
+  "Connect web auth and extension usage without friction",
+  "Turn marketplace observations into actual next steps"
 ];
 
 export default function HomePage() {
@@ -63,56 +51,92 @@ export default function HomePage() {
         navItems={[
           { href: "/pricing", label: "Pricing" },
           { href: "/about", label: "About" },
-          { href: "/contact", label: "Contact" },
-          { href: "/auth/sign-in", label: "Sign in" }
+          { href: "/contact", label: "Contact Sales" },
+          { href: "/auth/sign-in", label: "Login" }
         ]}
-        primaryCta={{ href: "/auth/sign-up", label: "Start free" }}
+        primaryCta={{ href: "/auth/sign-up", label: "Sign Up" }}
       />
 
-      <section className="shell hero-simple">
-        <div className="hero-copy-block">
+      <section className="shell hero-home">
+        <div className="hero-copy-block hero-copy-clean">
           <span className="eyebrow hero-eyebrow">Built for Teachers Pay Teachers sellers</span>
-          <h1 className="page-title hero-headline">One cleaner system for TPT research, account access, and extension workflows.</h1>
+          <h1 className="page-title hero-headline">One workspace for research, listings, and smarter seller decisions.</h1>
           <p className="page-copy hero-copy-text">
-            Knowlense gives sellers a calmer way to work: website-first account management, secure extension connection, and
-            structured insights from the marketplace pages they already review every day.
+            Knowlense gives TPT sellers a cleaner SaaS workflow: website-first account management, secure extension
+            connection, and structured product insight that stays useful after the browser tab closes.
           </p>
-          <div className="stack-row">
-            <Link className="primary-button" href="/auth/sign-up">
-              Create account
+
+          <div className="hero-cta-row">
+            <Link className="primary-button hero-primary" href="/auth/sign-up">
+              Get started. It&apos;s free.
             </Link>
-            <Link className="secondary-button" href="/pricing">
-              View pricing
-            </Link>
+            <div className="hero-cta-note">
+              <span>Free to start.</span>
+              <span>No credit card required.</span>
+            </div>
           </div>
         </div>
+
+        <aside className="hero-aside">
+          <div className="hero-chip">New: seller-side intelligence for TPT</div>
+          <ul className="hero-checklist">
+            {checklist.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </aside>
       </section>
 
-      <section className="shell marketing-surface">
-        <div className="hero-panel-clean">
-          <div>
-            <div className="panel-kicker">What the product does well</div>
-            <p className="page-copy">
-              Knowlense is not trying to be a generic AI wrapper. It is a purpose-built workflow for TPT sellers who need
-              clearer research, better account control, and less friction between the website and extension.
-            </p>
-          </div>
-
-          <div className="hero-panel-stack">
-            <ul className="hero-panel-list">
-              <li>Account flows stay on the website where authentication belongs.</li>
-              <li>The extension only receives a dedicated session after website approval.</li>
-              <li>Keyword Finder results are captured from live TPT search pages, not invented lists.</li>
+      <section className="hero-stage">
+        <div className="shell hero-stage-frame">
+          <div className="stage-sidebar">
+            <div className="stage-sidebar-title">Knowlense workspace</div>
+            <ul className="stage-sidebar-list">
+              <li className="active">Keyword Finder</li>
+              <li>Listing Grader</li>
+              <li>Opportunity Board</li>
+              <li>Dashboard</li>
+              <li>Extension Connect</li>
             </ul>
           </div>
 
-          <div className="stack-row">
-            <Link className="primary-button" href="/dashboard">
-              Open app
-            </Link>
-            <Link className="ghost-button" href="/about">
-              Learn more
-            </Link>
+          <div className="stage-preview">
+            <div className="stage-topbar">
+              <span className="stage-pill">Store Research</span>
+              <span className="stage-search">Search query: reading comprehension</span>
+            </div>
+            <div className="stage-table">
+              <div className="stage-row heading">
+                <span>Keyword Cluster</span>
+                <span>Competition</span>
+                <span>Opportunity</span>
+                <span>Status</span>
+              </div>
+              <div className="stage-row">
+                <span>Main idea passages</span>
+                <span>Medium</span>
+                <span>High</span>
+                <span>Review</span>
+              </div>
+              <div className="stage-row">
+                <span>Paired reading passages</span>
+                <span>Low</span>
+                <span>High</span>
+                <span>Promising</span>
+              </div>
+              <div className="stage-row">
+                <span>Theme worksheets</span>
+                <span>High</span>
+                <span>Medium</span>
+                <span>Saturated</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="stage-note-card">
+            <div className="stage-note-label">Next action</div>
+            <strong>Build a differentiated paired-passage listing</strong>
+            <p>Use the current search snapshot to create a higher-conviction product angle before competition thickens.</p>
           </div>
         </div>
       </section>
@@ -132,10 +156,10 @@ export default function HomePage() {
       <section className="shell modules-section">
         <div className="section-heading">
           <span className="section-label">Core Modules</span>
-          <h2 className="section-title">Designed around real seller tasks, not disconnected feature ideas.</h2>
+          <h2 className="section-title">Purpose-built for the parts of the seller workflow that actually matter.</h2>
           <p className="section-copy">
-            Each module is meant to support a concrete part of the seller workflow: what to research, what to improve, and
-            what to build next.
+            Knowlense is designed to help sellers research the market, sharpen listings, and turn signals into practical next
+            moves.
           </p>
         </div>
 
@@ -145,23 +169,6 @@ export default function HomePage() {
               <span className="module-meta">{module.meta}</span>
               <h3>{module.title}</h3>
               <p>{module.copy}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="shell marketing-surface">
-        <div className="section-heading">
-          <span className="section-label">Workflow</span>
-          <h2 className="section-title">A product flow that stays understandable as the product grows.</h2>
-        </div>
-
-        <div className="process-grid">
-          {workflow.map((item) => (
-            <article className="process-card" key={item.step}>
-              <span className="process-step">{item.step}</span>
-              <h3>{item.title}</h3>
-              <p>{item.copy}</p>
             </article>
           ))}
         </div>

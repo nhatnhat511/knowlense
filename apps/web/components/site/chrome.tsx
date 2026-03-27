@@ -88,7 +88,12 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
 
         <nav aria-label="Primary navigation" className="nav nav-desktop">
           {navItems.map((item) => (
-            <Link aria-current={pathname === item.href ? "page" : undefined} className="nav-link" href={item.href} key={item.href}>
+            <Link
+              aria-current={pathname === item.href ? "page" : undefined}
+              className={`nav-link${/sign in|login/i.test(item.label) ? " nav-link-utility" : " nav-link-text"}`}
+              href={item.href}
+              key={item.href}
+            >
               {item.label}
             </Link>
           ))}
