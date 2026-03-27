@@ -28,9 +28,10 @@ async function postAuthResource<TResponse>(path: string, body: Record<string, un
   });
 
   const payload = await response.json().catch(() => null);
+  const fallbackText = payload ? null : await response.clone().text().catch(() => "");
 
   if (!response.ok) {
-    throw new Error(payload?.error ?? "Unable to complete the authentication request.");
+    throw new Error(payload?.error ?? fallbackText ?? "Unable to complete the authentication request.");
   }
 
   return payload as TResponse;

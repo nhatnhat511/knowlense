@@ -66,7 +66,11 @@ function createAdminClient(env: Bindings) {
 }
 
 function createAuthClient(env: Bindings) {
-  return createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY ?? env.SUPABASE_SERVICE_ROLE_KEY, {
+  if (!env.SUPABASE_ANON_KEY) {
+    throw new Error("SUPABASE_ANON_KEY is not configured on knowlense-api.");
+  }
+
+  return createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
     auth: {
       persistSession: false,
       autoRefreshToken: false
@@ -270,182 +274,206 @@ app.get("/v1/public/config", (c) =>
 );
 
 app.post("/v1/auth/sign-in", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const email = typeof body?.email === "string" ? body.email.trim() : "";
-  const password = typeof body?.password === "string" ? body.password : "";
+  try {
+    const body = await c.req.json().catch(() => null);
+    const email = typeof body?.email === "string" ? body.email.trim() : "";
+    const password = typeof body?.password === "string" ? body.password : "";
 
-  if (!email || !password) {
-    return c.json({ error: "Email and password are required." }, 400);
+    if (!email || !password) {
+      return c.json({ error: "Email and password are required." }, 400);
+    }
+
+    const supabase = createAuthClient(c.env);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (error) {
+      return c.json({ error: error.message }, 400);
+    }
+
+    if (!data.session || !data.user) {
+      return c.json({ error: "Supabase did not return a session." }, 500);
+    }
+
+    return c.json({
+      session: {
+        accessToken: data.session.access_token,
+        refreshToken: data.session.refresh_token,
+        expiresAt: data.session.expires_at ?? null
+      },
+      user: normalizeSupabaseUser(data.user)
+    });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unable to sign in." }, 500);
   }
-
-  const supabase = createAuthClient(c.env);
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
-  if (error) {
-    return c.json({ error: error.message }, 400);
-  }
-
-  if (!data.session || !data.user) {
-    return c.json({ error: "Supabase did not return a session." }, 500);
-  }
-
-  return c.json({
-    session: {
-      accessToken: data.session.access_token,
-      refreshToken: data.session.refresh_token,
-      expiresAt: data.session.expires_at ?? null
-    },
-    user: normalizeSupabaseUser(data.user)
-  });
 });
 
 app.post("/v1/auth/sign-up", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const email = typeof body?.email === "string" ? body.email.trim() : "";
-  const password = typeof body?.password === "string" ? body.password : "";
-  const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : "";
-  const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : undefined;
+  try {
+    const body = await c.req.json().catch(() => null);
+    const email = typeof body?.email === "string" ? body.email.trim() : "";
+    const password = typeof body?.password === "string" ? body.password : "";
+    const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : "";
+    const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : undefined;
 
-  if (!email || !password || !displayName) {
-    return c.json({ error: "Email, password, and display name are required." }, 400);
-  }
-
-  if (password.length < 8) {
-    return c.json({ error: "Password must be at least 8 characters long." }, 400);
-  }
-
-  const supabase = createAuthClient(c.env);
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      emailRedirectTo: redirectTo,
-      data: {
-        display_name: displayName
-      }
+    if (!email || !password || !displayName) {
+      return c.json({ error: "Email, password, and display name are required." }, 400);
     }
-  });
 
-  if (error) {
-    return c.json({ error: error.message }, 400);
-  }
+    if (password.length < 8) {
+      return c.json({ error: "Password must be at least 8 characters long." }, 400);
+    }
 
-  return c.json({
-    session: data.session
-      ? {
-          accessToken: data.session.access_token,
-          refreshToken: data.session.refresh_token,
-          expiresAt: data.session.expires_at ?? null
+    const supabase = createAuthClient(c.env);
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: redirectTo,
+        data: {
+          display_name: displayName
         }
-      : null,
-    user: data.user ? normalizeSupabaseUser(data.user) : null,
-    identitiesLength: data.user?.identities?.length ?? null,
-    requiresEmailVerification: !data.session
-  });
+      }
+    });
+
+    if (error) {
+      return c.json({ error: error.message }, 400);
+    }
+
+    return c.json({
+      session: data.session
+        ? {
+            accessToken: data.session.access_token,
+            refreshToken: data.session.refresh_token,
+            expiresAt: data.session.expires_at ?? null
+          }
+        : null,
+      user: data.user ? normalizeSupabaseUser(data.user) : null,
+      identitiesLength: data.user?.identities?.length ?? null,
+      requiresEmailVerification: !data.session
+    });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unable to sign up." }, 500);
+  }
 });
 
 app.post("/v1/auth/oauth/start", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const provider = body?.provider;
-  const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : "";
+  try {
+    const body = await c.req.json().catch(() => null);
+    const provider = body?.provider;
+    const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : "";
 
-  if (provider !== "google" && provider !== "github") {
-    return c.json({ error: "Unsupported OAuth provider." }, 400);
-  }
-
-  if (!redirectTo) {
-    return c.json({ error: "Missing redirect URL." }, 400);
-  }
-
-  const supabase = createAuthClient(c.env);
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: {
-      redirectTo,
-      skipBrowserRedirect: true
+    if (provider !== "google" && provider !== "github") {
+      return c.json({ error: "Unsupported OAuth provider." }, 400);
     }
-  });
 
-  if (error || !data.url) {
-    return c.json({ error: error?.message ?? "Unable to start OAuth flow." }, 400);
+    if (!redirectTo) {
+      return c.json({ error: "Missing redirect URL." }, 400);
+    }
+
+    const supabase = createAuthClient(c.env);
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo,
+        skipBrowserRedirect: true
+      }
+    });
+
+    if (error || !data.url) {
+      return c.json({ error: error?.message ?? "Unable to start OAuth flow." }, 400);
+    }
+
+    return c.json({ url: data.url });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unable to start OAuth flow." }, 500);
   }
-
-  return c.json({ url: data.url });
 });
 
 app.post("/v1/auth/exchange-code", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const code = typeof body?.code === "string" ? body.code : "";
+  try {
+    const body = await c.req.json().catch(() => null);
+    const code = typeof body?.code === "string" ? body.code : "";
 
-  if (!code) {
-    return c.json({ error: "Missing OAuth code." }, 400);
+    if (!code) {
+      return c.json({ error: "Missing OAuth code." }, 400);
+    }
+
+    const supabase = createAuthClient(c.env);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (error) {
+      return c.json({ error: error.message }, 400);
+    }
+
+    if (!data.session || !data.user) {
+      return c.json({ error: "Supabase did not return a session." }, 500);
+    }
+
+    return c.json({
+      session: {
+        accessToken: data.session.access_token,
+        refreshToken: data.session.refresh_token,
+        expiresAt: data.session.expires_at ?? null
+      },
+      user: normalizeSupabaseUser(data.user)
+    });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unable to exchange OAuth code." }, 500);
   }
-
-  const supabase = createAuthClient(c.env);
-  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-
-  if (error) {
-    return c.json({ error: error.message }, 400);
-  }
-
-  if (!data.session || !data.user) {
-    return c.json({ error: "Supabase did not return a session." }, 500);
-  }
-
-  return c.json({
-    session: {
-      accessToken: data.session.access_token,
-      refreshToken: data.session.refresh_token,
-      expiresAt: data.session.expires_at ?? null
-    },
-    user: normalizeSupabaseUser(data.user)
-  });
 });
 
 app.post("/v1/auth/forgot-password", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const email = typeof body?.email === "string" ? body.email.trim() : "";
-  const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : "";
+  try {
+    const body = await c.req.json().catch(() => null);
+    const email = typeof body?.email === "string" ? body.email.trim() : "";
+    const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : "";
 
-  if (!email || !redirectTo) {
-    return c.json({ error: "Email and redirect URL are required." }, 400);
+    if (!email || !redirectTo) {
+      return c.json({ error: "Email and redirect URL are required." }, 400);
+    }
+
+    const supabase = createAuthClient(c.env);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo
+    });
+
+    if (error) {
+      return c.json({ error: error.message }, 400);
+    }
+
+    return c.json({ ok: true });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unable to send password reset email." }, 500);
   }
-
-  const supabase = createAuthClient(c.env);
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo
-  });
-
-  if (error) {
-    return c.json({ error: error.message }, 400);
-  }
-
-  return c.json({ ok: true });
 });
 
 app.post("/v1/auth/resend-verification", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const email = typeof body?.email === "string" ? body.email.trim() : "";
-  const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : "";
+  try {
+    const body = await c.req.json().catch(() => null);
+    const email = typeof body?.email === "string" ? body.email.trim() : "";
+    const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : "";
 
-  if (!email || !redirectTo) {
-    return c.json({ error: "Email and redirect URL are required." }, 400);
-  }
-
-  const supabase = createAuthClient(c.env);
-  const { error } = await supabase.auth.resend({
-    type: "signup",
-    email,
-    options: {
-      emailRedirectTo: redirectTo
+    if (!email || !redirectTo) {
+      return c.json({ error: "Email and redirect URL are required." }, 400);
     }
-  });
 
-  if (error) {
-    return c.json({ error: error.message }, 400);
+    const supabase = createAuthClient(c.env);
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: {
+        emailRedirectTo: redirectTo
+      }
+    });
+
+    if (error) {
+      return c.json({ error: error.message }, 400);
+    }
+
+    return c.json({ ok: true });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unable to resend verification email." }, 500);
   }
-
-  return c.json({ ok: true });
 });
 
 app.use("/v1/me", async (c, next) => {
