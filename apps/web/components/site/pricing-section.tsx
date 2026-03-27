@@ -156,23 +156,21 @@ export function PricingSection() {
   }
 
   return (
-    <section className="space-y-8">
-      <div className="flex flex-col items-start justify-between gap-5 rounded-[28px] border border-black/8 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)] sm:flex-row sm:items-center">
-        <div>
-          <div className="text-sm font-semibold uppercase tracking-[0.18em] text-neutral-500">Pricing</div>
-          <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950 sm:text-4xl">
-            Flexible billing for every stage of the workflow.
-          </h2>
-          <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
-            Switch between monthly and yearly billing. Yearly keeps the same product access while lowering the effective cost.
-          </p>
-        </div>
+    <section className="space-y-10">
+      <div className="mx-auto max-w-3xl text-center">
+        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-neutral-500">Pricing</div>
+        <h2 className="mt-3 text-4xl font-semibold tracking-[-0.06em] text-black sm:text-5xl">Straightforward pricing for a focused workflow.</h2>
+        <p className="mx-auto mt-4 max-w-2xl text-[17px] leading-7 text-neutral-600">
+          Choose the plan that matches your stage. Keep the website account flow simple, then upgrade when you need recurring research and extension usage.
+        </p>
+      </div>
 
-        <div className="rounded-full border border-black/8 bg-neutral-50 p-1">
+      <div className="flex justify-center">
+        <div className="rounded-full border border-black/8 bg-neutral-100 p-1.5">
           <div className="flex items-center gap-1">
             <button
-              className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                billingCycle === "monthly" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"
+              className={`rounded-full px-5 py-2.5 text-sm font-medium transition ${
+                billingCycle === "monthly" ? "bg-white text-black shadow-sm" : "text-neutral-500 hover:text-black"
               }`}
               onClick={() => setBillingCycle("monthly")}
               type="button"
@@ -180,14 +178,20 @@ export function PricingSection() {
               Monthly
             </button>
             <button
-              className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
-                billingCycle === "yearly" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"
+              className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition ${
+                billingCycle === "yearly" ? "bg-white text-black shadow-sm" : "text-neutral-500 hover:text-black"
               }`}
               onClick={() => setBillingCycle("yearly")}
               type="button"
             >
               Yearly
-              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${billingCycle === "yearly" ? "bg-emerald-100 text-emerald-700" : "bg-neutral-200 text-neutral-500"}`}>-20%</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                  billingCycle === "yearly" ? "bg-emerald-100 text-emerald-700" : "bg-neutral-200 text-neutral-500"
+                }`}
+              >
+                -20%
+              </span>
             </button>
           </div>
         </div>
@@ -206,31 +210,34 @@ export function PricingSection() {
 
             return (
               <article
-                className={`min-w-[285px] snap-center rounded-[28px] border bg-white p-7 shadow-[0_18px_44px_rgba(15,23,42,0.06)] md:min-w-0 ${
+                className={`min-w-[285px] snap-center rounded-[30px] border p-8 md:min-w-0 ${
                   isFeatured
-                    ? "border-black shadow-[0_24px_55px_rgba(0,0,0,0.12)] md:scale-[1.05]"
-                    : "border-black/8"
+                    ? "border-black bg-[#111111] text-white shadow-[0_28px_70px_rgba(0,0,0,0.18)] md:scale-[1.05]"
+                    : "border-black/10 bg-[#171717] text-white shadow-[0_20px_60px_rgba(0,0,0,0.12)]"
                 }`}
                 key={plan.name}
               >
                 <div className="flex min-h-[32px] items-center justify-between gap-3">
-                  <span className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400">{plan.name}</span>
+                  <span className={`text-sm font-semibold uppercase tracking-[0.16em] ${isFeatured ? "text-white/65" : "text-white/60"}`}>{plan.name}</span>
                   {isFeatured ? (
-                    <span className="rounded-full bg-black px-3 py-1 text-xs font-semibold text-white">{plan.badge ?? "Recommended"}</span>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-black">{plan.badge ?? "Recommended"}</span>
                   ) : null}
                 </div>
 
-                <p className="mt-4 text-sm leading-6 text-slate-600">{plan.description}</p>
+                <p className={`mt-4 text-base leading-7 ${isFeatured ? "text-white/72" : "text-white/68"}`}>{plan.description}</p>
 
                 <div className="mt-8">
-                  <div className="text-5xl font-semibold tracking-[-0.06em] text-slate-950">{price}</div>
-                  <div className="mt-2 text-sm text-slate-500">{note}</div>
+                  <div className="flex items-end gap-2">
+                    <div className="text-5xl font-semibold tracking-[-0.07em] text-white">{price}</div>
+                    <div className="pb-1 text-lg text-white/70">{plan.name === "Free" || plan.name === "Enterprise" ? "" : billingCycle === "monthly" ? "per month" : "per year"}</div>
+                  </div>
+                  <div className="mt-2 text-sm text-white/55">{note}</div>
                 </div>
 
                 <ul className="mt-8 space-y-3">
                   {plan.features.map((feature) => (
-                    <li className="flex items-start gap-3 text-sm leading-6 text-slate-700" key={feature}>
-                      <span className="mt-2 h-2 w-2 rounded-full bg-black" />
+                    <li className="flex items-start gap-3 text-[15px] leading-7 text-white/82" key={feature}>
+                      <span className="mt-2 text-emerald-400">✓</span>
                       <span>{feature}</span>
                     </li>
                   ))}
@@ -239,10 +246,10 @@ export function PricingSection() {
                 <div className="mt-8">
                   {effectiveInterval ? (
                     <button
-                      className={`inline-flex h-12 w-full items-center justify-center rounded-2xl px-5 text-sm font-semibold transition-all duration-200 ${
+                      className={`inline-flex h-12 w-full items-center justify-center rounded-full px-5 text-sm font-semibold transition-all duration-200 ${
                         isFeatured
-                          ? "bg-black text-white shadow-[0_14px_30px_rgba(0,0,0,0.16)] hover:-translate-y-0.5 hover:bg-neutral-800"
-                          : "bg-slate-900 text-white hover:-translate-y-0.5 hover:bg-slate-800"
+                          ? "bg-white text-black shadow-[0_14px_30px_rgba(255,255,255,0.12)] hover:-translate-y-0.5 hover:bg-neutral-100"
+                          : "bg-white/10 text-white hover:-translate-y-0.5 hover:bg-white/16"
                       }`}
                       disabled={loadingPlan === effectiveInterval}
                       onClick={() => handleCheckout(effectiveInterval)}
@@ -252,10 +259,10 @@ export function PricingSection() {
                     </button>
                   ) : plan.href ? (
                     <Link
-                      className={`inline-flex h-12 w-full items-center justify-center rounded-2xl px-5 text-sm font-semibold transition-all duration-200 ${
+                      className={`inline-flex h-12 w-full items-center justify-center rounded-full px-5 text-sm font-semibold transition-all duration-200 ${
                         plan.contact
-                          ? "border border-slate-200 bg-white text-slate-900 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
-                          : "border border-slate-200 bg-white text-slate-900 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
+                          ? "bg-white/10 text-white hover:-translate-y-0.5 hover:bg-white/16"
+                          : "bg-white/10 text-white hover:-translate-y-0.5 hover:bg-white/16"
                       }`}
                       href={plan.href}
                     >

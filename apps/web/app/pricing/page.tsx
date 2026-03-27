@@ -36,9 +36,9 @@ export default function PricingPage() {
             title="What free is for"
           />
           <ul className="space-y-3 text-sm leading-6 text-neutral-600">
-            <li className="rounded-[20px] border border-black/8 bg-[#fafafa] px-4 py-3">Create a website account and verify the full sign-up flow.</li>
-            <li className="rounded-[20px] border border-black/8 bg-[#fafafa] px-4 py-3">Connect the extension for the first time and approve a browser session safely.</li>
-            <li className="rounded-[20px] border border-black/8 bg-[#fafafa] px-4 py-3">Evaluate whether Knowlense fits the way you research TPT listings.</li>
+            <li className="rounded-[20px] border border-black/8 bg-white px-4 py-3 shadow-[0_10px_25px_rgba(0,0,0,0.03)]">Create a website account and verify the full sign-up flow.</li>
+            <li className="rounded-[20px] border border-black/8 bg-white px-4 py-3 shadow-[0_10px_25px_rgba(0,0,0,0.03)]">Connect the extension for the first time and approve a browser session safely.</li>
+            <li className="rounded-[20px] border border-black/8 bg-white px-4 py-3 shadow-[0_10px_25px_rgba(0,0,0,0.03)]">Evaluate whether Knowlense fits the way you research TPT listings.</li>
           </ul>
         </AppPanel>
 
@@ -49,9 +49,9 @@ export default function PricingPage() {
             title="Billing details"
           />
           <ul className="space-y-3 text-sm leading-6 text-neutral-600">
-            <li className="rounded-[20px] border border-black/8 bg-[#fafafa] px-4 py-3">Paddle handles subscription checkout, taxes, payment methods, and invoices.</li>
-            <li className="rounded-[20px] border border-black/8 bg-[#fafafa] px-4 py-3">Monthly and yearly checkout sessions are created by Cloudflare Workers using your configured Paddle price IDs.</li>
-            <li className="rounded-[20px] border border-black/8 bg-[#fafafa] px-4 py-3">Refund and billing questions should reference the account email plus the Paddle transaction where possible.</li>
+            <li className="rounded-[20px] border border-black/8 bg-white px-4 py-3 shadow-[0_10px_25px_rgba(0,0,0,0.03)]">Paddle handles subscription checkout, taxes, payment methods, and invoices.</li>
+            <li className="rounded-[20px] border border-black/8 bg-white px-4 py-3 shadow-[0_10px_25px_rgba(0,0,0,0.03)]">Monthly and yearly checkout sessions are created by Cloudflare Workers using your configured Paddle price IDs.</li>
+            <li className="rounded-[20px] border border-black/8 bg-white px-4 py-3 shadow-[0_10px_25px_rgba(0,0,0,0.03)]">Refund and billing questions should reference the account email plus the Paddle transaction where possible.</li>
           </ul>
         </AppPanel>
       </div>
