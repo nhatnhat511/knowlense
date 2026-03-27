@@ -3,6 +3,10 @@
 export type ApiProfile = {
   email: string | null;
   id: string;
+  name: string | null;
+  avatarUrl: string | null;
+  emailConfirmed: boolean;
+  authType: "supabase" | "extension";
 };
 
 export function getApiBaseUrl() {

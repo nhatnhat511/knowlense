@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { changePassword } from "@/lib/api/auth";
 import { validatePassword } from "@/lib/auth/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthField, AuthPasswordToggleIcon, AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
@@ -17,6 +18,7 @@ export default function UpdatePasswordPage() {
   const [statusKind, setStatusKind] = useState<"idle" | "error" | "success">("idle");
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
+  const [accessToken, setAccessToken] = useState("");
 
   useEffect(() => {
     if (!supabase) {
@@ -36,6 +38,7 @@ export default function UpdatePasswordPage() {
       }
 
       if (session?.access_token) {
+        setAccessToken(session.access_token);
         setReady(true);
         setStatus("Recovery session detected. Set your new password.");
         setStatusKind("success");
@@ -52,6 +55,11 @@ export default function UpdatePasswordPage() {
       }
 
       if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+        void client.auth.getSession().then(({ data }) => {
+          if (data.session?.access_token) {
+            setAccessToken(data.session.access_token);
+          }
+        });
         setReady(true);
         setStatus("Recovery session detected. Set your new password.");
         setStatusKind("success");
@@ -80,22 +88,16 @@ export default function UpdatePasswordPage() {
       return;
     }
 
-    if (!supabase) {
-      setStatus("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.");
-      setStatusKind("error");
-      return;
-    }
-
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.updateUser({ password });
-
-      if (error) {
-        setStatus(error.message);
+      if (!accessToken) {
+        setStatus("A valid recovery session was not found. Use the reset email again.");
         setStatusKind("error");
         return;
       }
+
+      await changePassword(password, accessToken);
 
       setStatus("Password updated. Redirecting to sign in...");
       setStatusKind("success");

@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { requestPasswordReset } from "@/lib/api/auth";
 import { getPasswordResetRedirectUrl } from "@/lib/auth/redirects";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthField, AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
 
 export default function ForgotPasswordPage() {
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,21 +15,8 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     setStatus("");
 
-    if (!supabase) {
-      setStatus("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.");
-      setLoading(false);
-      return;
-    }
-
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: getPasswordResetRedirectUrl()
-      });
-
-      if (error) {
-        setStatus(error.message);
-        return;
-      }
+      await requestPasswordReset(email, getPasswordResetRedirectUrl());
 
       setStatus("Password reset email sent. Check your inbox.");
     } catch (error) {

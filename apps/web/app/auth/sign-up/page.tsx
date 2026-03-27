@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { signUpWithPassword, startOAuth } from "@/lib/api/auth";
 import { mapSignupResult, validatePassword } from "@/lib/auth/errors";
 import { getAuthCallbackUrl, getSignupRedirectUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -42,16 +43,8 @@ export default function SignUpPage() {
     setStatus("");
 
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: getAuthCallbackUrl("/dashboard")
-        }
-      });
-
-      if (error) {
-        setStatus(error.message);
-      }
+      const { url } = await startOAuth(provider, getAuthCallbackUrl("/dashboard"));
+      window.location.assign(url);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to start social sign-in.");
     } finally {
@@ -97,21 +90,11 @@ export default function SignUpPage() {
     }
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: getSignupRedirectUrl(),
-          data: {
-            display_name: displayName.trim()
-          }
-        }
-      });
+      const data = await signUpWithPassword(email, password, displayName.trim(), getSignupRedirectUrl());
 
       const signupMessage = mapSignupResult({
         email,
-        errorMessage: error?.message,
-        identitiesLength: data.user?.identities?.length
+        identitiesLength: data.identitiesLength ?? undefined
       });
 
       setStatus(signupMessage.message);
@@ -120,12 +103,22 @@ export default function SignUpPage() {
         return;
       }
 
-      if (data.session?.access_token) {
+      if (data.session && supabase) {
+        const sessionError = await supabase.auth.setSession({
+          access_token: data.session.accessToken,
+          refresh_token: data.session.refreshToken
+        });
+
+        if (sessionError.error) {
+          setStatus(sessionError.error.message);
+          return;
+        }
+
         router.push("/dashboard");
         return;
       }
 
-      if ((data.user?.identities?.length ?? 0) === 0) {
+      if ((data.identitiesLength ?? 0) === 0) {
         return;
       }
 

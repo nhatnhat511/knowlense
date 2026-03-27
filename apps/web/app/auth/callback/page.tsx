@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { exchangeOAuthCode } from "@/lib/api/auth";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
 
@@ -50,14 +51,18 @@ function AuthCallbackContent() {
       const authCode = searchParams.get("code");
 
       if (authCode) {
-        const { error } = await client.auth.exchangeCodeForSession(authCode);
+        const result = await exchangeOAuthCode(authCode);
+        const sessionResult = await client.auth.setSession({
+          access_token: result.session.accessToken,
+          refresh_token: result.session.refreshToken
+        });
 
         if (!active) {
           return;
         }
 
-        if (error) {
-          setStatus(error.message);
+        if (sessionResult.error) {
+          setStatus(sessionResult.error.message);
           return;
         }
       }

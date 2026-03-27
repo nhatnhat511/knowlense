@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { fetchApiProfile } from "@/lib/api/profile";
+import { signInWithPassword, startOAuth } from "@/lib/api/auth";
 import { mapSignInError } from "@/lib/auth/errors";
 import { getAuthCallbackUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -66,16 +66,8 @@ function SignInContent() {
     setStatus("");
 
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: getAuthCallbackUrl(nextPath)
-        }
-      });
-
-      if (error) {
-        setStatus(error.message);
-      }
+      const { url } = await startOAuth(provider, getAuthCallbackUrl(nextPath));
+      window.location.assign(url);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to start social sign-in.");
     } finally {
@@ -95,25 +87,23 @@ function SignInContent() {
     }
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const result = await signInWithPassword(email, password);
 
-      if (error) {
-        setStatus(mapSignInError(error.message));
+      const sessionError = await supabase.auth.setSession({
+        access_token: result.session.accessToken,
+        refresh_token: result.session.refreshToken
+      });
+
+      if (sessionError.error) {
+        setStatus(sessionError.error.message);
         return;
       }
 
-      const accessToken = data.session?.access_token;
-
-      if (!accessToken) {
-        setStatus("Supabase did not return an access token.");
-        return;
-      }
-
-      const profile = await fetchApiProfile(accessToken);
-      setStatus(`Signed in as ${profile.email ?? profile.id}. Redirecting...`);
+      setStatus(`Signed in as ${result.user.email ?? result.user.id}. Redirecting...`);
       router.push(nextPath);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to sign in.");
+      const message = error instanceof Error ? error.message : "Unable to sign in.";
+      setStatus(mapSignInError(message));
     } finally {
       setLoading(false);
     }

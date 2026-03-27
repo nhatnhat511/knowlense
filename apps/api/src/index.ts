@@ -11,6 +11,7 @@ type Bindings = {
   PADDLE_PRICE_ID_MONTHLY?: string;
   PADDLE_PRICE_ID_YEARLY?: string;
   PADDLE_WEBHOOK_SECRET?: string;
+  SUPABASE_ANON_KEY?: string;
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
 };
@@ -19,6 +20,9 @@ type Variables = {
   user: {
     email: string | null;
     id: string;
+    name: string | null;
+    avatarUrl: string | null;
+    emailConfirmed: boolean;
     authType: "supabase" | "extension";
   };
 };
@@ -61,6 +65,15 @@ function createAdminClient(env: Bindings) {
   });
 }
 
+function createAuthClient(env: Bindings) {
+  return createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY ?? env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  });
+}
+
 function jsonHeaders() {
   return {
     "Content-Type": "application/json"
@@ -83,6 +96,33 @@ function isoFromNow(minutes: number) {
   return new Date(Date.now() + minutes * 60 * 1000).toISOString();
 }
 
+function normalizeSupabaseUser(user: {
+  id: string;
+  email?: string | null;
+  email_confirmed_at?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+}) {
+  const metadata = user.user_metadata ?? {};
+  const displayName =
+    typeof metadata.display_name === "string"
+      ? metadata.display_name
+      : typeof metadata.full_name === "string"
+        ? metadata.full_name
+        : typeof user.email === "string"
+          ? user.email.split("@")[0]
+          : null;
+  const avatarUrl = typeof metadata.avatar_url === "string" ? metadata.avatar_url : null;
+
+  return {
+    id: user.id,
+    email: user.email ?? null,
+    name: displayName,
+    avatarUrl,
+    emailConfirmed: Boolean(user.email_confirmed_at),
+    authType: "supabase" as const
+  };
+}
+
 async function authenticateSupabaseToken(env: Bindings, token: string) {
   const supabase = createAdminClient(env);
   const { data, error } = await supabase.auth.getUser(token);
@@ -91,11 +131,7 @@ async function authenticateSupabaseToken(env: Bindings, token: string) {
     return null;
   }
 
-  return {
-    id: data.user.id,
-    email: data.user.email ?? null,
-    authType: "supabase" as const
-  };
+  return normalizeSupabaseUser(data.user);
 }
 
 async function authenticateExtensionToken(env: Bindings, token: string) {
@@ -118,6 +154,9 @@ async function authenticateExtensionToken(env: Bindings, token: string) {
   return {
     id: session.user_id,
     email: session.user_email,
+    name: session.user_email?.split("@")[0] ?? null,
+    avatarUrl: null,
+    emailConfirmed: true,
     authType: "extension" as const
   };
 }
@@ -176,6 +215,185 @@ app.get("/v1/public/config", (c) =>
   })
 );
 
+app.post("/v1/auth/sign-in", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const email = typeof body?.email === "string" ? body.email.trim() : "";
+  const password = typeof body?.password === "string" ? body.password : "";
+
+  if (!email || !password) {
+    return c.json({ error: "Email and password are required." }, 400);
+  }
+
+  const supabase = createAuthClient(c.env);
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    return c.json({ error: error.message }, 400);
+  }
+
+  if (!data.session || !data.user) {
+    return c.json({ error: "Supabase did not return a session." }, 500);
+  }
+
+  return c.json({
+    session: {
+      accessToken: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+      expiresAt: data.session.expires_at ?? null
+    },
+    user: normalizeSupabaseUser(data.user)
+  });
+});
+
+app.post("/v1/auth/sign-up", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const email = typeof body?.email === "string" ? body.email.trim() : "";
+  const password = typeof body?.password === "string" ? body.password : "";
+  const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : "";
+  const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : undefined;
+
+  if (!email || !password || !displayName) {
+    return c.json({ error: "Email, password, and display name are required." }, 400);
+  }
+
+  if (password.length < 8) {
+    return c.json({ error: "Password must be at least 8 characters long." }, 400);
+  }
+
+  const supabase = createAuthClient(c.env);
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: redirectTo,
+      data: {
+        display_name: displayName
+      }
+    }
+  });
+
+  if (error) {
+    return c.json({ error: error.message }, 400);
+  }
+
+  return c.json({
+    session: data.session
+      ? {
+          accessToken: data.session.access_token,
+          refreshToken: data.session.refresh_token,
+          expiresAt: data.session.expires_at ?? null
+        }
+      : null,
+    user: data.user ? normalizeSupabaseUser(data.user) : null,
+    identitiesLength: data.user?.identities?.length ?? null,
+    requiresEmailVerification: !data.session
+  });
+});
+
+app.post("/v1/auth/oauth/start", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const provider = body?.provider;
+  const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : "";
+
+  if (provider !== "google" && provider !== "github") {
+    return c.json({ error: "Unsupported OAuth provider." }, 400);
+  }
+
+  if (!redirectTo) {
+    return c.json({ error: "Missing redirect URL." }, 400);
+  }
+
+  const supabase = createAuthClient(c.env);
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo,
+      skipBrowserRedirect: true
+    }
+  });
+
+  if (error || !data.url) {
+    return c.json({ error: error?.message ?? "Unable to start OAuth flow." }, 400);
+  }
+
+  return c.json({ url: data.url });
+});
+
+app.post("/v1/auth/exchange-code", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const code = typeof body?.code === "string" ? body.code : "";
+
+  if (!code) {
+    return c.json({ error: "Missing OAuth code." }, 400);
+  }
+
+  const supabase = createAuthClient(c.env);
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
+  if (error) {
+    return c.json({ error: error.message }, 400);
+  }
+
+  if (!data.session || !data.user) {
+    return c.json({ error: "Supabase did not return a session." }, 500);
+  }
+
+  return c.json({
+    session: {
+      accessToken: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+      expiresAt: data.session.expires_at ?? null
+    },
+    user: normalizeSupabaseUser(data.user)
+  });
+});
+
+app.post("/v1/auth/forgot-password", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const email = typeof body?.email === "string" ? body.email.trim() : "";
+  const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : "";
+
+  if (!email || !redirectTo) {
+    return c.json({ error: "Email and redirect URL are required." }, 400);
+  }
+
+  const supabase = createAuthClient(c.env);
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo
+  });
+
+  if (error) {
+    return c.json({ error: error.message }, 400);
+  }
+
+  return c.json({ ok: true });
+});
+
+app.post("/v1/auth/resend-verification", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const email = typeof body?.email === "string" ? body.email.trim() : "";
+  const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : "";
+
+  if (!email || !redirectTo) {
+    return c.json({ error: "Email and redirect URL are required." }, 400);
+  }
+
+  const supabase = createAuthClient(c.env);
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email,
+    options: {
+      emailRedirectTo: redirectTo
+    }
+  });
+
+  if (error) {
+    return c.json({ error: error.message }, 400);
+  }
+
+  return c.json({ ok: true });
+});
+
 app.use("/v1/me", async (c, next) => {
   const authResult = await authenticateRequest(c);
   if (authResult) {
@@ -190,6 +408,38 @@ app.get("/v1/me", (c) =>
     user: c.get("user")
   })
 );
+
+app.use("/v1/auth/change-password", async (c, next) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  await next();
+});
+
+app.post("/v1/auth/change-password", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const password = typeof body?.password === "string" ? body.password : "";
+  const user = c.get("user");
+
+  if (password.length < 8) {
+    return c.json({ error: "Password must be at least 8 characters long." }, 400);
+  }
+
+  const supabase = createAdminClient(c.env);
+  const { error } = await supabase.auth.admin.updateUserById(user.id, {
+    password
+  });
+
+  if (error) {
+    return c.json({ error: error.message }, 400);
+  }
+
+  return c.json({ ok: true });
+});
+
+app.post("/v1/auth/sign-out", async (c) => c.json({ ok: true }));
 
 app.post("/v1/extension/session/start", async (c) => {
   const requestId = crypto.randomUUID();

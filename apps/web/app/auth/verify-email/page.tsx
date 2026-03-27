@@ -1,15 +1,14 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { resendVerificationEmail } from "@/lib/api/auth";
 import { getSignupRedirectUrl } from "@/lib/auth/redirects";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthField, AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState(searchParams.get("email") || "");
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [status, setStatus] = useState("Check your inbox and click the confirmation link.");
   const [loading, setLoading] = useState(false);
 
@@ -19,26 +18,10 @@ function VerifyEmailContent() {
       return;
     }
 
-    if (!supabase) {
-      setStatus("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.");
-      return;
-    }
-
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.resend({
-        type: "signup",
-        email,
-        options: {
-          emailRedirectTo: getSignupRedirectUrl()
-        }
-      });
-
-      if (error) {
-        setStatus(error.message);
-        return;
-      }
+      await resendVerificationEmail(email, getSignupRedirectUrl());
 
       setStatus("Confirmation email sent again. Check your inbox.");
     } catch (error) {

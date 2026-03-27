@@ -9,6 +9,7 @@ import { useSessionStore, useToast } from "@/components/providers/app-providers"
 import { useAuthGuard } from "@/hooks/use-auth";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useExtensionStatus } from "@/hooks/use-extension-status";
+import { signOutFromApi } from "@/lib/api/auth";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type ThemeMode = "light" | "dark";
@@ -193,12 +194,9 @@ export default function DashboardPage() {
   const latestQueryWaiting = overview?.latestQuery.status === "waiting" || overview?.latestQuery.status === "processing";
 
   async function handleSignOut() {
+    await signOutFromApi().catch(() => null);
     const supabase = getSupabaseBrowserClient();
-    if (!supabase) {
-      return;
-    }
-
-    await supabase.auth.signOut();
+    await supabase?.auth.signOut();
     router.push("/auth/sign-in");
   }
 

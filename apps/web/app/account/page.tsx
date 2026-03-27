@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { signOutFromApi } from "@/lib/api/auth";
 import { fetchApiProfile, type ApiProfile } from "@/lib/api/profile";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AppMenuLink, AppPanel, AppPanelTitle, AppShell } from "@/components/account/app-shell";
+import { useAuthGuard } from "@/hooks/use-auth";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 function initialsFromEmail(email: string | null) {
   if (!email) {
@@ -17,45 +19,32 @@ function initialsFromEmail(email: string | null) {
 
 export default function AccountPage() {
   const router = useRouter();
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+  const { accessToken, isLoading: authLoading } = useAuthGuard("/account");
   const [profile, setProfile] = useState<ApiProfile | null>(null);
   const [status, setStatus] = useState("Checking account status...");
-  const [emailConfirmed, setEmailConfirmed] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!supabase) {
-      setStatus("Missing Supabase configuration.");
+    if (authLoading) {
+      return;
+    }
+
+    if (!accessToken) {
       setLoading(false);
       return;
     }
 
-    const client = supabase;
     let active = true;
 
     async function hydrate() {
-      const {
-        data: { session }
-      } = await client.auth.getSession();
-
-      if (!active) {
-        return;
-      }
-
-      if (!session?.access_token) {
-        router.replace("/auth/sign-in?next=/account");
-        return;
-      }
-
       try {
-        const [authResult, profileResult] = await Promise.all([client.auth.getUser(), fetchApiProfile(session.access_token)]);
+        const profileResult = await fetchApiProfile(accessToken);
 
         if (!active) {
           return;
         }
 
         setProfile(profileResult);
-        setEmailConfirmed(Boolean(authResult.data.user?.email_confirmed_at));
         setStatus("Your website account is active and ready.");
       } catch (error) {
         if (!active) {
@@ -75,14 +64,12 @@ export default function AccountPage() {
     return () => {
       active = false;
     };
-  }, [router, supabase]);
+  }, [accessToken, authLoading]);
 
   async function handleSignOut() {
-    if (!supabase) {
-      return;
-    }
-
-    await supabase.auth.signOut();
+    await signOutFromApi().catch(() => null);
+    const supabase = getSupabaseBrowserClient();
+    await supabase?.auth.signOut();
     router.push("/auth/sign-in");
   }
 
@@ -123,7 +110,7 @@ export default function AccountPage() {
               </div>
             </div>
             <span className="inline-flex h-9 items-center rounded-full border border-black/10 bg-neutral-50 px-3 text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-              {emailConfirmed === null ? "Checking" : emailConfirmed ? "Verified" : "Pending verification"}
+              {loading ? "Checking" : profile?.emailConfirmed ? "Verified" : "Pending verification"}
             </span>
           </div>
 

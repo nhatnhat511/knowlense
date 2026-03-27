@@ -39,25 +39,17 @@ export function useAuthGuard(nextPath: string) {
       }
 
       try {
-        const [profile, authResult] = await Promise.all([fetchApiProfile(session.access_token), client.auth.getUser()]);
+        const profile = await fetchApiProfile(session.access_token);
 
         if (!active) {
           return;
         }
 
-        const authUser = authResult.data.user;
-        const displayName =
-          (typeof authUser?.user_metadata?.display_name === "string" && authUser.user_metadata.display_name) ||
-          authUser?.email?.split("@")[0] ||
-          profile.email?.split("@")[0] ||
-          "there";
-        const avatarUrl = typeof authUser?.user_metadata?.avatar_url === "string" ? authUser.user_metadata.avatar_url : null;
-
         setUser({
           id: profile.id,
           email: profile.email,
-          name: displayName,
-          avatarUrl
+          name: profile.name ?? profile.email?.split("@")[0] ?? "there",
+          avatarUrl: profile.avatarUrl
         });
         setAccessToken(session.access_token);
       } catch {

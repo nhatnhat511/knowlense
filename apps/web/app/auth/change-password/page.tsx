@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { changePassword } from "@/lib/api/auth";
 import { validatePassword } from "@/lib/auth/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthField, AuthShell } from "@/components/auth/auth-shell";
@@ -13,6 +14,7 @@ export default function ChangePasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState("Checking website session...");
   const [ready, setReady] = useState(false);
+  const [accessToken, setAccessToken] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -38,6 +40,7 @@ export default function ChangePasswordPage() {
         return;
       }
 
+      setAccessToken(session.access_token);
       setReady(true);
       setStatus("Set a new password for your account.");
     }
@@ -58,7 +61,7 @@ export default function ChangePasswordPage() {
       return;
     }
 
-    if (!ready || !supabase) {
+    if (!ready || !accessToken) {
       setStatus("A valid session was not found.");
       return;
     }
@@ -66,12 +69,7 @@ export default function ChangePasswordPage() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.updateUser({ password });
-
-      if (error) {
-        setStatus(error.message);
-        return;
-      }
+      await changePassword(password, accessToken);
 
       setStatus("Password updated successfully.");
     } catch (error) {
