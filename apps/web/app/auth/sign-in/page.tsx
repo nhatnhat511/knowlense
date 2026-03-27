@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signInWithPassword, startOAuth } from "@/lib/api/auth";
+import { fetchApiProfile } from "@/lib/api/profile";
 import { mapSignInError } from "@/lib/auth/errors";
 import { getAuthCallbackUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -46,7 +47,17 @@ function SignInContent() {
         return;
       }
 
-      router.replace(nextPath);
+      try {
+        await fetchApiProfile(session.access_token);
+
+        if (!active) {
+          return;
+        }
+
+        router.replace(nextPath);
+      } catch {
+        await client.auth.signOut();
+      }
     }
 
     void hydrateSession();

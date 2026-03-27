@@ -53,6 +53,7 @@ export function useAuthGuard(nextPath: string) {
         });
         setAccessToken(session.access_token);
       } catch {
+        await client.auth.signOut();
         setUser(null);
         setAccessToken("");
         router.replace(`/auth/sign-in?next=${encodeURIComponent(nextPath)}`);

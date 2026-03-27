@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { exchangeOAuthCode } from "@/lib/api/auth";
+import { fetchApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
 
@@ -39,6 +40,13 @@ function AuthCallbackContent() {
       }
 
       if (session?.access_token) {
+        try {
+          await fetchApiProfile(session.access_token);
+        } catch {
+          await client.auth.signOut();
+          return false;
+        }
+
         setStatus("Authentication completed. Redirecting...");
         redirectTimer = setTimeout(() => router.replace(nextPath), 900);
         return true;
