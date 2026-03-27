@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useId, useRef, useState } from "react";
 
 type NavItem = {
   href: string;
@@ -12,28 +16,122 @@ type SiteHeaderProps = {
 };
 
 export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) {
+  const pathname = usePathname();
+  const menuId = useId();
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        return;
+      }
+
+      if (event.key === "Tab") {
+        window.setTimeout(() => {
+          if (!menuRef.current?.contains(document.activeElement)) {
+            setMenuOpen(false);
+          }
+        }, 0);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
+
+  function handleMenuToggle() {
+    setMenuOpen((current) => !current);
+  }
+
+  function handleMenuKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      handleMenuToggle();
+    }
+  }
+
   return (
     <header className="site-header">
-      <div className="shell topbar">
-        <Link href="/" className="brand-lockup">
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
+
+      <div className="shell topbar" ref={menuRef}>
+        <Link aria-label="Knowlense home" href="/" className="brand-lockup">
           <span className="brand-mark">K</span>
           <span className="brand">
             <span className="brand-name">Knowlense</span>
             <span className="brand-tag">{tag}</span>
           </span>
         </Link>
-        <nav className="nav">
+
+        <nav aria-label="Primary navigation" className="nav nav-desktop">
           {navItems.map((item) => (
-            <Link className="nav-link" href={item.href} key={item.href}>
+            <Link aria-current={pathname === item.href ? "page" : undefined} className="nav-link" href={item.href} key={item.href}>
               {item.label}
             </Link>
           ))}
           {primaryCta ? (
-            <Link className="primary-button" href={primaryCta.href}>
+            <Link aria-current={pathname === primaryCta.href ? "page" : undefined} className="primary-button" href={primaryCta.href}>
               {primaryCta.label}
             </Link>
           ) : null}
         </nav>
+
+        <button
+          aria-controls={menuId}
+          aria-expanded={menuOpen}
+          aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
+          className="menu-button"
+          onClick={handleMenuToggle}
+          onKeyDown={handleMenuKeyDown}
+          type="button"
+        >
+          <span className="menu-button-bar" />
+          <span className="menu-button-bar" />
+          <span className="menu-button-bar" />
+        </button>
+
+        <div aria-label="Mobile navigation" className={`mobile-menu${menuOpen ? " open" : ""}`} id={menuId}>
+          <nav className="mobile-menu-list">
+            {navItems.map((item) => (
+              <Link
+                aria-current={pathname === item.href ? "page" : undefined}
+                className="mobile-menu-link"
+                href={item.href}
+                key={item.href}
+              >
+                {item.label}
+              </Link>
+            ))}
+            {primaryCta ? (
+              <Link aria-current={pathname === primaryCta.href ? "page" : undefined} className="primary-button" href={primaryCta.href}>
+                {primaryCta.label}
+              </Link>
+            ) : null}
+          </nav>
+        </div>
       </div>
     </header>
   );
