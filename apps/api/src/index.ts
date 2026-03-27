@@ -989,7 +989,10 @@ app.post("/v1/product-keywords/analyze", async (c) => {
         analysis.product.url,
         analysis.product.title,
         JSON.stringify(body),
-        JSON.stringify(analysis.summary),
+        JSON.stringify({
+          intent: analysis.intent,
+          summary: analysis.summary
+        }),
         JSON.stringify(analysis.keywords)
       )
       .run();

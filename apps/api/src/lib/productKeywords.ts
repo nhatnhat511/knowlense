@@ -131,12 +131,18 @@ const FORMAT_HINTS = [
   "printable",
   "project",
   "research",
+  "sequence and fold activity",
+  "cut and paste activity",
+  "fold activity",
+  "sequence activity",
   "spinner",
+  "spinner craft",
   "task cards",
   "template",
   "unit",
   "worksheet",
   "worksheets",
+  "writing craft",
   "writing activity"
 ];
 const CONTEXT_HINTS = [
@@ -155,6 +161,29 @@ const CONTEXT_HINTS = [
   "winter",
   "writing"
 ];
+const TOPIC_STOP_WORDS = new Set([
+  "activity",
+  "activities",
+  "center",
+  "centers",
+  "craft",
+  "craftivity",
+  "cut",
+  "fold",
+  "grade",
+  "mostly",
+  "paste",
+  "printable",
+  "sequence",
+  "spinner",
+  "template",
+  "used",
+  "with",
+  "worksheet",
+  "worksheets",
+  "writing"
+]);
+const GENERIC_ENTITY_TAILS = new Set(["animal", "animals", "plant", "plants", "resource", "resources"]);
 
 function normalizeText(value: string) {
   return value
@@ -218,6 +247,10 @@ function buildNgrams(tokens: string[], minSize: number, maxSize: number) {
   return phrases;
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function extractMatchingPhrases(values: string[], dictionary: string[]) {
   const matches = new Set<string>();
 
@@ -233,19 +266,104 @@ function extractMatchingPhrases(values: string[], dictionary: string[]) {
   return [...matches];
 }
 
-function scoreTopicPhrase(phrase: string, titleText: string, tagText: string, descriptionText: string) {
+function stripGradeNoise(value: string) {
+  return normalizeText(value)
+    .replace(/\bmostly used with\b.*$/g, "")
+    .replace(/\bgrades?\b/g, "")
+    .trim();
+}
+
+function cleanEntity(value: string) {
+  const tokens = tokenize(value).filter((token) => !TOPIC_STOP_WORDS.has(token));
+  if (tokens.length > 1 && GENERIC_ENTITY_TAILS.has(tokens[tokens.length - 1])) {
+    tokens.pop();
+  }
+
+  return tokens.join(" ").trim();
+}
+
+function stripFormatPhrases(value: string) {
+  let stripped = ` ${normalizeText(value)} `;
+
+  [...FORMAT_HINTS].sort((left, right) => right.length - left.length).forEach((hint) => {
+    stripped = stripped.replace(new RegExp(`\\b${escapeRegExp(hint)}\\b`, "g"), " ");
+  });
+
+  return stripped.replace(/\s+/g, " ").trim();
+}
+
+function extractCanonicalTopics(snapshot: ProductKeywordSnapshot) {
+  const normalizedTitle = stripGradeNoise(snapshot.title);
+  const lowerTitle = normalizeText(normalizedTitle);
+  const lowerDescription = normalizeText(snapshot.descriptionExcerpt);
+  const topics = new Set<string>();
+
+  const formatIndex = FORMAT_HINTS.reduce((lowest, hint) => {
+    const index = lowerTitle.indexOf(hint);
+    if (index === -1) {
+      return lowest;
+    }
+
+    return lowest === -1 ? index : Math.min(lowest, index);
+  }, -1);
+
+  const topicChunk = formatIndex > 0 ? lowerTitle.slice(0, formatIndex).trim() : lowerTitle;
+  const descriptionChunk = stripFormatPhrases(lowerDescription);
+
+  const cycleMatch = topicChunk.match(/\blife cycle of (?:a |an |the )?([a-z0-9\s-]+)/);
+  if (cycleMatch?.[1]) {
+    const entity = cleanEntity(cycleMatch[1]);
+    if (entity) {
+      topics.add(`${entity} life cycle`);
+    }
+  }
+
+  const directCycleMatches = [...topicChunk.matchAll(/\b([a-z0-9\s-]{2,40}?) life cycle\b/g)];
+  directCycleMatches.forEach((match) => {
+    const entity = cleanEntity(match[1] ?? "");
+    if (entity) {
+      topics.add(`${entity} life cycle`);
+    }
+  });
+
+  if (topics.size === 0) {
+    const strippedTopicChunk = stripFormatPhrases(topicChunk);
+    const titleTokens = tokenize(strippedTopicChunk).filter((token) => !TOPIC_STOP_WORDS.has(token));
+    const descriptionTokens = tokenize(descriptionChunk).filter((token) => !TOPIC_STOP_WORDS.has(token));
+    const candidatePhrases = dedupe([
+      ...buildNgrams(titleTokens, 2, 4),
+      ...buildNgrams(descriptionTokens, 2, 4)
+    ]);
+
+    candidatePhrases
+      .map((phrase) => ({
+        phrase,
+        score:
+          (strippedTopicChunk.includes(phrase) ? 40 : 0) +
+          (descriptionChunk.includes(phrase) ? 18 : 0) +
+          (phrase.split(" ").length === 2 ? 8 : phrase.split(" ").length === 3 ? 12 : 9)
+      }))
+      .filter((item) => item.score >= 40)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 10)
+      .forEach((item) => topics.add(item.phrase));
+  }
+
+  return [...topics]
+    .map((topic) => normalizeText(topic))
+    .filter((topic) => topic.length >= 6 && topic.split(" ").length <= 4)
+    .slice(0, 6);
+}
+
+function scoreTopicPhrase(phrase: string, titleText: string, descriptionText: string) {
   let score = 0;
 
   if (titleText.includes(phrase)) {
     score += 45;
   }
 
-  if (tagText.includes(phrase)) {
-    score += 25;
-  }
-
   if (descriptionText.includes(phrase)) {
-    score += 12;
+    score += 20;
   }
 
   const tokenCount = phrase.split(" ").length;
@@ -262,19 +380,17 @@ function scoreTopicPhrase(phrase: string, titleText: string, tagText: string, de
 
 function extractProductIntent(snapshot: ProductKeywordSnapshot): ProductIntent {
   const titleText = normalizeText(snapshot.title);
-  const tagText = snapshot.tags.map(normalizeText).join(" ");
   const descriptionText = normalizeText(snapshot.descriptionExcerpt);
-  const titleTokens = tokenize(snapshot.title);
-  const titlePhrases = buildNgrams(titleTokens, 2, 4);
+  const titlePhrases = extractCanonicalTopics(snapshot);
 
   const topicCandidates = titlePhrases
     .map((phrase) => ({
       phrase,
-      score: scoreTopicPhrase(phrase, titleText, tagText, descriptionText)
+      score: scoreTopicPhrase(phrase, titleText, descriptionText)
     }))
-    .filter((item) => item.score >= 45)
+    .filter((item) => item.score >= 35)
     .sort((left, right) => right.score - left.score)
-    .slice(0, 8)
+    .slice(0, 5)
     .map((item) => item.phrase);
 
   const formats = dedupe([
@@ -283,32 +399,16 @@ function extractProductIntent(snapshot: ProductKeywordSnapshot): ProductIntent {
 
   const contexts = dedupe([
     ...extractMatchingPhrases([snapshot.title, ...(snapshot.tags ?? []), ...(snapshot.subjects ?? []), snapshot.descriptionExcerpt], CONTEXT_HINTS)
-  ]).slice(0, 6);
+  ]).slice(0, 4);
 
-  const grades = dedupe(snapshot.grades.map(normalizeText).filter(Boolean)).slice(0, 4);
+  const grades = dedupe(snapshot.grades.map(stripGradeNoise).filter(Boolean)).slice(0, 3);
   const subjects = dedupe((snapshot.subjects ?? []).map(normalizeText).filter(Boolean)).slice(0, 4);
 
-  const seedSet = new Set<string>();
-  topicCandidates.forEach((topic) => {
-    seedSet.add(topic);
-
-    formats.forEach((format) => seedSet.add(`${topic} ${format}`));
-    grades.forEach((grade) => seedSet.add(`${topic} ${grade}`));
-    contexts.forEach((context) => seedSet.add(`${topic} ${context}`));
-  });
-
-  topicCandidates.forEach((topic) => {
-    formats.slice(0, 3).forEach((format) => {
-      grades.slice(0, 2).forEach((grade) => seedSet.add(`${topic} ${format} ${grade}`));
-      contexts.slice(0, 2).forEach((context) => seedSet.add(`${topic} ${format} ${context}`));
-    });
-  });
-
-  const mainSeeds = [...seedSet]
+  const mainSeeds = topicCandidates
     .map((item) => normalizeText(item))
-    .filter((item) => item.length >= 5)
-    .sort((left, right) => right.split(" ").length - left.split(" ").length || right.length - left.length)
-    .slice(0, 20);
+    .filter((item) => item.length >= 5 && item.split(" ").length <= 4)
+    .sort((left, right) => left.split(" ").length - right.split(" ").length || left.length - right.length)
+    .slice(0, 8);
 
   return {
     topics: topicCandidates,
@@ -663,7 +763,7 @@ export async function analyzeProductKeywords(snapshot: ProductKeywordSnapshot, o
       analyzedAt: new Date().toISOString(),
       cooldownMinutes,
       cacheHitCount,
-      note: "Product-derived keywords are extracted first, then expanded with TPT autocomplete suggestions. Exact rank is checked in the first 3 pages only; deeper results are shown as >73."
+      note: "Core topics are extracted from the title and first description excerpt, then expanded with TPT autocomplete suggestions. Exact rank is checked in the first 3 pages only; deeper results are shown as >73."
     },
     keywords: ranked
   };

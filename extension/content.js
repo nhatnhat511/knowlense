@@ -20,8 +20,16 @@ function normalizeText(value) {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function splitList(value) {
+function cleanGradeText(value) {
   return value
+    .replace(/\bMostly used with\b.*$/i, "")
+    .replace(/\bGrades?\b/i, "")
+    .trim();
+}
+
+function splitList(value, kind = "default") {
+  const source = kind === "grades" ? cleanGradeText(value) : value;
+  return source
     .split(/,|\/|\|/)
     .map((item) => item.trim())
     .filter(Boolean);
@@ -207,7 +215,7 @@ function extractProductSnapshot() {
       productUrl: window.location.href,
       title,
       descriptionExcerpt,
-      grades: splitList(gradesValue),
+      grades: splitList(gradesValue, "grades"),
       tags: splitList(tagsValue),
       subjects: splitList(subjectsValue),
       resourceType: resourceTypeValue || null,
@@ -216,44 +224,132 @@ function extractProductSnapshot() {
   };
 }
 
-function buildSeedKeywords(snapshot) {
-  const normalizedTitle = normalizeText(snapshot.title)
+const FORMAT_HINTS = [
+  "sequence and fold activity",
+  "cut and paste activity",
+  "spinner craft",
+  "writing craft",
+  "writing activity",
+  "fold activity",
+  "sequence activity",
+  "craftivity",
+  "activity",
+  "activities",
+  "centers",
+  "craft",
+  "spinner",
+  "template",
+  "printable",
+  "worksheet",
+  "worksheets"
+];
+const GENERIC_TAILS = new Set(["animal", "animals", "plant", "plants", "resource", "resources"]);
+const TITLE_NOISE = new Set(["mostly", "used", "with", "grade", "grades"]);
+
+function tokenize(value) {
+  return normalizeText(value)
     .replace(/[^a-z0-9\s-]/g, " ")
     .split(" ")
-    .filter((token) => token.length > 2);
-  const seeds = new Set();
-  const titleSeeds = [];
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1 && !TITLE_NOISE.has(token));
+}
 
-  for (let index = 0; index < normalizedTitle.length; index += 1) {
-    for (let size = 1; size <= 5; size += 1) {
-      const phrase = normalizedTitle.slice(index, index + size).join(" ").trim();
-      if (!phrase || phrase.length < 4) {
-        continue;
-      }
+function stripFormatHints(value) {
+  let text = ` ${normalizeText(value)} `;
+  [...FORMAT_HINTS].sort((left, right) => right.length - left.length).forEach((hint) => {
+    text = text.replace(new RegExp(`\\b${hint.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), " ");
+  });
 
-      if (size === 1 || size === 2 || size === 3 || size === 4 || size === 5) {
-        titleSeeds.push(phrase);
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function cleanEntity(value) {
+  const tokens = tokenize(value);
+  if (tokens.length > 1 && GENERIC_TAILS.has(tokens[tokens.length - 1])) {
+    tokens.pop();
+  }
+
+  return tokens.join(" ").trim();
+}
+
+function buildCoreTopic(title) {
+  const normalized = normalizeText(cleanGradeText(title));
+  const formatIndex = FORMAT_HINTS.reduce((lowest, hint) => {
+    const index = normalized.indexOf(hint);
+    if (index === -1) {
+      return lowest;
+    }
+
+    return lowest === -1 ? index : Math.min(lowest, index);
+  }, -1);
+
+  const topicChunk = formatIndex > 0 ? normalized.slice(0, formatIndex).trim() : normalized;
+  const cycleMatch = topicChunk.match(/\blife cycle of (?:a |an |the )?([a-z0-9\s-]+)/);
+  if (cycleMatch?.[1]) {
+    const entity = cleanEntity(cycleMatch[1]);
+    if (entity) {
+      return `${entity} life cycle`;
+    }
+  }
+
+  const directMatch = topicChunk.match(/\b([a-z0-9\s-]{2,40}?) life cycle\b/);
+  if (directMatch?.[1]) {
+    const entity = cleanEntity(directMatch[1]);
+    if (entity) {
+      return `${entity} life cycle`;
+    }
+  }
+
+  return stripFormatHints(topicChunk);
+}
+
+function buildNgrams(tokens, minSize, maxSize) {
+  const phrases = [];
+
+  for (let start = 0; start < tokens.length; start += 1) {
+    for (let size = minSize; size <= maxSize; size += 1) {
+      const slice = tokens.slice(start, start + size);
+      if (slice.length === size) {
+        phrases.push(slice.join(" "));
       }
     }
   }
 
-  titleSeeds.slice(0, 14).forEach((value) => seeds.add(value));
-  snapshot.grades.slice(0, 4).forEach((grade) => seeds.add(normalizeText(grade)));
-  snapshot.tags.slice(0, 6).forEach((tag) => seeds.add(normalizeText(tag)));
+  return phrases;
+}
 
-  titleSeeds
-    .filter((seed) => seed.split(" ").length >= 2)
-    .slice(0, 10)
-    .forEach((titleSeed) => {
-    snapshot.grades.slice(0, 3).forEach((grade) => seeds.add(`${titleSeed} ${normalizeText(grade)}`));
-    snapshot.tags.slice(0, 4).forEach((tag) => seeds.add(`${titleSeed} ${normalizeText(tag)}`));
-    });
+function buildCoreTopics(snapshot) {
+  const topics = new Set();
+  const mainTopic = buildCoreTopic(snapshot.title);
+  if (mainTopic) {
+    topics.add(mainTopic);
+  }
 
-  return [...seeds]
+  const descriptionBase = stripFormatHints(snapshot.descriptionExcerpt || "");
+  const descriptionTokens = tokenize(descriptionBase)
+    .filter((token) => !GENERIC_TAILS.has(token))
+    .slice(0, 28);
+
+  buildNgrams(descriptionTokens, 2, 4)
+    .filter((phrase) => phrase.length >= 8 && phrase.split(" ").length <= 4)
+    .filter((phrase) => {
+      if (mainTopic && phrase.includes(mainTopic)) {
+        return false;
+      }
+
+      const overlap = mainTopic
+        ? mainTopic.split(" ").filter((token) => phrase.split(" ").includes(token)).length
+        : phrase.split(" ").length;
+      return overlap >= 2;
+    })
+    .slice(0, 8)
+    .forEach((phrase) => topics.add(phrase));
+
+  return [...topics]
     .map((item) => normalizeText(item))
-    .filter((item) => item.length >= 4)
-    .sort((left, right) => right.split(" ").length - left.split(" ").length || right.length - left.length)
-    .slice(0, 32);
+    .filter((item) => item.length >= 6 && item.split(" ").length <= 4)
+    .sort((left, right) => left.split(" ").length - right.split(" ").length || left.length - right.length)
+    .slice(0, 8);
 }
 
 function findSearchInput() {
@@ -299,7 +395,7 @@ function wait(ms) {
 
 async function collectTptSuggestions(snapshot) {
   const input = findSearchInput();
-  const seeds = buildSeedKeywords(snapshot);
+  const seeds = buildCoreTopics(snapshot);
 
   if (!input || seeds.length === 0) {
     return [];
@@ -648,10 +744,10 @@ function renderIntent(analysis) {
       : '<span class="knowlense-chip">None</span>';
 
   PANEL_STATE.intent.innerHTML = `
-    <div style="font-size:12px;color:#64748b;margin-bottom:8px">Product-derived keywords</div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:8px">Core topic keywords</div>
     <div class="knowlense-keyword-meta">${chipMarkup(intent.mainSeeds.slice(0, 8))}</div>
-    <div style="font-size:12px;color:#64748b;margin:12px 0 8px">Detected topic and format</div>
-    <div class="knowlense-keyword-meta">${chipMarkup([...intent.topics.slice(0, 4), ...intent.formats.slice(0, 4)])}</div>
+    <div style="font-size:12px;color:#64748b;margin:12px 0 8px">Detected topic focus</div>
+    <div class="knowlense-keyword-meta">${chipMarkup(intent.topics.slice(0, 6))}</div>
   `;
 }
 
@@ -725,7 +821,7 @@ async function analyzeCurrentProduct() {
   }
 
   const suggestedKeywords = await collectTptSuggestions(extracted.snapshot).catch(() => []);
-  extracted.snapshot.seedKeywords = buildSeedKeywords(extracted.snapshot);
+  extracted.snapshot.seedKeywords = buildCoreTopics(extracted.snapshot);
   extracted.snapshot.suggestedKeywords = suggestedKeywords;
 
   const response = await fetch(`${sessionState.apiUrl.replace(/\/$/, "")}/v1/product-keywords/analyze`, {
@@ -761,7 +857,7 @@ async function handleAnalyzeClick() {
 
   PANEL_STATE.action.disabled = true;
   PANEL_STATE.action.textContent = "Analyzing...";
-  setPanelStatus("Collecting TPT suggestions and checking exact rank through page 3...", "");
+  setPanelStatus("Detecting core topics, collecting TPT suggestions, and checking exact rank through page 3...", "");
 
   try {
     const result = await analyzeCurrentProduct();
