@@ -9,7 +9,12 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 
 export const metadata: Metadata = {
   title: "Knowlense",
-  description: "Knowlense helps TPT sellers audit listings, find keyword gaps, and turn store data into action."
+  description: "Knowlense helps TPT sellers audit listings, find keyword gaps, and turn store data into action.",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg"
+  }
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
