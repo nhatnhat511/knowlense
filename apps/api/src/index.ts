@@ -136,6 +136,10 @@ function getDefaultDashboardMetrics(billingConfigured: boolean) {
       },
       billing: {
         status: "free" as const,
+        planName: "Free",
+        trialEligible: true,
+        trialActive: false,
+        trialDaysRemaining: 0,
         readiness: billingConfigured ? "Upgrade" : "Setup",
         ctaLabel: billingConfigured ? "Upgrade" : "Configure",
         delta: billingConfigured ? "--" : "Action needed"
@@ -153,6 +157,93 @@ function getDefaultDashboardMetrics(billingConfigured: boolean) {
         delta: "Reconnect"
       }
     }
+  };
+}
+
+async function ensureBillingTables(db: D1Database) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS billing_profiles (
+      user_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'free',
+      plan_name TEXT NOT NULL DEFAULT 'Free',
+      trial_started_at TEXT,
+      trial_ends_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+  `);
+}
+
+async function readBillingProfile(db: D1Database, userId: string) {
+  await ensureBillingTables(db);
+
+  const row = await db.prepare(
+    `SELECT user_id, status, plan_name, trial_started_at, trial_ends_at, updated_at
+     FROM billing_profiles
+     WHERE user_id = ?1
+     LIMIT 1`
+  ).bind(userId).first<{
+    user_id: string;
+    status: string;
+    plan_name: string;
+    trial_started_at: string | null;
+    trial_ends_at: string | null;
+    updated_at: string;
+  }>();
+
+  if (!row) {
+    return {
+      status: "free" as const,
+      planName: "Free",
+      trialEligible: true,
+      trialActive: false,
+      trialDaysRemaining: 0
+    };
+  }
+
+  if (row.status === "trial" && row.trial_ends_at) {
+    const remainingMs = new Date(row.trial_ends_at).getTime() - Date.now();
+
+    if (remainingMs <= 0) {
+      await db.prepare(
+        `UPDATE billing_profiles
+         SET status = 'free', plan_name = 'Free', trial_started_at = NULL, trial_ends_at = NULL, updated_at = ?2
+         WHERE user_id = ?1`
+      ).bind(userId, new Date().toISOString()).run();
+
+      return {
+        status: "expired" as const,
+        planName: "Free",
+        trialEligible: false,
+        trialActive: false,
+        trialDaysRemaining: 0
+      };
+    }
+
+    return {
+      status: "trial" as const,
+      planName: "Premium Trial",
+      trialEligible: false,
+      trialActive: true,
+      trialDaysRemaining: Math.max(Math.ceil(remainingMs / (1000 * 60 * 60 * 24)), 1)
+    };
+  }
+
+  if (row.status === "premium" || row.status === "active") {
+    return {
+      status: "active" as const,
+      planName: row.plan_name || "Premium",
+      trialEligible: false,
+      trialActive: false,
+      trialDaysRemaining: 0
+    };
+  }
+
+  return {
+    status: row.status === "expired" ? ("expired" as const) : ("free" as const),
+    planName: row.plan_name || "Free",
+    trialEligible: row.trial_started_at == null,
+    trialActive: false,
+    trialDaysRemaining: 0
   };
 }
 
@@ -823,7 +914,7 @@ app.get("/v1/dashboard/metrics", async (c) => {
   const billingConfigured = Boolean(c.env.PADDLE_PRICE_ID_MONTHLY && c.env.PADDLE_PRICE_ID_YEARLY);
 
   try {
-    const [keywordRunCountResult, extensionSessionCountResult] = await Promise.all([
+    const [keywordRunCountResult, extensionSessionCountResult, billingState] = await Promise.all([
       c.env.DB.prepare(`SELECT COUNT(*) as total FROM keyword_runs WHERE user_id = ?1`).bind(user.id).first<{ total: number | string }>(),
       c.env.DB.prepare(
         `SELECT COUNT(*) as total
@@ -833,7 +924,8 @@ app.get("/v1/dashboard/metrics", async (c) => {
            AND datetime(expires_at) > datetime('now')`
       )
         .bind(user.id)
-        .first<{ total: number | string }>()
+        .first<{ total: number | string }>(),
+      readBillingProfile(c.env.DB, user.id)
     ]);
 
     const runsUsed = Number(keywordRunCountResult?.total ?? 0);
@@ -847,10 +939,33 @@ app.get("/v1/dashboard/metrics", async (c) => {
           delta: "+0.43%"
         },
         billing: {
-          status: "free",
-          readiness: billingConfigured ? "Upgrade" : "Setup",
-          ctaLabel: billingConfigured ? "Upgrade" : "Configure",
-          delta: billingConfigured ? "+4.35%" : "Action needed"
+          status: billingState.status,
+          planName: billingState.planName,
+          trialEligible: billingState.trialEligible,
+          trialActive: billingState.trialActive,
+          trialDaysRemaining: billingState.trialDaysRemaining,
+          readiness:
+            billingState.status === "active"
+              ? "Premium"
+              : billingState.status === "trial"
+                ? `${billingState.trialDaysRemaining} day trial`
+                : billingConfigured
+                  ? "Upgrade"
+                  : "Setup",
+          ctaLabel:
+            billingState.status === "active"
+              ? "Manage"
+              : billingState.status === "trial"
+                ? "Upgrade"
+                : billingConfigured
+                  ? "Upgrade"
+                  : "Configure",
+          delta:
+            billingState.status === "trial"
+              ? `${billingState.trialDaysRemaining} days left`
+              : billingConfigured
+                ? "+4.35%"
+                : "Action needed"
         },
         keywordRuns: {
           used: runsUsed,
@@ -909,7 +1024,7 @@ app.get("/v1/dashboard/overview", async (c) => {
   const user = c.get("user");
 
   try {
-    const [latestRunResult, recentRunsResult, extensionSessionCountResult, keywordRunCountResult] = await Promise.all([
+    const [latestRunResult, recentRunsResult, extensionSessionCountResult, keywordRunCountResult, billingState] = await Promise.all([
       c.env.DB.prepare(
         `SELECT id, query_text, summary_json, created_at
          FROM keyword_runs
@@ -943,7 +1058,8 @@ app.get("/v1/dashboard/overview", async (c) => {
       )
         .bind(user.id)
         .first<{ total: number | string }>(),
-      c.env.DB.prepare(`SELECT COUNT(*) as total FROM keyword_runs WHERE user_id = ?1`).bind(user.id).first<{ total: number | string }>()
+      c.env.DB.prepare(`SELECT COUNT(*) as total FROM keyword_runs WHERE user_id = ?1`).bind(user.id).first<{ total: number | string }>(),
+      readBillingProfile(c.env.DB, user.id)
     ]);
 
     const recentRuns = (recentRunsResult.results ?? []).map((row) => {
@@ -977,7 +1093,16 @@ app.get("/v1/dashboard/overview", async (c) => {
           updatedAt: latestRunResult?.created_at ?? null
         },
         nextAction: {
-          value: !extensionActive ? "Connect" : runsUsed >= runsLimit ? "Upgrade" : recentRuns.length > 0 ? "Review runs" : "Analyze first query"
+          value:
+            !extensionActive
+              ? "Connect"
+              : billingState.status === "free" || billingState.status === "expired"
+                ? "Start trial"
+                : runsUsed >= runsLimit
+                  ? "Upgrade"
+                  : recentRuns.length > 0
+                    ? "Review runs"
+                    : "Analyze first query"
         },
         recentRuns,
         quota: {
@@ -992,6 +1117,60 @@ app.get("/v1/dashboard/overview", async (c) => {
       ...getDefaultDashboardOverview(user),
       warning: "Dashboard overview is temporarily unavailable."
     });
+  }
+});
+
+app.post("/v1/dashboard/trial/start", async (c) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  const user = c.get("user");
+
+  try {
+    const billingState = await readBillingProfile(c.env.DB, user.id);
+
+    if (billingState.status === "active") {
+      return c.json({ error: "Premium is already active for this account." }, 400);
+    }
+
+    if (billingState.status === "trial") {
+      return c.json({
+        trial: {
+          status: "trial",
+          planName: billingState.planName,
+          trialDaysRemaining: billingState.trialDaysRemaining
+        }
+      });
+    }
+
+    const startedAt = new Date().toISOString();
+    const endsAt = isoFromNow(60 * 24 * 7);
+
+    await ensureBillingTables(c.env.DB);
+    await c.env.DB.prepare(
+      `INSERT INTO billing_profiles (user_id, status, plan_name, trial_started_at, trial_ends_at, updated_at)
+       VALUES (?1, 'trial', 'Premium Trial', ?2, ?3, ?2)
+       ON CONFLICT(user_id) DO UPDATE SET
+         status = 'trial',
+         plan_name = 'Premium Trial',
+         trial_started_at = excluded.trial_started_at,
+         trial_ends_at = excluded.trial_ends_at,
+         updated_at = excluded.updated_at`
+    )
+      .bind(user.id, startedAt, endsAt)
+      .run();
+
+    return c.json({
+      trial: {
+        status: "trial",
+        planName: "Premium Trial",
+        trialDaysRemaining: 7
+      }
+    });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unable to start trial." }, 500);
   }
 });
 

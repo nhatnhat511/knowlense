@@ -1,129 +1,25 @@
 "use client";
 
-import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
-import { authorizeExtensionConnection } from "@/lib/api/extension-connect";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-function ConnectPageContent() {
+function ConnectRedirectContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
-  const requestId = searchParams.get("request");
-  const [status, setStatus] = useState("Checking your website session...");
-  const [ready, setReady] = useState(false);
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!requestId) {
-      setStatus("Missing extension connection request.");
-      return;
-    }
+    const requestId = searchParams.get("request");
+    const nextUrl = requestId ? `/dashboard?section=connect&request=${encodeURIComponent(requestId)}` : "/dashboard?section=connect";
+    router.replace(nextUrl);
+  }, [router, searchParams]);
 
-    if (!supabase) {
-      setStatus("Supabase configuration is missing on the website.");
-      return;
-    }
-
-    const client = supabase;
-    let active = true;
-
-    async function loadSession() {
-      const {
-        data: { session }
-      } = await client.auth.getSession();
-
-      if (!active) {
-        return;
-      }
-
-      if (!session?.access_token) {
-        router.replace(`/auth/sign-in?next=${encodeURIComponent(`/connect?request=${requestId}`)}`);
-        return;
-      }
-
-      setReady(true);
-      setStatus("Ready to connect this browser extension.");
-    }
-
-    void loadSession();
-
-    return () => {
-      active = false;
-    };
-  }, [requestId, router, supabase]);
-
-  async function handleConnect() {
-    if (!supabase || !requestId) {
-      return;
-    }
-
-    setBusy(true);
-    setStatus("Authorizing this extension request...");
-
-    try {
-      const {
-        data: { session }
-      } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        router.replace(`/auth/sign-in?next=${encodeURIComponent(`/connect?request=${requestId}`)}`);
-        return;
-      }
-
-      await authorizeExtensionConnection(session.access_token, requestId);
-      setStatus("Extension connected. Return to the popup to continue.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to connect the extension.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <main className="app-shell">
-      <SiteHeader tag="Connect extension" navItems={[{ href: "/dashboard", label: "Dashboard" }, { href: "/account", label: "Account" }]} />
-
-      <section className="shell connect-surface">
-        <div className="connect-card">
-          <span className="eyebrow">Secure extension connection</span>
-          <h1 className="page-title">Approve this browser session from the website.</h1>
-          <p className="page-copy">
-            The extension requested a secure session from Knowlense. Approve it here after signing in, then return to
-            the popup to finish the connection.
-          </p>
-          <div className={`status ${ready ? "success" : ""}`}>{status}</div>
-          <div className="stack-row">
-            <button className="primary-button" disabled={!ready || busy} onClick={handleConnect} type="button">
-              {busy ? "Connecting..." : "Connect extension"}
-            </button>
-            <Link className="secondary-button" href="/dashboard">
-              Open dashboard
-            </Link>
-          </div>
-          <div className="panel-list">
-            <div className="panel-list-item">
-              <strong>Why this page exists</strong>
-              <p>The extension does not ask for your website credentials directly. Approval happens here after sign-in.</p>
-            </div>
-            <div className="panel-list-item">
-              <strong>What happens next</strong>
-              <p>Once approved, the popup receives a separate Worker-managed session and can use product features safely.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-      <SiteFooter />
-    </main>
-  );
+  return <main className="min-h-screen bg-[#f7f7f5]" />;
 }
 
 export default function ConnectPage() {
   return (
-    <Suspense fallback={<main className="app-shell"><section className="shell connect-surface"><div className="empty-state">Loading extension connection...</div></section></main>}>
-      <ConnectPageContent />
+    <Suspense fallback={<main className="min-h-screen bg-[#f7f7f5]" />}>
+      <ConnectRedirectContent />
     </Suspense>
   );
 }
