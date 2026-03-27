@@ -477,6 +477,181 @@ app.get("/v1/keyword-finder/runs", async (c) => {
   }
 });
 
+app.use("/v1/dashboard/*", async (c, next) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  await next();
+});
+
+app.get("/v1/dashboard/metrics", async (c) => {
+  const user = c.get("user");
+
+  try {
+    const [keywordRunCountResult, extensionSessionCountResult] = await Promise.all([
+      c.env.DB.prepare(`SELECT COUNT(*) as total FROM keyword_runs WHERE user_id = ?1`).bind(user.id).first<{ total: number | string }>(),
+      c.env.DB.prepare(
+        `SELECT COUNT(*) as total
+         FROM extension_sessions
+         WHERE user_id = ?1
+           AND revoked_at IS NULL
+           AND datetime(expires_at) > datetime('now')`
+      )
+        .bind(user.id)
+        .first<{ total: number | string }>()
+    ]);
+
+    const runsUsed = Number(keywordRunCountResult?.total ?? 0);
+    const runsLimit = 10;
+    const extensionActive = Number(extensionSessionCountResult?.total ?? 0) > 0;
+    const billingConfigured = Boolean(c.env.PADDLE_PRICE_ID_MONTHLY && c.env.PADDLE_PRICE_ID_YEARLY);
+
+    return c.json({
+      metrics: {
+        websiteSessions: {
+          value: 1,
+          delta: "+0.43%"
+        },
+        billing: {
+          status: "free",
+          readiness: billingConfigured ? "Upgrade" : "Setup",
+          ctaLabel: billingConfigured ? "Upgrade" : "Configure",
+          delta: billingConfigured ? "+4.35%" : "Action needed"
+        },
+        keywordRuns: {
+          used: runsUsed,
+          limit: runsLimit,
+          remaining: Math.max(runsLimit - runsUsed, 0),
+          disabled: runsUsed >= runsLimit,
+          delta: "+2.59%"
+        },
+        extensionStatus: {
+          status: extensionActive ? "active" : "alert",
+          label: extensionActive ? "Active" : "Alert",
+          delta: extensionActive ? "+0.95%" : "Reconnect"
+        }
+      }
+    });
+  } catch {
+    return c.json({ error: "Unable to load dashboard metrics." }, 500);
+  }
+});
+
+app.get("/v1/dashboard/extension-status", async (c) => {
+  const user = c.get("user");
+
+  try {
+    const extensionSessionCountResult = await c.env.DB.prepare(
+      `SELECT COUNT(*) as total
+       FROM extension_sessions
+       WHERE user_id = ?1
+         AND revoked_at IS NULL
+         AND datetime(expires_at) > datetime('now')`
+    )
+      .bind(user.id)
+      .first<{ total: number | string }>();
+
+    const active = Number(extensionSessionCountResult?.total ?? 0) > 0;
+
+    return c.json({
+      status: active ? "active" : "alert",
+      label: active ? "Active" : "Alert",
+      connected: active
+    });
+  } catch {
+    return c.json({ error: "Unable to load extension status." }, 500);
+  }
+});
+
+app.get("/v1/dashboard/overview", async (c) => {
+  const user = c.get("user");
+
+  try {
+    const [latestRunResult, recentRunsResult, extensionSessionCountResult, keywordRunCountResult] = await Promise.all([
+      c.env.DB.prepare(
+        `SELECT id, query_text, summary_json, created_at
+         FROM keyword_runs
+         WHERE user_id = ?1
+         ORDER BY datetime(created_at) DESC
+         LIMIT 1`
+      )
+        .bind(user.id)
+        .first<{ id: string; query_text: string; summary_json: string; created_at: string }>(),
+      c.env.DB.prepare(
+        `SELECT id, query_text, summary_json, opportunities_json, created_at
+         FROM keyword_runs
+         WHERE user_id = ?1
+         ORDER BY datetime(created_at) DESC
+         LIMIT 4`
+      )
+        .bind(user.id)
+        .all<{
+          id: string;
+          query_text: string;
+          summary_json: string;
+          opportunities_json: string;
+          created_at: string;
+        }>(),
+      c.env.DB.prepare(
+        `SELECT COUNT(*) as total
+         FROM extension_sessions
+         WHERE user_id = ?1
+           AND revoked_at IS NULL
+           AND datetime(expires_at) > datetime('now')`
+      )
+        .bind(user.id)
+        .first<{ total: number | string }>(),
+      c.env.DB.prepare(`SELECT COUNT(*) as total FROM keyword_runs WHERE user_id = ?1`).bind(user.id).first<{ total: number | string }>()
+    ]);
+
+    const recentRuns = (recentRunsResult.results ?? []).map((row) => {
+      const summary = JSON.parse(row.summary_json ?? "{}") as StoredKeywordRun["summary"];
+      const opportunities = JSON.parse(row.opportunities_json ?? "[]") as StoredKeywordRun["opportunities"];
+
+      return {
+        id: row.id,
+        createdAt: row.created_at,
+        query: row.query_text,
+        summary,
+        opportunities
+      };
+    });
+
+    const extensionActive = Number(extensionSessionCountResult?.total ?? 0) > 0;
+    const runsUsed = Number(keywordRunCountResult?.total ?? 0);
+    const runsLimit = 10;
+    const latestSummary = latestRunResult ? (JSON.parse(latestRunResult.summary_json ?? "{}") as StoredKeywordRun["summary"]) : null;
+    const latestQueryStatus = latestRunResult ? "completed" : "waiting";
+
+    return c.json({
+      overview: {
+        currentAccount: {
+          value: user.email ?? user.id,
+          status: "active"
+        },
+        latestQuery: {
+          value: latestSummary?.query ?? "Waiting",
+          status: latestQueryStatus,
+          updatedAt: latestRunResult?.created_at ?? null
+        },
+        nextAction: {
+          value: !extensionActive ? "Connect" : runsUsed >= runsLimit ? "Upgrade" : recentRuns.length > 0 ? "Review runs" : "Analyze first query"
+        },
+        recentRuns,
+        quota: {
+          used: runsUsed,
+          limit: runsLimit,
+          atLimit: runsUsed >= runsLimit
+        }
+      }
+    });
+  } catch {
+    return c.json({ error: "Unable to load dashboard overview." }, 500);
+  }
+});
+
 app.post("/v1/billing/checkout", async (c) => {
   const authResult = await authenticateRequest(c);
   if (authResult) {
