@@ -214,6 +214,25 @@ function deriveExtensionDeviceLabel(userAgent: string | null) {
   return `${browser} on ${os}`;
 }
 
+function makeFriendlyExtensionDeviceLabels<T extends { id: string; label: string; lastSeenAt: string; status: "active" | "revoked" | "expired" }>(devices: T[]) {
+  const counts = new Map<string, number>();
+  const activeDeviceId = devices
+    .filter((device) => device.status === "active")
+    .sort((left, right) => new Date(right.lastSeenAt).getTime() - new Date(left.lastSeenAt).getTime())[0]?.id ?? null;
+
+  return devices.map((device) => {
+    const seen = (counts.get(device.label) ?? 0) + 1;
+    counts.set(device.label, seen);
+    const duplicateCount = devices.filter((entry) => entry.label === device.label).length;
+    const duplicateSuffix = duplicateCount > 1 ? ` ${seen}` : "";
+    const label = device.id === activeDeviceId ? `${device.label}${duplicateSuffix} (Most recent)` : `${device.label}${duplicateSuffix}`;
+    return {
+      ...device,
+      label
+    };
+  });
+}
+
 async function ensureExtensionSessionSupport(db: D1Database) {
   await db.prepare("ALTER TABLE extension_sessions ADD COLUMN device_label TEXT").run().catch(() => null);
   await db.prepare("ALTER TABLE extension_sessions ADD COLUMN user_agent TEXT").run().catch(() => null);
@@ -1701,17 +1720,18 @@ app.get("/v1/dashboard/extension-devices", async (c) => {
     const devices = (rows.results ?? []).map((row) => {
       const revoked = Boolean(row.revoked_at);
       const expired = !revoked && new Date(row.expires_at).getTime() <= Date.now();
+      const status: "active" | "revoked" | "expired" = revoked ? "revoked" : expired ? "expired" : "active";
       return {
         id: row.id,
         label: row.device_label ?? deriveExtensionDeviceLabel(row.user_agent),
         createdAt: row.created_at,
         lastSeenAt: row.last_seen_at ?? row.created_at,
         expiresAt: row.expires_at,
-        status: revoked ? "revoked" : expired ? "expired" : "active"
+        status
       };
     });
 
-    return c.json({ devices });
+    return c.json({ devices: makeFriendlyExtensionDeviceLabels(devices) });
   } catch {
     return c.json({ error: "Unable to load extension devices." }, 500);
   }
@@ -1744,6 +1764,38 @@ app.post("/v1/dashboard/extension-devices/:sessionId/revoke", async (c) => {
     });
   } catch {
     return c.json({ error: "Unable to revoke the selected extension device." }, 500);
+  }
+});
+
+app.post("/v1/dashboard/extension-devices/revoke-others", async (c) => {
+  const user = c.get("user");
+  if (user.authType !== "supabase") {
+    return c.json({ error: "Extension device management requires a website session." }, 403);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const keepSessionId = typeof body?.keepSessionId === "string" ? body.keepSessionId : "";
+  if (!keepSessionId) {
+    return c.json({ error: "Missing keepSessionId." }, 400);
+  }
+
+  try {
+    const result = await c.env.DB.prepare(
+      `UPDATE extension_sessions
+       SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+       WHERE user_id = ?1
+         AND id != ?2
+         AND revoked_at IS NULL
+         AND datetime(expires_at) > datetime('now')`
+    )
+      .bind(user.id, keepSessionId)
+      .run();
+
+    return c.json({
+      revokedCount: Number(result.meta.changes ?? 0)
+    });
+  } catch {
+    return c.json({ error: "Unable to revoke the other extension browsers." }, 500);
   }
 });
 

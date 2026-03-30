@@ -11,7 +11,7 @@ import { useExtensionStatus } from "@/hooks/use-extension-status";
 import { signOutFromApi } from "@/lib/api/auth";
 import { createCheckout } from "@/lib/api/billing";
 import { fetchRankTrackingDashboard, startDashboardTrial, type RankTrackingDashboard } from "@/lib/api/dashboard";
-import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice } from "@/lib/api/extension-connect";
+import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice, revokeOtherExtensionDevices } from "@/lib/api/extension-connect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type ThemeMode = "light" | "dark";
@@ -285,6 +285,7 @@ function DashboardContent() {
   }>>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [deviceActionId, setDeviceActionId] = useState("");
+  const [bulkRevokeBusy, setBulkRevokeBusy] = useState(false);
 
   const section = (searchParams.get("section") as Section) || "overview";
   const requestId = searchParams.get("request");
@@ -478,6 +479,30 @@ function DashboardContent() {
       showToast(error instanceof Error ? error.message : "Unable to revoke the selected extension device.");
     } finally {
       setDeviceActionId("");
+    }
+  }
+
+  async function handleRevokeOtherExtensionDevices() {
+    if (!accessToken) {
+      return;
+    }
+
+    const keepSessionId = extensionDevices.find((device) => device.status === "active")?.id;
+    if (!keepSessionId) {
+      showToast("No active extension browser is available to keep.");
+      return;
+    }
+
+    setBulkRevokeBusy(true);
+    try {
+      const result = await revokeOtherExtensionDevices(accessToken, keepSessionId);
+      setExtensionDevices(await fetchExtensionDevices(accessToken));
+      showToast(result.revokedCount > 0 ? `Revoked ${result.revokedCount} other browser session${result.revokedCount === 1 ? "" : "s"}.` : "No other active browser sessions needed to be revoked.");
+      refresh();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to revoke the other extension browsers.");
+    } finally {
+      setBulkRevokeBusy(false);
     }
   }
 
@@ -731,6 +756,15 @@ function DashboardContent() {
         </Card>
         <Card compact={compact} dark={dark} title="Connected browsers" description="Each extension browser session is managed like a separate device and can be revoked here.">
           <div className="space-y-3 text-sm leading-6">
+            {!devicesLoading && extensionDevices.some((device) => device.status === "active") ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className={cn("text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>Keep the most recent browser</div>
+                  <div className="mt-1 text-xs">Revoke every other active browser session and leave the latest active device connected.</div>
+                </div>
+                <button className={cn("inline-flex h-9 items-center rounded-full border px-3 text-xs font-semibold transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} disabled={bulkRevokeBusy} onClick={() => void handleRevokeOtherExtensionDevices()} type="button">{bulkRevokeBusy ? "Revoking..." : "Revoke all other browsers"}</button>
+              </div>
+            </div> : null}
             {devicesLoading ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>Loading connected browsers...</div> : null}
             {!devicesLoading && extensionDevices.length === 0 ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>No browser sessions have been approved yet. Open the popup and approve a request here to create the first device.</div> : null}
             {!devicesLoading ? extensionDevices.map((device) => <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={device.id}>

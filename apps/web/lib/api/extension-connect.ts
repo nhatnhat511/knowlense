@@ -66,3 +66,22 @@ export async function revokeExtensionDevice(accessToken: string, sessionId: stri
 
   return payload as { revoked: boolean };
 }
+
+export async function revokeOtherExtensionDevices(accessToken: string, keepSessionId: string) {
+  const response = await fetch(`${getApiBaseUrl()}/v1/dashboard/extension-devices/revoke-others`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ keepSessionId })
+  });
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok || typeof payload?.revokedCount !== "number") {
+    throw new Error(payload?.error ?? "Unable to revoke the other extension browsers.");
+  }
+
+  return payload as { revokedCount: number };
+}
