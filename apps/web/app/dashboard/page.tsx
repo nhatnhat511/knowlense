@@ -942,19 +942,9 @@ function DashboardContent() {
                   {passwordEditorOpen ? "Close" : "Update"}
                 </button> : null}
               </div>
-              {signInMethod === "email" ? <>
+                {signInMethod === "email" ? <>
                 <div className={cn("mt-3 flex items-center justify-between gap-4 rounded-2xl border px-4 py-3", dark ? "border-white/10 bg-[#111318]" : "border-black/8 bg-white")}>
-                  <div className={cn("text-lg tracking-[0.35em]", dark ? "text-white" : "text-gray-900")}>••••••</div>
-                  {!passwordEditorOpen ? <button
-                    className={cn(
-                      "text-sm font-medium transition",
-                      dark ? "text-white/75 hover:text-white" : "text-neutral-500 hover:text-neutral-700"
-                    )}
-                    onClick={() => setPasswordEditorOpen(true)}
-                    type="button"
-                  >
-                    Update
-                  </button> : null}
+                  <div className={cn("text-lg tracking-[0.16em]", dark ? "text-white" : "text-gray-900")}>••••••••••</div>
                 </div>
                 {passwordEditorOpen ? <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                   <input className={cn("h-11 rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")} onChange={(event) => setNextPassword(event.target.value)} placeholder="New password" type="password" value={nextPassword} />
