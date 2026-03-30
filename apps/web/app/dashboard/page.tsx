@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState, startTransition, type ChangeEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import type { UserIdentity } from "@supabase/supabase-js";
 import { Bell, CreditCard, Globe2, KeyRound, LayoutGrid, LifeBuoy, Moon, PlugZap, RefreshCw, Shield, Sparkles, Sun, Trash2, Upload, UserRound } from "lucide-react";
 import { FaBrave, FaChrome, FaEdge, FaFirefoxBrowser, FaSafari } from "react-icons/fa6";
 import { SiGithub, SiGoogle } from "react-icons/si";
@@ -14,6 +15,7 @@ import { signOutFromApi } from "@/lib/api/auth";
 import { createCheckout } from "@/lib/api/billing";
 import { fetchRankTrackingDashboard, startDashboardTrial, type RankTrackingDashboard } from "@/lib/api/dashboard";
 import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice, revokeOtherExtensionDevices } from "@/lib/api/extension-connect";
+import { getAuthCallbackUrl } from "@/lib/auth/redirects";
 import { fetchApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -348,7 +350,11 @@ function DashboardContent() {
   const [nextPassword, setNextPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordNonce, setPasswordNonce] = useState("");
-  const [linkedAccounts, setLinkedAccounts] = useState<Array<{ identityId: string; provider: "email" | "google" | "github" | "unknown"; email: string | null }>>([]);
+  const [linkedAccounts, setLinkedAccounts] = useState<Array<{
+    identity: UserIdentity;
+    provider: "email" | "google" | "github" | "unknown";
+    email: string | null;
+  }>>([]);
   const [linkedAccountsLoading, setLinkedAccountsLoading] = useState(false);
   const [linkedAccountAction, setLinkedAccountAction] = useState("");
 
@@ -572,7 +578,7 @@ function DashboardContent() {
       }
 
       const identities = (data?.identities ?? []).map((identity) => ({
-        identityId: identity.identity_id,
+        identity,
         provider: (identity.provider === "email" || identity.provider === "google" || identity.provider === "github"
           ? identity.provider
           : "unknown") as "email" | "google" | "github" | "unknown",
@@ -733,7 +739,7 @@ function DashboardContent() {
       const { error } = await supabase.auth.linkIdentity({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/dashboard?section=account`
+          redirectTo: getAuthCallbackUrl("/dashboard?section=account")
         }
       });
 
@@ -752,23 +758,14 @@ function DashboardContent() {
       return;
     }
 
-    const identity = linkedAccounts.find((item) => item.identityId === identityId);
+    const identity = linkedAccounts.find((item) => item.identity.identity_id === identityId);
     if (!identity) {
       return;
     }
 
     setLinkedAccountAction(`unlink:${identityId}`);
     try {
-      const { error } = await supabase.auth.unlinkIdentity({
-        identity_id: identity.identityId,
-        id: "",
-        user_id: user?.id ?? "",
-        identity_data: {},
-        provider: identity.provider,
-        last_sign_in_at: undefined,
-        created_at: "",
-        updated_at: ""
-      });
+      const { error } = await supabase.auth.unlinkIdentity(identity.identity);
 
       if (error) {
         throw error;
@@ -867,7 +864,7 @@ function DashboardContent() {
             </div>;
           }) : null}
           <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>
-            Disconnecting from the popup now revokes the current browser token on the server, not just the local extension copy.
+            Disconnecting from the extension signs out this browser and removes its active connection from your account.
           </div>
         </div>
       </Card>
@@ -1080,7 +1077,9 @@ function DashboardContent() {
                 ].map((item) => {
                   const linkedIdentity = linkedAccounts.find((identity) => identity.provider === item.provider);
                   const isLinked = linkedProviderSet.has(item.provider);
-                  const isWorking = linkedAccountAction === `link:${item.provider}` || (linkedIdentity ? linkedAccountAction === `unlink:${linkedIdentity.identityId}` : false);
+                  const isWorking =
+                    linkedAccountAction === `link:${item.provider}` ||
+                    (linkedIdentity ? linkedAccountAction === `unlink:${linkedIdentity.identity.identity_id}` : false);
                   const canUnlink = item.provider !== "email" && Boolean(linkedIdentity) && canUnlinkProvider;
 
                   return (
@@ -1100,7 +1099,7 @@ function DashboardContent() {
                             canUnlink ? (dark ? "text-white/75 hover:text-white" : "text-neutral-500 hover:text-neutral-700") : (dark ? "text-white/25" : "text-neutral-300")
                           )}
                           disabled={!canUnlink || isWorking}
-                          onClick={() => linkedIdentity ? void handleUnlinkIdentity(linkedIdentity.identityId) : undefined}
+                          onClick={() => linkedIdentity ? void handleUnlinkIdentity(linkedIdentity.identity.identity_id) : undefined}
                           type="button"
                         >
                           {isWorking ? "Working..." : "Unlink"}
