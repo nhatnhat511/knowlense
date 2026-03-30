@@ -344,8 +344,10 @@ function DashboardContent() {
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [passwordEditorOpen, setPasswordEditorOpen] = useState(false);
+  const [passwordNonceSent, setPasswordNonceSent] = useState(false);
   const [nextPassword, setNextPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordNonce, setPasswordNonce] = useState("");
 
   const requestId = searchParams.get("request");
   const requestedSection = searchParams.get("section");
@@ -622,8 +624,26 @@ function DashboardContent() {
 
     setPasswordBusy(true);
     try {
+      if (!passwordNonceSent) {
+        const { error: reauthError } = await supabase.auth.reauthenticate();
+
+        if (reauthError) {
+          throw reauthError;
+        }
+
+        setPasswordNonceSent(true);
+        showToast("We sent a verification code to your email. Enter it to finish updating your password.");
+        return;
+      }
+
+      if (!passwordNonce.trim()) {
+        showToast("Enter the verification code from your email.");
+        return;
+      }
+
       const { error: updateError } = await supabase.auth.updateUser({
-        password: nextPassword
+        password: nextPassword,
+        nonce: passwordNonce.trim()
       });
 
       if (updateError) {
@@ -632,6 +652,8 @@ function DashboardContent() {
 
       setNextPassword("");
       setConfirmPassword("");
+      setPasswordNonce("");
+      setPasswordNonceSent(false);
       setPasswordEditorOpen(false);
       showToast("Password updated.");
     } catch (error) {
@@ -639,6 +661,17 @@ function DashboardContent() {
     } finally {
       setPasswordBusy(false);
     }
+  }
+
+  function handlePasswordEditorToggle() {
+    setPasswordEditorOpen((current) => {
+      const next = !current;
+      if (!next) {
+        setPasswordNonceSent(false);
+        setPasswordNonce("");
+      }
+      return next;
+    });
   }
 
   async function handleRevokeExtensionDevice(sessionId: string) {
@@ -936,7 +969,7 @@ function DashboardContent() {
                     "inline-flex h-10 items-center justify-center rounded-full px-5 text-sm font-semibold transition",
                     dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black"
                   )}
-                  onClick={() => setPasswordEditorOpen((current) => !current)}
+                  onClick={handlePasswordEditorToggle}
                   type="button"
                 >
                   {passwordEditorOpen ? "Close" : "Update"}
@@ -949,7 +982,16 @@ function DashboardContent() {
                 {passwordEditorOpen ? <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                   <input className={cn("h-11 rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")} onChange={(event) => setNextPassword(event.target.value)} placeholder="New password" type="password" value={nextPassword} />
                   <input className={cn("h-11 rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirm password" type="password" value={confirmPassword} />
-                  <button className={cn("inline-flex h-11 min-w-[148px] items-center justify-center whitespace-nowrap rounded-2xl px-5 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={passwordBusy} onClick={() => void handlePasswordUpdate()} type="button">{passwordBusy ? "Saving..." : "Save"}</button>
+                  <button className={cn("inline-flex h-11 min-w-[148px] items-center justify-center whitespace-nowrap rounded-2xl px-5 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={passwordBusy} onClick={() => void handlePasswordUpdate()} type="button">{passwordBusy ? "Saving..." : passwordNonceSent ? "Save" : "Send code"}</button>
+                </div> : null}
+                {passwordEditorOpen && passwordNonceSent ? <div className="mt-3">
+                  <input
+                    className={cn("h-11 w-full rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")}
+                    onChange={(event) => setPasswordNonce(event.target.value)}
+                    placeholder="Verification code"
+                    type="text"
+                    value={passwordNonce}
+                  />
                 </div> : null}
               </> : <div className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-500")}>{`Password changes are managed through ${signInMethodMeta.label}.`}</div>}
             </div>
