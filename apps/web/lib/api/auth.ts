@@ -67,10 +67,6 @@ export function resendVerificationEmail(email: string, redirectTo: string) {
   return postAuthResource<{ ok: true }>("/v1/auth/resend-verification", { email, redirectTo });
 }
 
-export function changePassword(password: string, accessToken: string) {
-  return postAuthResource<{ ok: true }>("/v1/auth/change-password", { password }, accessToken);
-}
-
 export function signOutFromApi(accessToken?: string) {
   return postAuthResource<{ ok: true }>("/v1/auth/sign-out", {}, accessToken);
 }

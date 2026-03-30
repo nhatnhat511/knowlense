@@ -871,36 +871,6 @@ app.get("/v1/me", async (c) => {
   }
 });
 
-app.use("/v1/auth/change-password", async (c, next) => {
-  const authResult = await authenticateRequest(c);
-  if (authResult) {
-    return c.json({ error: authResult.error }, authResult.status);
-  }
-
-  await next();
-});
-
-app.post("/v1/auth/change-password", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const password = typeof body?.password === "string" ? body.password : "";
-  const user = c.get("user");
-
-  if (password.length < 8) {
-    return c.json({ error: "Password must be at least 8 characters long." }, 400);
-  }
-
-  const supabase = createAdminClient(c.env);
-  const { error } = await supabase.auth.admin.updateUserById(user.id, {
-    password
-  });
-
-  if (error) {
-    return c.json({ error: error.message }, 400);
-  }
-
-  return c.json({ ok: true });
-});
-
 app.post("/v1/auth/sign-out", async (c) => {
   const authHeader = c.req.header("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
