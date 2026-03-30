@@ -1560,7 +1560,12 @@ function setIndexingStatus(message) {
   }
 }
 
-function parseKeywordInput(rawValue, productTitle) {
+function isPremiumSession(session) {
+  const status = session?.billing?.status;
+  return status === "active" || status === "trial";
+}
+
+function parseKeywordInput(rawValue, productTitle, maxKeywords) {
   const normalizedTitle = normalizeText(productTitle);
   const keywords = rawValue
     .split(",")
@@ -1571,8 +1576,14 @@ function parseKeywordInput(rawValue, productTitle) {
     return { ok: false, error: "Enter at least one keyword." };
   }
 
-  if (keywords.length > 3) {
-    return { ok: false, error: "You can analyze up to 3 keywords at a time." };
+  if (keywords.length > maxKeywords) {
+    return {
+      ok: false,
+      error:
+        maxKeywords === 1
+          ? "Free plan supports 1 keyword at a time. Upgrade to Premium to analyze up to 3 keywords at once."
+          : `You can analyze up to ${maxKeywords} keywords at a time.`
+    };
   }
 
   const deduped = [];
@@ -1603,15 +1614,40 @@ function parseKeywordInput(rawValue, productTitle) {
 
 async function loadExtensionSession() {
   const stored = await chrome.storage.local.get(["knowlense_extension_session", "knowlense_settings"]);
+  const apiUrl = stored.knowlense_settings?.apiUrl || "https://api.knowlense.com";
+  let session = stored.knowlense_extension_session ?? null;
+
+  if (session?.sessionToken && !session?.billing) {
+    try {
+      const response = await fetch(`${apiUrl.replace(/\/$/, "")}/v1/me`, {
+        headers: {
+          Authorization: `Bearer ${session.sessionToken}`
+        }
+      });
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload?.user) {
+        session = {
+          ...session,
+          user: payload.user,
+          billing: payload.billing ?? null
+        };
+        await chrome.storage.local.set({ knowlense_extension_session: session });
+      }
+    } catch {
+      // Keep the stored session as-is if the refresh fails.
+    }
+  }
+
   return {
-    session: stored.knowlense_extension_session ?? null,
-    apiUrl: stored.knowlense_settings?.apiUrl || "https://api.knowlense.com"
+    session,
+    apiUrl
   };
 }
 
 async function refreshPanelConnectionState() {
   const sessionState = await loadExtensionSession().catch(() => ({ session: null }));
   const isConnected = Boolean(sessionState?.session?.sessionToken);
+  const isPremium = isPremiumSession(sessionState?.session);
 
   if (PANEL_STATE.healthAction) {
     PANEL_STATE.healthAction.disabled = !isConnected;
@@ -1632,7 +1668,22 @@ async function refreshPanelConnectionState() {
   if (PANEL_STATE.keywordStatus && !isConnected) {
     PANEL_STATE.keywordStatus.textContent = "Connect the extension through the website to run Keyword SEO.";
   } else if (PANEL_STATE.keywordStatus && isConnected && !PANEL_STATE.keywordResults?.innerHTML) {
-    PANEL_STATE.keywordStatus.textContent = "Check rank, title placement, description placement, and related keyword suggestions.";
+    PANEL_STATE.keywordStatus.textContent = isPremium
+      ? "Check rank, title placement, description placement, and related keyword suggestions for up to 3 keywords."
+      : "Check rank, title placement, description placement, and related keyword suggestions for 1 keyword at a time on Free.";
+  }
+
+  if (PANEL_STATE.keywordInput) {
+    PANEL_STATE.keywordInput.placeholder = isPremium
+      ? "Enter up to 3 keywords, separated by commas"
+      : "Enter 1 keyword";
+  }
+
+  const keywordHelp = PANEL_STATE.panel?.querySelector(".knowlense-keyword-help");
+  if (keywordHelp) {
+    keywordHelp.textContent = isPremium
+      ? "Use up to 3 concise keywords. Separate them with commas."
+      : "Free plan supports 1 concise keyword at a time. Upgrade to Premium to analyze up to 3.";
   }
 }
 
@@ -1692,6 +1743,13 @@ async function runSearchIndexingAudit() {
     throw new Error(extracted.error);
   }
 
+  const cacheKey = `knowlense_search_indexing_cache_${normalizeProductUrl(extracted.snapshot.productUrl)}`;
+  const cached = await chrome.storage.local.get(cacheKey).catch(() => ({}));
+  const cachedEntry = cached?.[cacheKey];
+  if (cachedEntry?.timestamp && Date.now() - cachedEntry.timestamp < 6 * 60 * 60 * 1000 && cachedEntry?.result?.checks?.length) {
+    return cachedEntry.result;
+  }
+
   const response = await chrome.runtime.sendMessage({
     type: "knowlense.searchIndexing.check",
     productUrl: extracted.snapshot.productUrl
@@ -1700,6 +1758,15 @@ async function runSearchIndexingAudit() {
   if (!response?.ok || !response.result?.checks?.length) {
     throw new Error(response?.error || "Knowlense could not run the search indexing check.");
   }
+
+  await chrome.storage.local
+    .set({
+      [cacheKey]: {
+        timestamp: Date.now(),
+        result: response.result
+      }
+    })
+    .catch(() => null);
 
   return response.result;
 }
@@ -1778,13 +1845,25 @@ async function fetchTrackedKeywordTargets(baseUrl, sessionToken, snapshot) {
   return new Map(payload.targets.map((target) => [normalizeText(target.keyword), target]));
 }
 
-function bindKeywordTrackingToggles(items, snapshot) {
+function bindKeywordTrackingToggles(items, snapshot, session) {
   if (!PANEL_STATE.keywordResults) {
     return;
   }
 
+  const isPremium = isPremiumSession(session);
   const itemMap = new Map(items.map((item) => [normalizeText(item.keyword), item]));
   PANEL_STATE.keywordResults.querySelectorAll("[data-track-keyword]").forEach((input) => {
+    if (!isPremium) {
+      input.disabled = true;
+      const metaNode = input
+        .closest(".knowlense-track-toggle")
+        ?.querySelector(".knowlense-track-toggle-meta");
+      if (metaNode) {
+        metaNode.textContent = "Premium required to use keyword tracking.";
+      }
+      return;
+    }
+
     input.addEventListener("change", async (event) => {
       const checkbox = event.currentTarget;
       const keyword = checkbox.getAttribute("data-track-keyword") || "";
@@ -2104,7 +2183,11 @@ async function runKeywordAudit() {
     throw new Error("Connect the extension through the website before running Keyword SEO.");
   }
 
-  const parsed = parseKeywordInput(PANEL_STATE.keywordInput?.value ?? "", extracted.snapshot.title);
+  const parsed = parseKeywordInput(
+    PANEL_STATE.keywordInput?.value ?? "",
+    extracted.snapshot.title,
+    isPremiumSession(sessionState.session) ? 3 : 1
+  );
   if (!parsed.ok) {
     throw new Error(parsed.error);
   }
@@ -2181,7 +2264,7 @@ async function runKeywordAudit() {
     tracking: trackedMap.get(normalizeText(result.keyword)) || null
   }));
 
-  return { results: enrichedResults, snapshot: extracted.snapshot };
+  return { results: enrichedResults, snapshot: extracted.snapshot, session: sessionState.session };
 }
 
 function createPanelShell() {
@@ -2303,9 +2386,9 @@ function createPanelShell() {
     setKeywordStatus("Running audits for the current keywords...");
 
     try {
-      const { results, snapshot } = await runKeywordAudit();
+      const { results, snapshot, session } = await runKeywordAudit();
       renderKeywordResults(results);
-      bindKeywordTrackingToggles(results, snapshot);
+      bindKeywordTrackingToggles(results, snapshot, session);
       setKeywordStatus(`Audit complete for ${results.length} keyword${results.length === 1 ? "" : "s"}.`);
     } catch (error) {
       setKeywordError(error instanceof Error ? error.message : "Knowlense could not run the keyword audit.");

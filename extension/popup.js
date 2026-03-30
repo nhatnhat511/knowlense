@@ -124,7 +124,7 @@ async function pollConnectFlow() {
       await persistSession({
         sessionToken: payload.sessionToken,
         user: payload.user,
-        billing: null,
+        billing: payload.billing ?? null,
         expiresAt: payload.expiresAt
       });
       await persistConnectRequest(null);

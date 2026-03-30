@@ -346,6 +346,39 @@ async function readBillingProfile(db: D1Database, userId: string) {
   };
 }
 
+async function ensureSeoHealthUsageTable(db: D1Database) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS seo_health_usage (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_seo_health_usage_user_created
+      ON seo_health_usage (user_id, created_at DESC);
+  `);
+}
+
+async function countSeoHealthUsageLast24Hours(db: D1Database, userId: string) {
+  await ensureSeoHealthUsageTable(db);
+  const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const row = await db.prepare(
+    `SELECT COUNT(*) AS total
+     FROM seo_health_usage
+     WHERE user_id = ?1
+       AND datetime(created_at) >= datetime(?2)`
+  ).bind(userId, sinceIso).first<{ total: number | string }>();
+
+  return Number(row?.total ?? 0);
+}
+
+async function recordSeoHealthUsage(db: D1Database, userId: string) {
+  await ensureSeoHealthUsageTable(db);
+  await db.prepare(
+    `INSERT INTO seo_health_usage (id, user_id, created_at)
+     VALUES (?1, ?2, ?3)`
+  ).bind(crypto.randomUUID(), userId, new Date().toISOString()).run();
+}
+
 function getDefaultDashboardOverview(user: Variables["user"]) {
   return {
     overview: {
@@ -809,6 +842,8 @@ app.get("/v1/extension/session/poll", async (c) => {
     .bind(requestId)
     .run();
 
+  const billing = await readBillingProfile(c.env.DB, session.user_id);
+
   return c.json({
     status: "connected",
     sessionToken: tokenDelivery.token_plaintext,
@@ -816,6 +851,7 @@ app.get("/v1/extension/session/poll", async (c) => {
       id: session.user_id,
       email: session.user_email
     },
+    billing,
     expiresAt: session.expires_at
   });
 });
@@ -1236,10 +1272,29 @@ app.post("/v1/product-seo-health/analyze", async (c) => {
   }
 
   const user = c.get("user");
+  const billing = await readBillingProfile(c.env.DB, user.id);
+  const isPremium = billing.status === "active" || billing.status === "trial";
+
+  if (!isPremium) {
+    const usageCount = await countSeoHealthUsageLast24Hours(c.env.DB, user.id);
+    if (usageCount >= 10) {
+      return c.json(
+        {
+          error: "Free plan limit reached. SEO Health is available for up to 10 runs in a rolling 24-hour period. Upgrade to Premium for unlimited access."
+        },
+        403
+      );
+    }
+  }
+
   const analysis = await analyzeProductSeoHealth(body, {
     db: c.env.DB,
     userId: user.id
   });
+
+  if (!isPremium) {
+    await recordSeoHealthUsage(c.env.DB, user.id);
+  }
 
   return c.json({ analysis });
 });
@@ -1290,6 +1345,18 @@ app.post("/v1/rank-tracking/targets", async (c) => {
   }
 
   const user = c.get("user");
+  const billing = await readBillingProfile(c.env.DB, user.id);
+  const isPremium = billing.status === "active" || billing.status === "trial";
+
+  if (!isPremium) {
+    return c.json(
+      {
+        error: "Keyword tracking is available on Premium. Upgrade to Premium to track rankings over time."
+      },
+      403
+    );
+  }
+
   const target = await createOrUpdateRankTrackingTarget(c.env.DB, {
     userId: user.id,
     productId: body.productId ?? null,
