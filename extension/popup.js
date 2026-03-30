@@ -13,7 +13,6 @@ const elements = {
   accountEmail: document.getElementById("account-email"),
   accountPlan: document.getElementById("account-plan"),
   disconnectSession: document.getElementById("disconnect-session"),
-  openSite: document.getElementById("open-site"),
   openDashboardSite: document.getElementById("open-dashboard-site"),
   connectSession: document.getElementById("connect-session"),
   status: document.getElementById("status")
@@ -110,7 +109,7 @@ async function startConnectFlow() {
 
   await persistConnectRequest(request);
   chrome.tabs.create({ url: `${config.connectUrl}?request=${encodeURIComponent(request.requestId)}` });
-  setStatus("Waiting for website approval...", "success");
+  setStatus("Waiting for account approval...", "success");
   await pollConnectFlow();
 }
 
@@ -137,20 +136,20 @@ async function pollConnectFlow() {
         expiresAt: payload.expiresAt
       });
       await persistConnectRequest(null);
-      setStatus("Extension connected through the website.", "success");
+      setStatus("Your account is now connected.", "success");
       return;
     }
 
     if (payload?.status === "expired") {
       await persistConnectRequest(null);
-      setStatus("Connection request expired. Start again from the popup.", "error");
+      setStatus("This connection request expired. Start a new one from the popup.", "error");
       return;
     }
 
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 
-  setStatus("Still waiting for approval. You can keep the popup open or start again.", "idle");
+  setStatus("Still waiting for approval. You can keep this popup open or start again.", "idle");
 }
 
 async function revokeExtensionSession(sessionToken) {
@@ -179,26 +178,22 @@ async function revokeExtensionSession(sessionToken) {
 async function handleDisconnect() {
   if (!state.session?.sessionToken) {
     await persistSession(null);
-    setStatus("Extension session removed from this browser.");
+    setStatus("This browser has been disconnected from your account.");
     return;
   }
 
   try {
     await revokeExtensionSession(state.session.sessionToken);
     await persistSession(null);
-    setStatus("Extension disconnected from this browser and revoked on the server.", "success");
+    setStatus("This browser has been disconnected from your account.", "success");
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : "Unable to disconnect this browser session.", "error");
+    setStatus(error instanceof Error ? error.message : "Unable to disconnect this browser right now.", "error");
   }
 }
 
 function attachEvents() {
   elements.openDashboardSite.addEventListener("click", () => {
     chrome.tabs.create({ url: config.dashboardUrl });
-  });
-
-  elements.openSite.addEventListener("click", () => {
-    chrome.tabs.create({ url: config.websiteUrl });
   });
 
   elements.connectSession.addEventListener("click", async () => {
@@ -220,24 +215,24 @@ async function boot() {
       const user = await fetchApiProfile(state.session.sessionToken);
       if (user.invalid) {
         await persistSession(null);
-        setStatus("Your website session signed out or changed. Reconnect the extension from the website.", "error");
+        setStatus("Your website account changed or signed out. Reconnect this extension to continue.", "error");
         attachEvents();
         render();
         return;
       }
       state.session = { ...state.session, user: user.user, billing: user.billing };
       await storage.set({ knowlense_extension_session: state.session });
-      setStatus("Extension session is active.", "success");
+      setStatus("Your account is connected and ready to use.", "success");
     } catch {
-      setStatus("Stored extension session could not be verified right now.", "error");
+      setStatus("We could not verify your connection right now. Try again shortly.", "error");
     }
   } else if (state.connectRequest?.requestId) {
-    setStatus("Waiting for website approval...", "success");
+    setStatus("Waiting for account approval...", "success");
     setTimeout(() => {
       void pollConnectFlow().catch((error) => setStatus(error.message, "error"));
     }, 200);
   } else {
-    setStatus("Connect this extension through the website to begin.");
+    setStatus("Connect your account to get started.");
   }
 
   attachEvents();

@@ -395,6 +395,13 @@ function DashboardContent() {
     router.replace(query ? `/dashboard?${query}` : "/dashboard");
   }
 
+  function clearConnectRequestFromUrl() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("request");
+    const query = params.toString();
+    router.replace(query ? `/dashboard?${query}` : "/dashboard");
+  }
+
   async function handleSignOut() {
     await signOutFromApi(accessToken || undefined).catch(() => null);
     const supabase = getSupabaseBrowserClient();
@@ -441,6 +448,7 @@ function DashboardContent() {
       showToast("Extension connected. Return to the popup.");
       refresh();
       setExtensionDevices(await fetchExtensionDevices(accessToken));
+      clearConnectRequestFromUrl();
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Unable to connect the extension.");
     } finally {
@@ -701,16 +709,7 @@ function DashboardContent() {
 
   function connectView() {
     return (
-      <div className={cn("mt-5 grid gap-3.5", compact ? "xl:grid-cols-[1.15fr_0.85fr]" : "xl:grid-cols-[1.1fr_0.9fr] 2xl:gap-4")}>
-        <Card compact={compact} dark={dark} title="Approval request">
-          <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}>
-            <div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{extensionStatus?.status === "active" ? "Connected" : requestId ? "Pending approval" : "Waiting for request"}</div>
-            <p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{requestId ? "An extension request was detected. Approve it below and return to the popup." : "Open the extension popup and choose Connect via website. Once the popup sends a request, approve it here."}</p>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={!requestId || connectBusy} onClick={() => void handleConnect()} type="button">{connectBusy ? "Connecting..." : "Approve extension"}</button>
-            </div>
-          </div>
-        </Card>
+      <div className="mt-5">
         <Card compact={compact} dark={dark} title="Connected browsers">
           <div className="space-y-3 text-sm leading-6">
             {!devicesLoading && extensionDevices.some((device) => device.status === "active") ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>
@@ -804,6 +803,33 @@ function DashboardContent() {
               "The extension receives an approval-based session instead of direct website credentials."
             ]) : null}
           </div>
+
+          {requestId ? (
+            <div className="pointer-events-none fixed inset-0 z-40 flex items-start justify-center bg-[rgba(15,23,42,0.16)] px-4 pt-24">
+              <div className={cn("pointer-events-auto w-full max-w-[480px] rounded-[28px] border p-5 shadow-[0_32px_90px_rgba(15,23,42,0.18)] sm:p-6", dark ? "border-white/10 bg-[#111318]" : "border-[#e7e1d5] bg-[#fffdf9]")}>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className={cn("text-[0.78rem] font-semibold uppercase tracking-[0.18em]", dark ? "text-white/35" : "text-[#8b7f70]")}>Extension approval</div>
+                    <h2 className={cn("mt-2 text-[1.55rem] font-bold tracking-[-0.06em]", dark ? "text-white" : "text-gray-900")}>{extensionStatus?.status === "active" ? "Extension connected" : "Approve this extension"}</h2>
+                    <p className={cn("mt-2 text-sm leading-6", dark ? "text-white/60" : "text-gray-600")}>{extensionStatus?.status === "active" ? "This browser is already connected. You can return to the extension popup." : "Approve this connection to link the current browser extension to your Knowlense account."}</p>
+                  </div>
+                  <button className={cn("inline-flex h-10 w-10 items-center justify-center rounded-full border text-xl leading-none transition", dark ? "border-white/10 bg-white/5 text-white/65 hover:bg-white/10 hover:text-white" : "border-black/10 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-900")} onClick={clearConnectRequestFromUrl} type="button">
+                    ×
+                  </button>
+                </div>
+                <div className={cn("mt-5 rounded-[22px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+                  <div className={cn("text-[0.78rem] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>Current status</div>
+                  <div className={cn("mt-2 text-[1.6rem] font-semibold tracking-[-0.05em]", dark ? "text-white" : "text-black")}>{extensionStatus?.status === "active" ? "Connected" : "Waiting for approval"}</div>
+                </div>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={!requestId || connectBusy || extensionStatus?.status === "active"} onClick={() => void handleConnect()} type="button">{connectBusy ? "Connecting..." : "Approve extension"}</button>
+                  <button className={cn("inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} onClick={clearConnectRequestFromUrl} type="button">
+                    Not now
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </section>
       </div>
     </main>
