@@ -839,6 +839,31 @@ app.post("/v1/auth/sign-up", async (c) => {
   }
 });
 
+app.post("/v1/auth/sign-up/check-email", async (c) => {
+  try {
+    const body = await c.req.json().catch(() => null);
+    const email = typeof body?.email === "string" ? body.email.trim() : "";
+
+    if (!email) {
+      return c.json({ error: "Email is required." }, 400);
+    }
+
+    const existingMethod = await resolveExistingAuthMethod(c.env, c.env.DB, email);
+    if (existingMethod) {
+      return c.json({
+        available: false,
+        existingMethod
+      });
+    }
+
+    return c.json({
+      available: true
+    });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unable to check this email right now." }, 500);
+  }
+});
+
 app.post("/v1/auth/oauth/start", async (c) => {
   try {
     const body = await c.req.json().catch(() => null);

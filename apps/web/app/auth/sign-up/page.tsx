@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signUpWithPassword, startOAuth } from "@/lib/api/auth";
+import { checkSignupEmail, signUpWithPassword, startOAuth } from "@/lib/api/auth";
 import { mapSignupResult, validatePassword } from "@/lib/auth/errors";
 import { getAuthCallbackUrl, getSignupRedirectUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -52,7 +52,7 @@ export default function SignUpPage() {
     }
   }
 
-  function handleContinue() {
+  async function handleContinue() {
     const normalizedEmail = email.trim();
 
     if (!EMAIL_REGEX.test(normalizedEmail)) {
@@ -60,9 +60,32 @@ export default function SignUpPage() {
       return;
     }
 
-    setEmail(normalizedEmail);
+    setLoading(true);
     setStatus("");
-    setStep(2);
+
+    try {
+      const result = await checkSignupEmail(normalizedEmail);
+
+      if (!result.available) {
+        if (result.existingMethod === "email") {
+          setStatus("This email is already registered with email and password. Sign in with your email and password to access this account.");
+        } else if (result.existingMethod === "google") {
+          setStatus("This email is already registered with Google. Continue with Google to access this account.");
+        } else if (result.existingMethod === "github") {
+          setStatus("This email is already registered with GitHub. Continue with GitHub to access this account.");
+        } else {
+          setStatus("This email is already registered with another sign-in method.");
+        }
+        return;
+      }
+
+      setEmail(normalizedEmail);
+      setStep(2);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to check this email right now.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -178,11 +201,12 @@ export default function SignUpPage() {
           {status ? <p className="text-[15px] text-neutral-500">{status}</p> : null}
 
           <button
-            className="inline-flex h-12 w-full items-center justify-center rounded-full bg-black px-5 text-[17px] font-semibold text-white transition hover:bg-neutral-800"
-            onClick={handleContinue}
+            className="inline-flex h-12 w-full items-center justify-center rounded-full bg-black px-5 text-[17px] font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-70"
+            disabled={loading}
+            onClick={() => void handleContinue()}
             type="button"
           >
-            Continue
+            {loading ? "Checking..." : "Continue"}
           </button>
         </div>
       ) : (
