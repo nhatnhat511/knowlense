@@ -119,14 +119,32 @@ async function pollConnectFlow() {
   }
 
   const timeoutAt = Date.now() + 90 * 1000;
+  let transientFailures = 0;
 
   while (Date.now() < timeoutAt) {
-    const response = await fetch(`${apiUrl()}/v1/extension/session/poll?requestId=${encodeURIComponent(state.connectRequest.requestId)}`);
-    const payload = await response.json().catch(() => null);
+    let response;
+    let payload;
+
+    try {
+      response = await fetch(`${apiUrl()}/v1/extension/session/poll?requestId=${encodeURIComponent(state.connectRequest.requestId)}`);
+      payload = await response.json().catch(() => null);
+    } catch {
+      transientFailures += 1;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      continue;
+    }
 
     if (!response.ok) {
+      if (response.status === 404 || response.status === 429 || response.status >= 500) {
+        transientFailures += 1;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        continue;
+      }
+
       throw new Error(payload?.error || "Unable to poll the connection request.");
     }
+
+    transientFailures = 0;
 
     if (payload?.status === "connected" && payload?.sessionToken) {
       await persistSession({
@@ -146,10 +164,14 @@ async function pollConnectFlow() {
       return;
     }
 
+    if (payload?.status === "authorized") {
+      setStatus("Approval received. Finishing the connection...", "success");
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 
-  setStatus("Still waiting for approval. You can keep this popup open or start again.", "idle");
+  setStatus(transientFailures > 0 ? "We are still finishing the connection. Keep the popup open and it will continue automatically." : "Still waiting for approval. You can keep this popup open or start again.", "idle");
 }
 
 async function revokeExtensionSession(sessionToken) {
