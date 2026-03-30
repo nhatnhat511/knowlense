@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { completeOAuthProvider } from "@/lib/api/auth";
 import { fetchApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
@@ -12,12 +11,6 @@ function AuthCallbackContent() {
   const searchParams = useSearchParams();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const nextPath = searchParams.get("next")?.startsWith("/") ? searchParams.get("next")! : "/dashboard";
-  const rawProvider = searchParams.get("provider");
-  const oauthProvider: "google" | "github" | null =
-    rawProvider === "google" || rawProvider === "github" ? rawProvider : null;
-  const rawReturnTo = searchParams.get("returnTo");
-  const returnTo: "/auth/sign-in" | "/auth/sign-up" =
-    rawReturnTo === "/auth/sign-in" || rawReturnTo === "/auth/sign-up" ? rawReturnTo : "/auth/sign-in";
   const [status, setStatus] = useState("Processing the Supabase callback...");
 
   useEffect(() => {
@@ -65,21 +58,6 @@ function AuthCallbackContent() {
       }
 
       if (session?.access_token) {
-        if (oauthProvider) {
-          try {
-            await completeOAuthProvider(session.access_token, oauthProvider);
-          } catch (error) {
-            await client.auth.signOut();
-            if (!active) {
-              return false;
-            }
-
-            const message = error instanceof Error ? error.message : "This sign-in method is not available for this email.";
-            router.replace(`${returnTo}?auth_error=${encodeURIComponent(message)}`);
-            return true;
-          }
-        }
-
         let profileValidated = false;
 
         for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -177,7 +155,7 @@ function AuthCallbackContent() {
         clearTimeout(redirectTimer);
       }
     };
-  }, [nextPath, oauthProvider, returnTo, router, searchParams, supabase]);
+  }, [nextPath, router, searchParams, supabase]);
 
   return (
     <AuthShell

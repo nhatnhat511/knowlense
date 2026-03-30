@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { checkSignupEmail, signUpWithPassword, startOAuth } from "@/lib/api/auth";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { signUpWithPassword, startOAuth } from "@/lib/api/auth";
 import { mapSignupResult, validatePassword } from "@/lib/auth/errors";
-import { getOAuthCallbackUrl, getSignupRedirectUrl } from "@/lib/auth/redirects";
+import { getAuthCallbackUrl, getSignupRedirectUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   AuthDivider,
@@ -23,7 +23,6 @@ type Step = 1 | 2;
 
 export default function SignUpPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [step, setStep] = useState<Step>(1);
   const [email, setEmail] = useState("");
@@ -33,13 +32,6 @@ export default function SignUpPage() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | "">("");
-
-  useEffect(() => {
-    const authError = searchParams.get("auth_error");
-    if (authError) {
-      setStatus(authError);
-    }
-  }, [searchParams]);
 
   async function handleOAuth(provider: "google" | "github") {
     if (!supabase) {
@@ -51,7 +43,7 @@ export default function SignUpPage() {
     setStatus("");
 
     try {
-      const { url } = await startOAuth(provider, getOAuthCallbackUrl("/dashboard", provider, "/auth/sign-up"));
+      const { url } = await startOAuth(provider, getAuthCallbackUrl("/dashboard"));
       window.location.assign(url);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to start social sign-in.");
@@ -68,32 +60,9 @@ export default function SignUpPage() {
       return;
     }
 
-    setLoading(true);
     setStatus("");
-
-    try {
-      const result = await checkSignupEmail(normalizedEmail);
-
-      if (!result.available) {
-        if (result.existingMethod === "email") {
-          setStatus("This email is already registered with email and password. Sign in with your email and password to access this account.");
-        } else if (result.existingMethod === "google") {
-          setStatus("This email is already registered with Google. Continue with Google to access this account.");
-        } else if (result.existingMethod === "github") {
-          setStatus("This email is already registered with GitHub. Continue with GitHub to access this account.");
-        } else {
-          setStatus("This email is already registered with another sign-in method.");
-        }
-        return;
-      }
-
-      setEmail(normalizedEmail);
-      setStep(2);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to check this email right now.");
-    } finally {
-      setLoading(false);
-    }
+    setEmail(normalizedEmail);
+    setStep(2);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -214,7 +183,7 @@ export default function SignUpPage() {
             onClick={() => void handleContinue()}
             type="button"
           >
-            {loading ? "Checking..." : "Continue"}
+            Continue
           </button>
         </div>
       ) : (

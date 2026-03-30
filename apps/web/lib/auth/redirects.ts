@@ -22,17 +22,6 @@ export function getAuthCallbackUrl(nextPath?: string) {
   return callbackUrl.toString();
 }
 
-export function getOAuthCallbackUrl(
-  nextPath: string | undefined,
-  provider: "google" | "github",
-  returnTo: "/auth/sign-in" | "/auth/sign-up"
-) {
-  const callbackUrl = new URL(getAuthCallbackUrl(nextPath));
-  callbackUrl.searchParams.set("provider", provider);
-  callbackUrl.searchParams.set("returnTo", returnTo);
-  return callbackUrl.toString();
-}
-
 export function getSignupRedirectUrl() {
   return getAuthCallbackUrl("/dashboard");
 }

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { signInWithPassword, startOAuth } from "@/lib/api/auth";
 import { fetchApiProfile } from "@/lib/api/profile";
 import { mapSignInError } from "@/lib/auth/errors";
-import { getOAuthCallbackUrl } from "@/lib/auth/redirects";
+import { getAuthCallbackUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   AuthDivider,
@@ -67,13 +67,6 @@ function SignInContent() {
     };
   }, [nextPath, router, supabase]);
 
-  useEffect(() => {
-    const authError = searchParams.get("auth_error");
-    if (authError) {
-      setStatus(authError);
-    }
-  }, [searchParams]);
-
   async function handleOAuth(provider: "google" | "github") {
     if (!supabase) {
       setStatus("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.");
@@ -84,7 +77,7 @@ function SignInContent() {
     setStatus("");
 
     try {
-      const { url } = await startOAuth(provider, getOAuthCallbackUrl(nextPath, provider, "/auth/sign-in"));
+      const { url } = await startOAuth(provider, getAuthCallbackUrl(nextPath));
       window.location.assign(url);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to start social sign-in.");

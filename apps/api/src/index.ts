@@ -285,23 +285,17 @@ function isoFromNow(minutes: number) {
   return new Date(Date.now() + minutes * 60 * 1000).toISOString();
 }
 
-type AuthMethod = "email" | "google" | "github";
-
-function normalizePolicyEmail(email: string) {
-  return email.trim().toLowerCase();
-}
-
 function getCurrentAuthMethod(user: {
   app_metadata?: Record<string, unknown> | null;
   identities?: Array<{
     provider?: string | null;
   }> | null;
-}): AuthMethod | null {
+}): "email" | "google" | "github" | null {
   const appMetadata = user.app_metadata ?? {};
   const appProvider = typeof appMetadata.provider === "string" ? appMetadata.provider.toLowerCase() : null;
 
   if (appProvider === "google" || appProvider === "github" || appProvider === "email") {
-    return appProvider as AuthMethod;
+    return appProvider;
   }
 
   const identityProviders = Array.isArray(user.identities)
@@ -323,106 +317,6 @@ function getCurrentAuthMethod(user: {
   }
 
   return null;
-}
-
-async function ensureAuthMethodPolicySupport(db: D1Database) {
-  await db.prepare(
-    `CREATE TABLE IF NOT EXISTS auth_email_methods (
-      email TEXT PRIMARY KEY,
-      provider TEXT NOT NULL,
-      user_id TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`
-  ).run();
-}
-
-async function readStoredAuthMethod(db: D1Database, email: string) {
-  const normalizedEmail = normalizePolicyEmail(email);
-  return db.prepare(
-    `SELECT email, provider, user_id
-     FROM auth_email_methods
-     WHERE email = ?1
-     LIMIT 1`
-  )
-    .bind(normalizedEmail)
-    .first<{ email: string; provider: AuthMethod; user_id: string | null }>();
-}
-
-async function writeStoredAuthMethod(db: D1Database, email: string, provider: AuthMethod, userId?: string | null) {
-  const normalizedEmail = normalizePolicyEmail(email);
-  await db.prepare(
-    `INSERT INTO auth_email_methods (email, provider, user_id)
-     VALUES (?1, ?2, ?3)
-     ON CONFLICT(email) DO UPDATE SET
-       provider = excluded.provider,
-       user_id = COALESCE(excluded.user_id, auth_email_methods.user_id),
-       updated_at = CURRENT_TIMESTAMP`
-  )
-    .bind(normalizedEmail, provider, userId ?? null)
-    .run();
-}
-
-async function findSupabaseUserByEmail(env: Bindings, email: string) {
-  const supabase = createAdminClient(env);
-  const normalizedEmail = normalizePolicyEmail(email);
-
-  for (let page = 1; page <= 20; page += 1) {
-    const { data, error } = await supabase.auth.admin.listUsers({
-      page,
-      perPage: 200
-    });
-
-    if (error) {
-      throw error;
-    }
-
-    const users = data?.users ?? [];
-    const matched = users.find((user) => normalizePolicyEmail(user.email ?? "") === normalizedEmail);
-    if (matched) {
-      return matched;
-    }
-
-    if (users.length < 200) {
-      break;
-    }
-  }
-
-  return null;
-}
-
-async function resolveExistingAuthMethod(env: Bindings, db: D1Database, email: string) {
-  await ensureAuthMethodPolicySupport(db);
-
-  const stored = await readStoredAuthMethod(db, email);
-  if (stored?.provider) {
-    return stored.provider;
-  }
-
-  const existingUser = await findSupabaseUserByEmail(env, email).catch(() => null);
-  const existingProvider = existingUser ? getCurrentAuthMethod(existingUser as {
-    app_metadata?: Record<string, unknown> | null;
-    identities?: Array<{ provider?: string | null }> | null;
-  }) : null;
-
-  if (existingUser?.email && existingProvider) {
-    await writeStoredAuthMethod(db, existingUser.email, existingProvider, existingUser.id);
-    return existingProvider;
-  }
-
-  return null;
-}
-
-function buildProviderConflictMessage(existingMethod: AuthMethod) {
-  if (existingMethod === "email") {
-    return "This email is already registered with email and password. Sign in with your email and password to access this account.";
-  }
-
-  if (existingMethod === "google") {
-    return "This email is already registered with Google. Continue with Google to access this account.";
-  }
-
-  return "This email is already registered with GitHub. Continue with GitHub to access this account.";
 }
 
 function normalizeSupabaseUser(user: {
@@ -750,11 +644,6 @@ app.post("/v1/auth/sign-in", async (c) => {
       return c.json({ error: "Email and password are required." }, 400);
     }
 
-    const existingMethod = await resolveExistingAuthMethod(c.env, c.env.DB, email);
-    if (existingMethod && existingMethod !== "email") {
-      return c.json({ error: buildProviderConflictMessage(existingMethod) }, 409);
-    }
-
     const supabase = createAuthClient(c.env);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
@@ -764,10 +653,6 @@ app.post("/v1/auth/sign-in", async (c) => {
 
     if (!data.session || !data.user) {
       return c.json({ error: "Supabase did not return a session." }, 500);
-    }
-
-    if (data.user.email) {
-      await writeStoredAuthMethod(c.env.DB, data.user.email, "email", data.user.id).catch(() => null);
     }
 
     return c.json({
@@ -815,8 +700,6 @@ app.post("/v1/auth/sign-up", async (c) => {
       return c.json({ error: error.message }, 400);
     }
 
-    await writeStoredAuthMethod(c.env.DB, email, "email", data.user?.id ?? null).catch(() => null);
-
     return c.json({
       session: data.session
         ? {
@@ -831,63 +714,6 @@ app.post("/v1/auth/sign-up", async (c) => {
     });
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Unable to sign up." }, 500);
-  }
-});
-
-app.post("/v1/auth/sign-up/check-email", async (c) => {
-  try {
-    const body = await c.req.json().catch(() => null);
-    const email = typeof body?.email === "string" ? body.email.trim() : "";
-
-    if (!email) {
-      return c.json({ error: "Email is required." }, 400);
-    }
-
-    const existingMethod = await resolveExistingAuthMethod(c.env, c.env.DB, email);
-    if (existingMethod) {
-      return c.json({
-        available: false,
-        existingMethod
-      });
-    }
-
-    return c.json({
-      available: true
-    });
-  } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : "Unable to check this email right now." }, 500);
-  }
-});
-
-app.post("/v1/auth/oauth/check-email", async (c) => {
-  try {
-    const body = await c.req.json().catch(() => null);
-    const email = typeof body?.email === "string" ? body.email.trim() : "";
-    const provider = body?.provider;
-
-    if (!email) {
-      return c.json({ error: "Email is required." }, 400);
-    }
-
-    if (provider !== "google" && provider !== "github") {
-      return c.json({ error: "Unsupported OAuth provider." }, 400);
-    }
-
-    const existingMethod = await resolveExistingAuthMethod(c.env, c.env.DB, email);
-    if (existingMethod && existingMethod !== provider) {
-      return c.json({
-        allowed: false,
-        existingMethod,
-        error: buildProviderConflictMessage(existingMethod)
-      }, 409);
-    }
-
-    return c.json({
-      allowed: true,
-      existingMethod: existingMethod ?? null
-    });
-  } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : "Unable to check this email right now." }, 500);
   }
 });
 
@@ -921,45 +747,6 @@ app.post("/v1/auth/oauth/start", async (c) => {
     return c.json({ url: data.url });
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Unable to start OAuth flow." }, 500);
-  }
-});
-
-app.post("/v1/auth/oauth/complete", async (c) => {
-  const authResult = await authenticateRequest(c);
-  if (authResult) {
-    return c.json({ error: authResult.error }, authResult.status);
-  }
-
-  const user = c.get("user");
-  if (user.authType !== "supabase" || !user.email) {
-    return c.json({ allowed: true });
-  }
-
-  try {
-    const body = await c.req.json().catch(() => null);
-    const provider = body?.provider;
-
-    if (provider !== "google" && provider !== "github") {
-      return c.json({ error: "Unsupported OAuth provider." }, 400);
-    }
-
-    const existingMethod = await resolveExistingAuthMethod(c.env, c.env.DB, user.email);
-    if (existingMethod && existingMethod !== provider) {
-      return c.json({
-        allowed: false,
-        error: buildProviderConflictMessage(existingMethod),
-        existingMethod
-      }, 409);
-    }
-
-    await writeStoredAuthMethod(c.env.DB, user.email, provider, user.id).catch(() => null);
-
-    return c.json({
-      allowed: true,
-      method: provider
-    });
-  } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : "Unable to complete OAuth sign-in." }, 500);
   }
 });
 

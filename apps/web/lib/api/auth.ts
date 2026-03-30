@@ -51,28 +51,6 @@ export function signUpWithPassword(email: string, password: string, displayName:
   }>("/v1/auth/sign-up", { email, password, displayName, redirectTo });
 }
 
-export function checkSignupEmail(email: string) {
-  return postAuthResource<{
-    available: boolean;
-    existingMethod?: "email" | "google" | "github";
-  }>("/v1/auth/sign-up/check-email", { email });
-}
-
-export function checkOAuthEmail(email: string, provider: "google" | "github") {
-  return postAuthResource<{
-    allowed: boolean;
-    existingMethod?: "email" | "google" | "github";
-  }>("/v1/auth/oauth/check-email", { email, provider });
-}
-
-export function completeOAuthProvider(accessToken: string, provider: "google" | "github") {
-  return postAuthResource<{
-    allowed: boolean;
-    method?: "email" | "google" | "github";
-    existingMethod?: "email" | "google" | "github";
-  }>("/v1/auth/oauth/complete", { provider }, accessToken);
-}
-
 export function startOAuth(provider: "google" | "github", redirectTo: string) {
   return postAuthResource<{ url: string }>("/v1/auth/oauth/start", { provider, redirectTo });
 }
