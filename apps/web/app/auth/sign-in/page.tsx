@@ -2,10 +2,10 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { checkOAuthEmail, signInWithPassword, startOAuth } from "@/lib/api/auth";
+import { signInWithPassword, startOAuth } from "@/lib/api/auth";
 import { fetchApiProfile } from "@/lib/api/profile";
 import { mapSignInError } from "@/lib/auth/errors";
-import { getAuthCallbackUrl } from "@/lib/auth/redirects";
+import { getOAuthCallbackUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   AuthDivider,
@@ -18,8 +18,6 @@ import {
   GoogleIcon
 } from "@/components/auth/auth-shell";
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -31,12 +29,6 @@ function SignInContent() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | "">("");
-
-  function buildOAuthPrompt(provider: "google" | "github") {
-    return provider === "google"
-      ? "Enter your email first to continue with Google."
-      : "Enter your email first to continue with GitHub.";
-  }
 
   useEffect(() => {
     if (!supabase) {
@@ -75,15 +67,16 @@ function SignInContent() {
     };
   }, [nextPath, router, supabase]);
 
+  useEffect(() => {
+    const authError = searchParams.get("auth_error");
+    if (authError) {
+      setStatus(authError);
+    }
+  }, [searchParams]);
+
   async function handleOAuth(provider: "google" | "github") {
     if (!supabase) {
       setStatus("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.");
-      return;
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!EMAIL_REGEX.test(normalizedEmail)) {
-      setStatus(buildOAuthPrompt(provider));
       return;
     }
 
@@ -91,8 +84,7 @@ function SignInContent() {
     setStatus("");
 
     try {
-      await checkOAuthEmail(normalizedEmail, provider);
-      const { url } = await startOAuth(provider, getAuthCallbackUrl(nextPath));
+      const { url } = await startOAuth(provider, getOAuthCallbackUrl(nextPath, provider, "/auth/sign-in"));
       window.location.assign(url);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to start social sign-in.");

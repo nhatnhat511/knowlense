@@ -65,6 +65,14 @@ export function checkOAuthEmail(email: string, provider: "google" | "github") {
   }>("/v1/auth/oauth/check-email", { email, provider });
 }
 
+export function completeOAuthProvider(accessToken: string, provider: "google" | "github") {
+  return postAuthResource<{
+    allowed: boolean;
+    method?: "email" | "google" | "github";
+    existingMethod?: "email" | "google" | "github";
+  }>("/v1/auth/oauth/complete", { provider }, accessToken);
+}
+
 export function startOAuth(provider: "google" | "github", redirectTo: string) {
   return postAuthResource<{ url: string }>("/v1/auth/oauth/start", { provider, redirectTo });
 }

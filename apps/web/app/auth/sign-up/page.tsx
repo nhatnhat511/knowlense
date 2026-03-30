@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { checkOAuthEmail, checkSignupEmail, signUpWithPassword, startOAuth } from "@/lib/api/auth";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { checkSignupEmail, signUpWithPassword, startOAuth } from "@/lib/api/auth";
 import { mapSignupResult, validatePassword } from "@/lib/auth/errors";
-import { getAuthCallbackUrl, getSignupRedirectUrl } from "@/lib/auth/redirects";
+import { getOAuthCallbackUrl, getSignupRedirectUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   AuthDivider,
@@ -23,6 +23,7 @@ type Step = 1 | 2;
 
 export default function SignUpPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [step, setStep] = useState<Step>(1);
   const [email, setEmail] = useState("");
@@ -33,19 +34,16 @@ export default function SignUpPage() {
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | "">("");
 
+  useEffect(() => {
+    const authError = searchParams.get("auth_error");
+    if (authError) {
+      setStatus(authError);
+    }
+  }, [searchParams]);
+
   async function handleOAuth(provider: "google" | "github") {
     if (!supabase) {
       setStatus("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.");
-      return;
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!EMAIL_REGEX.test(normalizedEmail)) {
-      setStatus(
-        provider === "google"
-          ? "Enter your email first to continue with Google."
-          : "Enter your email first to continue with GitHub."
-      );
       return;
     }
 
@@ -53,8 +51,7 @@ export default function SignUpPage() {
     setStatus("");
 
     try {
-      await checkOAuthEmail(normalizedEmail, provider);
-      const { url } = await startOAuth(provider, getAuthCallbackUrl("/dashboard"));
+      const { url } = await startOAuth(provider, getOAuthCallbackUrl("/dashboard", provider, "/auth/sign-up"));
       window.location.assign(url);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to start social sign-in.");

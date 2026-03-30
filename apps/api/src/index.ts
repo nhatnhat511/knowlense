@@ -924,6 +924,45 @@ app.post("/v1/auth/oauth/start", async (c) => {
   }
 });
 
+app.post("/v1/auth/oauth/complete", async (c) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  const user = c.get("user");
+  if (user.authType !== "supabase" || !user.email) {
+    return c.json({ allowed: true });
+  }
+
+  try {
+    const body = await c.req.json().catch(() => null);
+    const provider = body?.provider;
+
+    if (provider !== "google" && provider !== "github") {
+      return c.json({ error: "Unsupported OAuth provider." }, 400);
+    }
+
+    const existingMethod = await resolveExistingAuthMethod(c.env, c.env.DB, user.email);
+    if (existingMethod && existingMethod !== provider) {
+      return c.json({
+        allowed: false,
+        error: buildProviderConflictMessage(existingMethod),
+        existingMethod
+      }, 409);
+    }
+
+    await writeStoredAuthMethod(c.env.DB, user.email, provider, user.id).catch(() => null);
+
+    return c.json({
+      allowed: true,
+      method: provider
+    });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unable to complete OAuth sign-in." }, 500);
+  }
+});
+
 app.post("/v1/auth/exchange-code", async (c) => {
   try {
     const body = await c.req.json().catch(() => null);
