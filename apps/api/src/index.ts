@@ -799,11 +799,6 @@ app.post("/v1/auth/sign-up", async (c) => {
       return c.json({ error: "Password must be at least 8 characters long." }, 400);
     }
 
-    const existingMethod = await resolveExistingAuthMethod(c.env, c.env.DB, email);
-    if (existingMethod) {
-      return c.json({ error: buildProviderConflictMessage(existingMethod) }, 409);
-    }
-
     const supabase = createAuthClient(c.env);
     const { data, error } = await supabase.auth.signUp({
       email,
