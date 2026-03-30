@@ -10,7 +10,7 @@ import { useSessionStore, useToast } from "@/components/providers/app-providers"
 import { useAuthGuard } from "@/hooks/use-auth";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useExtensionStatus } from "@/hooks/use-extension-status";
-import { changePassword, signOutFromApi } from "@/lib/api/auth";
+import { signOutFromApi } from "@/lib/api/auth";
 import { createCheckout } from "@/lib/api/billing";
 import { fetchRankTrackingDashboard, startDashboardTrial, type RankTrackingDashboard } from "@/lib/api/dashboard";
 import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice, revokeOtherExtensionDevices } from "@/lib/api/extension-connect";
@@ -343,6 +343,7 @@ function DashboardContent() {
   const [bulkRevokeBusy, setBulkRevokeBusy] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
+  const [passwordEditorOpen, setPasswordEditorOpen] = useState(false);
   const [nextPassword, setNextPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -604,7 +605,7 @@ function DashboardContent() {
   }
 
   async function handlePasswordUpdate() {
-    if (!accessToken) {
+    if (!supabase) {
       showToast("Your website session is required to update the password.");
       return;
     }
@@ -621,9 +622,17 @@ function DashboardContent() {
 
     setPasswordBusy(true);
     try {
-      await changePassword(nextPassword, accessToken);
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: nextPassword
+      });
+
+      if (updateError) {
+        throw updateError;
+      }
+
       setNextPassword("");
       setConfirmPassword("");
+      setPasswordEditorOpen(false);
       showToast("Password updated.");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Unable to update the password.");
@@ -921,16 +930,38 @@ function DashboardContent() {
                     <KeyRound size={16} />
                     Password
                   </div>
-                  <div className={cn("mt-1 text-sm leading-6", dark ? "text-white/55" : "text-neutral-500")}>
-                    {signInMethod === "email" ? "Change the password for this email-based account." : `Password changes are managed through ${signInMethodMeta.label}.`}
-                  </div>
                 </div>
+                {signInMethod === "email" ? <button
+                  className={cn(
+                    "inline-flex h-10 items-center justify-center rounded-full px-5 text-sm font-semibold transition",
+                    dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black"
+                  )}
+                  onClick={() => setPasswordEditorOpen((current) => !current)}
+                  type="button"
+                >
+                  {passwordEditorOpen ? "Close" : "Update"}
+                </button> : null}
               </div>
-              {signInMethod === "email" ? <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-                <input className={cn("h-11 rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")} onChange={(event) => setNextPassword(event.target.value)} placeholder="New password" type="password" value={nextPassword} />
-                <input className={cn("h-11 rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirm password" type="password" value={confirmPassword} />
-                <button className={cn("inline-flex h-11 min-w-[164px] items-center justify-center whitespace-nowrap rounded-full px-5 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={passwordBusy} onClick={() => void handlePasswordUpdate()} type="button">{passwordBusy ? "Saving..." : "Update password"}</button>
-              </div> : null}
+              {signInMethod === "email" ? <>
+                <div className={cn("mt-3 flex items-center justify-between gap-4 rounded-2xl border px-4 py-3", dark ? "border-white/10 bg-[#111318]" : "border-black/8 bg-white")}>
+                  <div className={cn("text-lg tracking-[0.35em]", dark ? "text-white" : "text-gray-900")}>••••••</div>
+                  {!passwordEditorOpen ? <button
+                    className={cn(
+                      "text-sm font-medium transition",
+                      dark ? "text-white/75 hover:text-white" : "text-neutral-500 hover:text-neutral-700"
+                    )}
+                    onClick={() => setPasswordEditorOpen(true)}
+                    type="button"
+                  >
+                    Update
+                  </button> : null}
+                </div>
+                {passwordEditorOpen ? <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                  <input className={cn("h-11 rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")} onChange={(event) => setNextPassword(event.target.value)} placeholder="New password" type="password" value={nextPassword} />
+                  <input className={cn("h-11 rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirm password" type="password" value={confirmPassword} />
+                  <button className={cn("inline-flex h-11 min-w-[148px] items-center justify-center whitespace-nowrap rounded-2xl px-5 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={passwordBusy} onClick={() => void handlePasswordUpdate()} type="button">{passwordBusy ? "Saving..." : "Save"}</button>
+                </div> : null}
+              </> : <div className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-500")}>{`Password changes are managed through ${signInMethodMeta.label}.`}</div>}
             </div>
           </Card>
           <div className="flex">
