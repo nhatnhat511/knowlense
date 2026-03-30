@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { signInWithPassword, startOAuth } from "@/lib/api/auth";
+import { checkOAuthEmail, signInWithPassword, startOAuth } from "@/lib/api/auth";
 import { fetchApiProfile } from "@/lib/api/profile";
 import { mapSignInError } from "@/lib/auth/errors";
 import { getAuthCallbackUrl } from "@/lib/auth/redirects";
@@ -18,6 +18,8 @@ import {
   GoogleIcon
 } from "@/components/auth/auth-shell";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -29,6 +31,12 @@ function SignInContent() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | "">("");
+
+  function buildOAuthPrompt(provider: "google" | "github") {
+    return provider === "google"
+      ? "Enter your email first to continue with Google."
+      : "Enter your email first to continue with GitHub.";
+  }
 
   useEffect(() => {
     if (!supabase) {
@@ -73,10 +81,17 @@ function SignInContent() {
       return;
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      setStatus(buildOAuthPrompt(provider));
+      return;
+    }
+
     setOauthLoading(provider);
     setStatus("");
 
     try {
+      await checkOAuthEmail(normalizedEmail, provider);
       const { url } = await startOAuth(provider, getAuthCallbackUrl(nextPath));
       window.location.assign(url);
     } catch (error) {

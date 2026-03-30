@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { checkSignupEmail, signUpWithPassword, startOAuth } from "@/lib/api/auth";
+import { checkOAuthEmail, checkSignupEmail, signUpWithPassword, startOAuth } from "@/lib/api/auth";
 import { mapSignupResult, validatePassword } from "@/lib/auth/errors";
 import { getAuthCallbackUrl, getSignupRedirectUrl } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -39,10 +39,21 @@ export default function SignUpPage() {
       return;
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      setStatus(
+        provider === "google"
+          ? "Enter your email first to continue with Google."
+          : "Enter your email first to continue with GitHub."
+      );
+      return;
+    }
+
     setOauthLoading(provider);
     setStatus("");
 
     try {
+      await checkOAuthEmail(normalizedEmail, provider);
       const { url } = await startOAuth(provider, getAuthCallbackUrl("/dashboard"));
       window.location.assign(url);
     } catch (error) {

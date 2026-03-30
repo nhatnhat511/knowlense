@@ -58,16 +58,15 @@ export function checkSignupEmail(email: string) {
   }>("/v1/auth/sign-up/check-email", { email });
 }
 
-export function startOAuth(provider: "google" | "github", redirectTo: string) {
-  return postAuthResource<{ url: string }>("/v1/auth/oauth/start", { provider, redirectTo });
-}
-
-export function validateAuthProvider(accessToken: string) {
+export function checkOAuthEmail(email: string, provider: "google" | "github") {
   return postAuthResource<{
     allowed: boolean;
-    method?: "email" | "google" | "github";
     existingMethod?: "email" | "google" | "github";
-  }>("/v1/auth/validate-provider", {}, accessToken);
+  }>("/v1/auth/oauth/check-email", { email, provider });
+}
+
+export function startOAuth(provider: "google" | "github", redirectTo: string) {
+  return postAuthResource<{ url: string }>("/v1/auth/oauth/start", { provider, redirectTo });
 }
 
 export function exchangeOAuthCode(code: string) {

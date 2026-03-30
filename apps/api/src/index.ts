@@ -859,6 +859,38 @@ app.post("/v1/auth/sign-up/check-email", async (c) => {
   }
 });
 
+app.post("/v1/auth/oauth/check-email", async (c) => {
+  try {
+    const body = await c.req.json().catch(() => null);
+    const email = typeof body?.email === "string" ? body.email.trim() : "";
+    const provider = body?.provider;
+
+    if (!email) {
+      return c.json({ error: "Email is required." }, 400);
+    }
+
+    if (provider !== "google" && provider !== "github") {
+      return c.json({ error: "Unsupported OAuth provider." }, 400);
+    }
+
+    const existingMethod = await resolveExistingAuthMethod(c.env, c.env.DB, email);
+    if (existingMethod && existingMethod !== provider) {
+      return c.json({
+        allowed: false,
+        existingMethod,
+        error: buildProviderConflictMessage(existingMethod)
+      }, 409);
+    }
+
+    return c.json({
+      allowed: true,
+      existingMethod: existingMethod ?? null
+    });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unable to check this email right now." }, 500);
+  }
+});
+
 app.post("/v1/auth/oauth/start", async (c) => {
   try {
     const body = await c.req.json().catch(() => null);
@@ -890,42 +922,6 @@ app.post("/v1/auth/oauth/start", async (c) => {
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Unable to start OAuth flow." }, 500);
   }
-});
-
-app.post("/v1/auth/validate-provider", async (c) => {
-  const authResult = await authenticateRequest(c);
-  if (authResult) {
-    return c.json({ error: authResult.error }, authResult.status);
-  }
-
-  const user = c.get("user");
-  if (user.authType !== "supabase" || !user.email) {
-    return c.json({ allowed: true });
-  }
-
-  const existingMethod = await resolveExistingAuthMethod(c.env, c.env.DB, user.email);
-  const currentMethod = user.signInMethod === "google" || user.signInMethod === "github" || user.signInMethod === "email"
-    ? user.signInMethod
-    : null;
-
-  if (!currentMethod) {
-    return c.json({ allowed: true });
-  }
-
-  if (existingMethod && existingMethod !== currentMethod) {
-    return c.json({
-      allowed: false,
-      error: buildProviderConflictMessage(existingMethod),
-      existingMethod
-    }, 409);
-  }
-
-  await writeStoredAuthMethod(c.env.DB, user.email, currentMethod, user.id).catch(() => null);
-
-  return c.json({
-    allowed: true,
-    method: currentMethod
-  });
 });
 
 app.post("/v1/auth/exchange-code", async (c) => {
