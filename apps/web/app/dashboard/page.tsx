@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, startTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Bell, CreditCard, LayoutGrid, LifeBuoy, Moon, PlugZap, RefreshCw, Shield, Sparkles, Sun, UserRound } from "lucide-react";
 import { BrandLockup } from "@/components/brand/brand";
@@ -10,7 +10,7 @@ import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useExtensionStatus } from "@/hooks/use-extension-status";
 import { signOutFromApi } from "@/lib/api/auth";
 import { createCheckout } from "@/lib/api/billing";
-import { startDashboardTrial } from "@/lib/api/dashboard";
+import { fetchRankTrackingDashboard, startDashboardTrial, type RankTrackingDashboard } from "@/lib/api/dashboard";
 import { authorizeExtensionConnection } from "@/lib/api/extension-connect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -131,6 +131,117 @@ function Metric({ dark, compact, loading, title, value, delta, icon, action }: {
   );
 }
 
+function RankFilterButton({
+  dark,
+  active,
+  label,
+  onClick
+}: {
+  dark: boolean;
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={cn(
+        "rounded-full px-3 py-1.5 text-xs font-semibold transition",
+        dark
+          ? active
+            ? "bg-white text-gray-900"
+            : "bg-white/6 text-white/65 hover:bg-white/10 hover:text-white"
+          : active
+            ? "bg-gray-900 text-white"
+            : "bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}
+
+function RankTrendChart({
+  dark,
+  points,
+  emptyTitle,
+  emptyCopy
+}: {
+  dark: boolean;
+  points: RankTrackingDashboard["chart"]["points"];
+  emptyTitle?: string;
+  emptyCopy?: string;
+}) {
+  const width = 720;
+  const height = 220;
+  const padding = 24;
+  const maxRank = Math.max(...(points.length ? points.map((point) => point.rankValue) : [74]), 74);
+  const minRank = Math.min(...(points.length ? points.map((point) => point.rankValue) : [1]), 1);
+  const ySpan = Math.max(maxRank - minRank, 1);
+  const xStep = points.length > 1 ? (width - padding * 2) / (points.length - 1) : 0;
+
+  const chartPoints = points.map((point, index) => {
+    const x = padding + index * xStep;
+    const y = padding + ((point.rankValue - minRank) / ySpan) * (height - padding * 2);
+    return { ...point, x, y };
+  });
+
+  const polyline = chartPoints.map((point) => `${point.x},${point.y}`).join(" ");
+
+  return (
+    <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+      <svg className="h-[220px] w-full" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Rank trend chart">
+        <line x1={padding} x2={width - padding} y1={padding} y2={padding} stroke={dark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.08)"} />
+        <line x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} stroke={dark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.08)"} />
+        {points.length ? (
+          <>
+            <polyline fill="none" points={polyline} stroke="#6f5cff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            {chartPoints.map((point) => (
+              <g key={point.checkedAt}>
+                <circle cx={point.x} cy={point.y} r="4.5" fill={point.status === "ranked" ? "#6f5cff" : "#f59e0b"} />
+                <text x={point.x} y={height - 6} textAnchor="middle" fontSize="10" fill={dark ? "rgba(255,255,255,0.55)" : "rgba(71,85,105,1)"}>
+                  {point.dayLabel}
+                </text>
+              </g>
+            ))}
+          </>
+        ) : (
+          <>
+            <polyline
+              fill="none"
+              points={`${padding},${height - padding - 30} ${padding + 120},${height - padding - 42} ${padding + 240},${height - padding - 55} ${padding + 360},${height - padding - 48} ${padding + 480},${height - padding - 68} ${padding + 600},${height - padding - 60}`}
+              stroke={dark ? "rgba(255,255,255,0.18)" : "rgba(111,92,255,0.28)"}
+              strokeWidth="3"
+              strokeDasharray="6 8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <text x={width / 2} y={height / 2 - 8} textAnchor="middle" fontSize="14" fontWeight="700" fill={dark ? "rgba(255,255,255,0.82)" : "rgba(15,23,42,0.85)"}>
+              {emptyTitle || "Keyword rankings chart will appear here"}
+            </text>
+            <text x={width / 2} y={height / 2 + 16} textAnchor="middle" fontSize="11" fill={dark ? "rgba(255,255,255,0.55)" : "rgba(71,85,105,1)"}>
+              {emptyCopy || "Tracking needs more data before a live trend line can be drawn."}
+            </text>
+          </>
+        )}
+        <text x={padding} y={12} fontSize="10" fill={dark ? "rgba(255,255,255,0.55)" : "rgba(71,85,105,1)"}>#1 best</text>
+        <text x={width - padding} y={12} textAnchor="end" fontSize="10" fill={dark ? "rgba(255,255,255,0.55)" : "rgba(71,85,105,1)"}>&gt;54 outside top 3 pages</text>
+      </svg>
+      {points.length ? (
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          {points.slice(-3).map((point) => (
+            <div className={cn("rounded-2xl border px-3 py-2", dark ? "border-white/10 bg-[#0f1115]" : "border-gray-200 bg-white")} key={point.checkedAt}>
+              <div className={cn("text-[11px] font-semibold uppercase tracking-[0.12em]", dark ? "text-white/35" : "text-gray-400")}>{point.dayLabel}</div>
+              <div className={cn("mt-1 text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>{point.rankLabel}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -144,6 +255,11 @@ function DashboardContent() {
   const [checkoutLoading, setCheckoutLoading] = useState<"" | "monthly" | "yearly">("");
   const [trialLoading, setTrialLoading] = useState(false);
   const [connectBusy, setConnectBusy] = useState(false);
+  const [rankRange, setRankRange] = useState<"7d" | "30d" | "90d" | "all">("30d");
+  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
+  const [rankTracking, setRankTracking] = useState<RankTrackingDashboard | null>(null);
+  const [rankLoading, setRankLoading] = useState(false);
+  const [rankError, setRankError] = useState("");
 
   const section = (searchParams.get("section") as Section) || "overview";
   const requestId = searchParams.get("request");
@@ -176,6 +292,53 @@ function DashboardContent() {
   useEffect(() => {
     window.localStorage.setItem("knowlense-dashboard-density", density);
   }, [density]);
+
+  useEffect(() => {
+    if (!accessToken) {
+      setRankTracking(null);
+      setRankLoading(false);
+      return;
+    }
+
+    let active = true;
+
+    async function loadRankTracking() {
+      setRankLoading(true);
+      setRankError("");
+
+      try {
+        const result = await fetchRankTrackingDashboard(accessToken, {
+          range: rankRange,
+          targetId: selectedTargetId
+        });
+
+        if (!active) {
+          return;
+        }
+
+        setRankTracking(result);
+        if (!selectedTargetId && result.filters.selectedTargetId) {
+          setSelectedTargetId(result.filters.selectedTargetId);
+        }
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        setRankError(error instanceof Error ? error.message : "Unable to load rank tracking.");
+      } finally {
+        if (active) {
+          setRankLoading(false);
+        }
+      }
+    }
+
+    void loadRankTracking();
+
+    return () => {
+      active = false;
+    };
+  }, [accessToken, rankRange, selectedTargetId]);
 
   function setSection(next: Section) {
     const params = new URLSearchParams(searchParams.toString());
@@ -237,6 +400,27 @@ function DashboardContent() {
     }
   }
 
+  async function handleDashboardRefresh() {
+    refresh();
+    if (!accessToken) {
+      return;
+    }
+
+    setRankLoading(true);
+    try {
+      const result = await fetchRankTrackingDashboard(accessToken, {
+        range: rankRange,
+        targetId: selectedTargetId
+      });
+      setRankTracking(result);
+      setRankError("");
+    } catch (error) {
+      setRankError(error instanceof Error ? error.message : "Unable to load rank tracking.");
+    } finally {
+      setRankLoading(false);
+    }
+  }
+
   function overviewView() {
     return (
       <>
@@ -275,6 +459,112 @@ function DashboardContent() {
         </div>
 
         {error ? <div className={cn("mt-4 rounded-2xl border px-4 py-3 text-sm", dark ? "border-red-500/20 bg-red-500/10 text-red-200" : "border-red-200 bg-red-50 text-red-700")}>{error}</div> : null}
+
+        <div className={cn("mt-5 grid gap-3.5", compact ? "xl:grid-cols-[0.95fr_1.05fr]" : "xl:grid-cols-[0.9fr_1.1fr] 2xl:gap-4")}>
+          <Card compact={compact} dark={dark} title="Rank Tracking Summary" description="Daily rank tracking is tied to the exact product + keyword pair selected from the extension.">
+            {rankLoading && !rankTracking ? <Skeleton className="h-[220px] w-full" /> : null}
+            {!rankLoading && rankTracking ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    { label: "Active targets", value: String(rankTracking.summary.activeTargets) },
+                    { label: "Collecting baseline", value: String(rankTracking.summary.baselinePending) },
+                    { label: "Improving", value: String(rankTracking.summary.improving) },
+                    { label: "Declining", value: String(rankTracking.summary.declining) }
+                  ].map((item) => (
+                    <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")} key={item.label}>
+                      <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>{item.label}</div>
+                      <div className={cn("mt-2 text-[1.5rem] font-semibold tracking-[-0.05em]", dark ? "text-white" : "text-black")}>{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className={cn("mt-4 rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+                  <div className={cn("text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>Insight</div>
+                  <p className={cn("mt-2 text-sm leading-6", dark ? "text-white/60" : "text-gray-600")}>
+                    {rankTracking.chart.insight}
+                  </p>
+                </div>
+              </>
+            ) : null}
+            {!rankLoading && !rankTracking && !rankError ? (
+              <div className={cn("rounded-[20px] border border-dashed px-4 py-5 text-sm", dark ? "border-white/10 bg-white/5 text-white/55" : "border-gray-200 bg-[#fafafa] text-gray-500")}>
+                Start tracking keywords from the extension to build rank history here.
+              </div>
+            ) : null}
+            {rankError ? <div className={cn("mt-4 rounded-2xl border px-4 py-3 text-sm", dark ? "border-red-500/20 bg-red-500/10 text-red-200" : "border-red-200 bg-red-50 text-red-700")}>{rankError}</div> : null}
+          </Card>
+
+          <Card compact={compact} dark={dark} title="Keyword Rankings" description="This keyword rankings area appears immediately and starts plotting real movement after the first 7 daily checks are collected.">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: "7d", label: "7 days" },
+                  { id: "30d", label: "30 days" },
+                  { id: "90d", label: "90 days" },
+                  { id: "all", label: "All time" }
+                ].map((item) => (
+                  <RankFilterButton
+                    active={rankRange === item.id}
+                    dark={dark}
+                    key={item.id}
+                    label={item.label}
+                    onClick={() => startTransition(() => setRankRange(item.id as "7d" | "30d" | "90d" | "all"))}
+                  />
+                ))}
+              </div>
+              <select
+                className={cn("min-w-[220px] rounded-xl border px-3 py-2 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white" : "border-gray-200 bg-white text-gray-900")}
+                onChange={(event) => startTransition(() => setSelectedTargetId(event.target.value || null))}
+                value={selectedTargetId ?? ""}
+              >
+                <option value="">Select a tracked keyword</option>
+                {(rankTracking?.filters.targets ?? []).map((target) => (
+                  <option key={target.id} value={target.id}>
+                    {target.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+                <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>Current keyword rank</div>
+                <div className={cn("mt-2 text-base font-semibold sm:text-lg", dark ? "text-white" : "text-black")}>{rankTracking?.chart.currentRankLabel ?? "No rank data yet"}</div>
+              </div>
+              <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+                <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>Best keyword rank</div>
+                <div className={cn("mt-2 text-base font-semibold sm:text-lg", dark ? "text-white" : "text-black")}>{rankTracking?.chart.bestRankLabel ?? "No rank data yet"}</div>
+              </div>
+              <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+                <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>Tracked keyword</div>
+                <div className={cn("mt-2 text-base font-semibold sm:text-lg", dark ? "text-white" : "text-black")}>{rankTracking?.chart.keyword || "No target selected"}</div>
+              </div>
+            </div>
+
+              <div className="mt-4">
+                {rankLoading && !rankTracking ? <Skeleton className="h-[280px] w-full" /> : null}
+                {!rankLoading && rankTracking?.chart.targetId && rankTracking.chart.baselineReady ? (
+                <RankTrendChart dark={dark} points={rankTracking.chart.points} />
+              ) : null}
+              {!rankLoading && rankTracking?.chart.targetId && !rankTracking.chart.baselineReady ? (
+                <RankTrendChart
+                  dark={dark}
+                  emptyCopy={`${rankTracking.chart.baselineProgress} of 7 daily checks are complete. The chart will unlock after the first baseline week is collected.`}
+                  emptyTitle="Collecting baseline data"
+                  points={[]}
+                />
+              ) : null}
+              {!rankLoading && !rankTracking?.chart.targetId ? (
+                <RankTrendChart
+                  dark={dark}
+                  emptyCopy="Start tracking a keyword from the extension, or select a tracked keyword here to view its upcoming trend line."
+                  emptyTitle="Keyword rankings chart will appear here"
+                  points={[]}
+                />
+              ) : null}
+            </div>
+          </Card>
+        </div>
 
         <div className={cn("mt-5 grid gap-3.5", compact ? "xl:grid-cols-3" : "xl:grid-cols-3 2xl:gap-4")}>
           <Card compact={compact} dark={dark} title="Current account"><div className={cn("text-[1.8rem] font-bold tracking-[-0.06em] break-words sm:text-[2rem]", dark ? "text-white" : "text-gray-900")}>{overview?.currentAccount.value ?? "..."}</div><p className={cn("mt-2 text-sm", dark ? "text-white/55" : "text-gray-500")}>{overview?.currentAccount.status ?? "Loading"}</p></Card>
@@ -399,7 +689,7 @@ function DashboardContent() {
                   <DensityButton active={density === "compact"} dark={dark} label="Compact" onClick={() => setDensity("compact")} />
                   <DensityButton active={density === "comfortable"} dark={dark} label="Comfortable" onClick={() => setDensity("comfortable")} />
                 </div>
-                <TopButton active={theme === "light"} dark={dark} label="Light mode" onClick={() => setTheme("light")}><Sun size={17} /></TopButton><TopButton active={theme === "dark"} dark={dark} label="Dark mode" onClick={() => setTheme("dark")}><Moon size={17} /></TopButton><TopButton dark={dark} label="Refresh dashboard" onClick={refresh}><RefreshCw size={17} /></TopButton><TopButton dark={dark} label="Notifications" onClick={() => showToast(overview?.recentRuns[0] ? `Latest run: ${overview.recentRuns[0].query}` : "No new dashboard notifications.")}><Bell size={17} /></TopButton><button className={cn("inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 transition", dark ? "border-white/10 bg-[#111318] hover:bg-white/6" : "border-gray-200 bg-white hover:bg-gray-50")} onClick={() => setSection("account")} type="button"><span className="grid h-8 w-8 place-items-center rounded-full bg-[#eef2ff] text-xs font-semibold text-[#6f5cff]">{initials}</span><span className={cn("text-sm font-medium", dark ? "text-white" : "text-gray-900")}>{authLoading ? "Loading" : firstName}</span></button></div>
+                <TopButton active={theme === "light"} dark={dark} label="Light mode" onClick={() => setTheme("light")}><Sun size={17} /></TopButton><TopButton active={theme === "dark"} dark={dark} label="Dark mode" onClick={() => setTheme("dark")}><Moon size={17} /></TopButton><TopButton dark={dark} label="Refresh dashboard" onClick={handleDashboardRefresh}><RefreshCw size={17} /></TopButton><TopButton dark={dark} label="Notifications" onClick={() => showToast(overview?.recentRuns[0] ? `Latest run: ${overview.recentRuns[0].query}` : "No new dashboard notifications.")}><Bell size={17} /></TopButton><button className={cn("inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 transition", dark ? "border-white/10 bg-[#111318] hover:bg-white/6" : "border-gray-200 bg-white hover:bg-gray-50")} onClick={() => setSection("account")} type="button"><span className="grid h-8 w-8 place-items-center rounded-full bg-[#eef2ff] text-xs font-semibold text-[#6f5cff]">{initials}</span><span className={cn("text-sm font-medium", dark ? "text-white" : "text-gray-900")}>{authLoading ? "Loading" : firstName}</span></button></div>
             </div>
           </header>
 

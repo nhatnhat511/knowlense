@@ -1,28 +1,42 @@
-const DEFAULT_API_URL = "https://api.knowlense.com";
 const PANEL_ID = "knowlense-product-panel";
 const STYLE_ID = "knowlense-product-panel-style";
+const BUBBLE_ID = "knowlense-product-bubble";
+
 const PANEL_STATE = {
   mountedUrl: null,
+  bubble: null,
   panel: null,
-  status: null,
-  meta: null,
-  intent: null,
-  body: null,
-  action: null,
+  activeTab: "keyword-seo",
   keywordInput: null,
-  results: null
+  keywordAction: null,
+  keywordError: null,
+  keywordStatus: null,
+  keywordResults: null,
+  healthAction: null,
+  healthStatus: null,
+  healthResults: null,
+  productMetaValue: null
 };
 
 function textFromNode(node) {
   return node?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 }
 
+function textFromRoot(root = document) {
+  return root?.body?.innerText?.replace(/\s+/g, " ").trim() ?? "";
+}
+
 function normalizeText(value) {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function dedupe(items) {
-  return [...new Set(items)];
+function normalizeProductUrl(value) {
+  try {
+    const url = new URL(value, window.location.origin);
+    return `${url.origin}${url.pathname}`.replace(/\/$/, "").toLowerCase();
+  } catch {
+    return value.trim().replace(/\/$/, "").toLowerCase();
+  }
 }
 
 function cleanGradeText(value) {
@@ -38,6 +52,10 @@ function splitList(value, kind = "default") {
     .split(/,|\/|\|/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function isProductPage() {
+  return /teacherspayteachers\.com\/Product\//.test(window.location.href);
 }
 
 function extractSearchQuery() {
@@ -132,181 +150,588 @@ function extractSearchSnapshot() {
   };
 }
 
-function isProductPage() {
-  return /teacherspayteachers\.com\/Product\//.test(window.location.href);
+function extractProductMeta() {
+  const title = textFromNode(document.querySelector("h1")) || "Current product";
+
+  return {
+    title
+  };
+}
+
+function extractResourceSpecsMap(root = document) {
+  const specs = new Map();
+  const labelNodes = [...root.querySelectorAll("span[class*='ResourceSpecs-module__detailLabel']")];
+
+  labelNodes.forEach((labelNode) => {
+    const label = normalizeText(textFromNode(labelNode)).replace(/:$/, "").trim();
+    if (!label || specs.has(label)) {
+      return;
+    }
+
+    const row =
+      labelNode.closest("div[class*='Box--display-flex']") ||
+      labelNode.closest("div[class*='ResourceSpecs']") ||
+      labelNode.parentElement;
+
+    if (!row) {
+      return;
+    }
+
+    const detailRoot =
+      row.querySelector("div[class*='Text-module__detail']") ||
+      row.querySelector("div[class*='Text-module__root']") ||
+      row;
+
+    const inlineValues = [...detailRoot.querySelectorAll("div, span, p")]
+      .filter((node) => {
+        if (node === labelNode || labelNode.contains(node)) {
+          return false;
+        }
+
+        const className = node.getAttribute("class") || "";
+        return /Text-module__(inline|detail)/i.test(className);
+      })
+      .map((node) => textFromNode(node))
+      .filter(Boolean)
+      .filter((text) => normalizeText(text) !== label);
+
+    const anchorValues = [...detailRoot.querySelectorAll("a")]
+      .map((anchor) => textFromNode(anchor))
+      .filter(Boolean);
+
+    let valueText = "";
+    if (label === "grades") {
+      valueText = textFromNode(detailRoot)
+        .replace(textFromNode(labelNode), "")
+        .replace(/\bMostly used with\b.*$/i, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+    } else if (label === "pages") {
+      valueText = textFromNode(detailRoot)
+        .replace(textFromNode(labelNode), "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+    } else if (anchorValues.length > 0) {
+      valueText = anchorValues.join(", ");
+    } else if (inlineValues.length > 0) {
+      valueText = inlineValues.join(" ");
+    } else {
+      const rowText = textFromNode(row);
+      const labelText = textFromNode(labelNode);
+      valueText = rowText
+        .replace(labelText, "")
+        .replace(/^\s*[:,\-]\s*/, "")
+        .trim();
+    }
+
+    if (valueText) {
+      specs.set(
+        label,
+        valueText
+          .replace(/\s*,\s*/g, ", ")
+          .replace(/\s{2,}/g, " ")
+          .trim()
+      );
+    }
+  });
+
+  return specs;
+}
+
+function findLabelValue(label, root = document) {
+  const specs = extractResourceSpecsMap(root);
+  return specs.get(normalizeText(label)) || "";
+}
+
+function findHighlightsRow(label, root = document) {
+  const normalizedLabel = normalizeText(label);
+  const labelNode = [...root.querySelectorAll("span[class*='ResourceSpecs-module__detailLabel']")].find(
+    (node) => normalizeText(textFromNode(node)).replace(/:$/, "").trim() === normalizedLabel
+  );
+
+  if (!labelNode) {
+    return null;
+  }
+
+  return (
+    labelNode.closest("div[class*='Box--display-flex']") ||
+    labelNode.closest("div[class*='ResourceSpecs']") ||
+    labelNode.parentElement
+  );
+}
+
+function extractFieldFromHighlights(label, root = document) {
+  const row = findHighlightsRow(label, root);
+  if (!row) {
+    return "";
+  }
+
+  const detailRoot =
+    row.querySelector("div[class*='Text-module__detail']") ||
+    row.querySelector("div[class*='Text-module__root']") ||
+    row;
+
+  if (normalizeText(label) === "grades") {
+    const inlineNode = detailRoot.querySelector("div[class*='Text-module__inline']");
+    return cleanGradeText(textFromNode(inlineNode || detailRoot));
+  }
+
+  if (normalizeText(label) === "pages") {
+    const inlineNode = detailRoot.querySelector("div[class*='Text-module__inline']");
+    return textFromNode(inlineNode || detailRoot).replace(textFromNode(row.querySelector("span[class*='ResourceSpecs-module__detailLabel']") || null), "").trim();
+  }
+
+  const anchors = [...detailRoot.querySelectorAll("a")]
+    .map((anchor) => textFromNode(anchor))
+    .filter(Boolean);
+
+  if (anchors.length > 0) {
+    return anchors.join(", ");
+  }
+
+  return textFromNode(detailRoot)
+    .replace(textFromNode(row.querySelector("span[class*='ResourceSpecs-module__detailLabel']") || null), "")
+    .replace(/\s*,\s*/g, ", ")
+    .trim();
+}
+
+function getDescriptionBodyNode(root = document) {
+  const descriptionRoot = root.querySelector("#description");
+  if (!descriptionRoot) {
+    return null;
+  }
+
+  return (
+    descriptionRoot.querySelector(
+      ".DescriptionLayout__htmlDisplay.DescriptionLayout__htmlDisplay--fromNewEditor"
+    ) || descriptionRoot.querySelector(".DescriptionLayout__htmlDisplay")
+  );
+}
+
+function extractDescriptionFieldData(root = document) {
+  const body = getDescriptionBodyNode(root);
+  if (!body) {
+    return {
+      text: "",
+      wordCount: 0,
+      productLinks: [],
+      allLinks: []
+    };
+  }
+
+  const clone = body.cloneNode(true);
+  clone.querySelectorAll("script, style, noscript").forEach((node) => node.remove());
+
+  const renderedText = (body.innerText || "").trim();
+  const clonedText = (clone.innerText || clone.textContent || "").trim();
+  const text = (renderedText || clonedText)
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const allLinks = [...clone.querySelectorAll("a[href]")]
+    .map((anchor) => {
+      const href = anchor.getAttribute("href");
+      if (!href) {
+        return null;
+      }
+      try {
+        return new URL(href, window.location.origin).href;
+      } catch {
+        return href;
+      }
+    })
+    .filter(Boolean);
+
+  const productLinks = allLinks.filter((href) => /teacherspayteachers\.com\/Product\//i.test(href));
+
+  return {
+    text,
+    wordCount: text.split(/\s+/).filter(Boolean).length,
+    productLinks,
+    allLinks
+  };
+}
+
+function extractDescriptionText(root = document) {
+  return extractDescriptionFieldData(root).text;
+}
+
+function extractDescriptionExcerpt(root = document) {
+  const descriptionText = extractDescriptionFieldData(root).text;
+  if (!descriptionText) {
+    return "";
+  }
+
+  return descriptionText.slice(0, 300).trim();
+}
+
+function extractDescriptionWordCount(root = document) {
+  return extractDescriptionFieldData(root).wordCount;
+}
+
+function extractSellerName(root = document) {
+  const sellerLink =
+    root.querySelector(
+      "[class*='AboutAuthorRow-module__aboutAuthorRow'] [class*='AboutAuthorRow-module__detailsContainer'] a[class*='AboutAuthorRow-module__authorLink'][href^='/store/']"
+    ) ||
+    root.querySelector(
+      "[class*='AboutAuthorRow-module__aboutAuthorRow'] a[class*='AboutAuthorRow-module__authorAvatarLink'][href^='/store/']"
+    ) ||
+    root.querySelector(
+      "[class*='AboutAuthorRow-module__aboutAuthorRow'] [class*='AboutAuthorRow-module__detailsContainer'] a[href^='/store/']"
+    ) ||
+    [...root.querySelectorAll("a")].find(
+      (anchor) => /\/store\//i.test(anchor.href || "") || /followers?/i.test(textFromNode(anchor.parentElement || null))
+    );
+
+  return textFromNode(sellerLink) || "";
+}
+
+function extractSellerStorePath(root = document) {
+  const sellerLink =
+    root.querySelector(
+      "[class*='AboutAuthorRow-module__aboutAuthorRow'] [class*='AboutAuthorRow-module__detailsContainer'] a[class*='AboutAuthorRow-module__authorLink'][href^='/store/']"
+    ) ||
+    root.querySelector(
+      "[class*='AboutAuthorRow-module__aboutAuthorRow'] a[class*='AboutAuthorRow-module__authorAvatarLink'][href^='/store/']"
+    ) ||
+    root.querySelector(
+      "[class*='AboutAuthorRow-module__aboutAuthorRow'] [class*='AboutAuthorRow-module__detailsContainer'] a[href^='/store/']"
+    );
+
+  const href = sellerLink?.getAttribute("href") || "";
+  if (!href) {
+    return null;
+  }
+
+  try {
+    const url = new URL(href, window.location.origin);
+    const match = url.pathname.match(/^\/store\/[^/?#]+/i);
+    return match ? match[0].toLowerCase() : null;
+  } catch {
+    const match = href.match(/^\/store\/[^/?#]+/i);
+    return match ? match[0].toLowerCase() : null;
+  }
+}
+
+function normalizeStorePath(value) {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    const url = new URL(value, window.location.origin);
+    const match = url.pathname.match(/^\/store\/[^/?#]+/i);
+    return match ? match[0].toLowerCase() : "";
+  } catch {
+    const match = String(value).match(/^\/store\/[^/?#]+/i);
+    return match ? match[0].toLowerCase() : "";
+  }
+}
+
+function extractMediaData(root = document) {
+  const galleryRoot =
+    root.querySelector("[class*='ProductPageLayout_mainLeft']") ||
+    root.querySelector("[class*='ProductPageLayout__mainLeft']") ||
+    root.querySelector("main");
+  const thumbnailNodes = [...(galleryRoot || root).querySelectorAll("[data-testid]")]
+    .filter((node) => /^thumbnail-\d+$/i.test(node.getAttribute("data-testid") || ""));
+  const imageCount = thumbnailNodes.length > 0
+    ? thumbnailNodes.length
+    : [...(galleryRoot || root).querySelectorAll("img")]
+        .filter((image) => {
+          const src = image.getAttribute("src") || "";
+          const alt = image.getAttribute("alt") || "";
+          return /product|preview|thumbnail|page/i.test(src) || /preview|product/i.test(alt);
+        })
+        .slice(0, 12).length;
+  const hasVideo = Boolean(
+    (galleryRoot || root).querySelector(
+      "[class*='videoDurationOverlay'], [class*='videoDurationText'], [class*='videoPlayIcon'], [data-testid^='thumbnail-'] [class*='video']"
+    )
+  );
+  const hasReviewSection = Boolean(
+    root.querySelector("a[href='#ratings-and-reviews']") ||
+      root.querySelector("#ratings-and-reviews") ||
+      root.querySelector(".EvaluationsSummary-module__container, [class*='EvaluationsSummary-module__container']")
+  );
+
+  return {
+    imageCount,
+    hasVideo,
+    hasReviewSection
+  };
+}
+
+function extractHasPreview(root = document) {
+  const galleryRoot =
+    root.querySelector("[class*='ProductPageLayout_mainLeft']") ||
+    root.querySelector("[class*='ProductPageLayout__mainLeft']") ||
+    root.querySelector("main");
+
+  return Boolean(
+    (galleryRoot || root).querySelector(
+      "[class*='previewButton'] button, [class*='previewButton'][type='button'], [data-testid='preview-images-container'] button"
+    ) || [...(galleryRoot || root).querySelectorAll("button")]
+      .some((node) => /^view preview$/i.test(textFromNode(node)))
+  );
+}
+
+function extractDescriptionProductLinks(root = document) {
+  return extractDescriptionFieldData(root).allLinks;
+}
+
+async function resolveDescriptionLinkDetails(links) {
+  const uniqueLinks = [...new Set((links || []).filter(Boolean))];
+
+  const resolved = await Promise.all(
+    uniqueLinks.map(async (link) => {
+      const normalizedLink = String(link);
+      const storePath = normalizeStorePath(normalizedLink);
+      if (storePath) {
+        return {
+          url: normalizedLink,
+          type: "store",
+          resolvedStorePath: storePath
+        };
+      }
+
+      if (!/teacherspayteachers\.com\/Product\//i.test(normalizedLink)) {
+        return {
+          url: normalizedLink,
+          type: "external",
+          resolvedStorePath: null
+        };
+      }
+
+      try {
+        const response = await fetch(normalizedLink, {
+          credentials: "include"
+        });
+        if (!response.ok) {
+          throw new Error("Linked product fetch failed.");
+        }
+
+        const html = await response.text();
+        const linkedDocument = new DOMParser().parseFromString(html, "text/html");
+        const resolvedStorePath = extractSellerStorePath(linkedDocument);
+
+        return {
+          url: normalizedLink,
+          type: "product",
+          resolvedStorePath: normalizeStorePath(resolvedStorePath)
+        };
+      } catch {
+        return {
+          url: normalizedLink,
+          type: "product",
+          resolvedStorePath: null
+        };
+      }
+    })
+  );
+
+  return resolved;
+}
+
+function extractReviewData(root = document) {
+  const reviewsTab =
+    root.querySelector("a[href='#ratings-and-reviews']") ||
+    root.querySelector("[href='#ratings-and-reviews']");
+  const reviewsTabText = textFromNode(reviewsTab);
+  const hoverLabel =
+    root.querySelector(".EvaluationHoverPopoverLabel, [class*='EvaluationHoverPopoverLabel']") ||
+    root.querySelector("[data-testid='EvaluationPopover'] [class*='EvaluationHoverPopoverLabel']");
+  const summaryNode =
+    root.querySelector(".EvaluationHoverSummary, [class*='EvaluationHoverSummary'], [data-testid='HoverAnalyticsContainer']") ||
+    root.querySelector(".EvaluationsSummary-module__container, [class*='EvaluationsSummary-module__container']") ||
+    root.querySelector("[class*='Ratings-module__ratingsContainer'], [class*='Ratings-module_ratingsContainer']");
+  const hoverText = textFromNode(hoverLabel);
+  const summaryText = textFromNode(summaryNode);
+
+  const ratingMatch =
+    hoverText.match(/rated\s+(\d(?:\.\d)?)\s+out of 5,\s+based on\s+([\d,.]+[kKmM]?)\s+reviews?/i) ||
+    summaryText.match(/(\d(?:\.\d)?)\s*\(([\d,.]+[kKmM]?)\s+ratings?\)/i) ||
+    summaryText.match(/rated\s+(\d(?:\.\d)?)\s+out of 5,\s+based on\s+([\d,.]+[kKmM]?)\s+reviews?/i) ||
+    reviewsTabText.match(/(\d(?:\.\d)?)\s*\(([\d,.]+[kKmM]?)\s+ratings?\)/i);
+  const tabReviewsMatch =
+    reviewsTabText.match(/\breviews?\s*([\d,.]+[kKmM]?)/i) ||
+    reviewsTabText.match(/([\d,.]+[kKmM]?)\s*$/i) ||
+    textFromNode(root.querySelector("a[href='#ratings-and-reviews'] sup"))?.match(/([\d,.]+[kKmM]?)/i);
+
+  function parseCompactCount(value) {
+    const normalized = String(value || "").replace(/,/g, "").trim().toLowerCase();
+    if (!normalized) {
+      return 0;
+    }
+    if (normalized.endsWith("k")) {
+      return Math.round(Number.parseFloat(normalized.slice(0, -1)) * 1000);
+    }
+    if (normalized.endsWith("m")) {
+      return Math.round(Number.parseFloat(normalized.slice(0, -1)) * 1000000);
+    }
+    return Number(normalized);
+  }
+
+  const average = ratingMatch ? Number(ratingMatch[1]) : null;
+  const tabCount = Array.isArray(tabReviewsMatch) ? parseCompactCount(tabReviewsMatch[1]) : 0;
+  const matchedCount = ratingMatch ? parseCompactCount(ratingMatch[2]) : 0;
+  const count = tabCount > 0 ? tabCount : matchedCount;
+
+  return {
+    average: Number.isFinite(average) ? average : null,
+    count: Number.isFinite(count) ? count : 0,
+    recentDates: extractRecentReviewDates(root)
+  };
+}
+
+function extractCurrentProductPrice(root = document) {
+  const priceNode =
+    root.querySelector("div[class*='PriceBox-module__textPrice']") ||
+    root.querySelector("div[class*='PriceBox-module_textPrice']");
+  const priceText = textFromNode(priceNode);
+  const matchedPrice = priceText.match(/\$?\s*(\d+(?:\.\d{1,2})?)/);
+  const value = matchedPrice ? Number.parseFloat(matchedPrice[1]) : Number.NaN;
+
+  return Number.isFinite(value) ? value : null;
+}
+
+function extractRecentReviewDates(root = document) {
+  const reviewsRoot = root.querySelector("div#reviews-only");
+  if (!reviewsRoot) {
+    return [];
+  }
+
+  const listRoot =
+    reviewsRoot.querySelector("div[class*='EvaluationsList-module__list']") ||
+    reviewsRoot.querySelector("div[class*='EvaluationsList-module_list']");
+  if (!listRoot) {
+    return [];
+  }
+
+  const reviewCards = [...listRoot.children]
+    .map(
+      (item) =>
+        item.querySelector("div[data-testid^='EvaluationDisplay-']") ||
+        item.querySelector("div[class*='EvaluationDisplay-module__container']") ||
+        item.querySelector("div[class*='EvaluationDisplay-module_container']")
+    )
+    .filter(Boolean)
+    .slice(0, 5);
+
+  return reviewCards
+    .map((card) => {
+      const ratingHeader =
+        card.querySelector(
+          "div[class*='EvaluationDisplay-module__ratingSection'] div[class*='Text-module__detail'][class*='Text-module__colorSecondary']"
+        ) ||
+        card.querySelector(
+          "div[class*='EvaluationDisplay-module_ratingSection'] div[class*='Text-module__detail'][class*='Text-module__colorSecondary']"
+        ) ||
+        card.querySelector("div[class*='EvaluationDisplay-module__ratingSection'] div[class*='Text-module__detail']") ||
+        card.querySelector("div[class*='EvaluationDisplay-module_ratingSection'] div[class*='Text-module__detail']");
+      const dateText = textFromNode(ratingHeader);
+      if (!dateText) {
+        return null;
+      }
+
+      const parsed = new Date(dateText);
+      if (Number.isNaN(parsed.getTime())) {
+        return null;
+      }
+
+      return parsed.toISOString();
+    })
+    .filter(Boolean);
+}
+
+function extractDiscountOfferDetails(root = document) {
+  const discountBlocks = [...root.querySelectorAll("div[class*='DiscountCheckbox-module__discountCheckbox']")];
+  let hasFirstPurchase = false;
+  let hasFollower = false;
+
+  discountBlocks.forEach((block) => {
+    const textRoot = block.querySelector("[data-testid='discount-text']") || block;
+    const blockText = textFromNode(textRoot);
+    const hasFirstPurchaseCopy = /enjoy\s+\d+%\s+off your first purchase from this seller/i.test(blockText);
+    const hasFollowerCopy = /enjoy\s+\d+%\s+off as a thanks for following this seller/i.test(blockText);
+    const hasApplyCopy = /check to apply\.?/i.test(blockText);
+    const hasCheckbox = Boolean(
+      block.querySelector("button[role='checkbox'], input[type='checkbox'], [role='checkbox']")
+    );
+
+    if (!hasApplyCopy || !hasCheckbox) {
+      return;
+    }
+
+    if (hasFirstPurchaseCopy) {
+      hasFirstPurchase = true;
+    }
+
+    if (hasFollowerCopy) {
+      hasFollower = true;
+    }
+  });
+
+  return {
+    visible: hasFirstPurchase || hasFollower,
+    hasFirstPurchase,
+    hasFollower
+  };
+}
+
+function extractBundleOfferVisible(root = document) {
+  const bundleBlocks = [...root.querySelectorAll("div[class*='Box--margin-top-4x']")];
+
+  return bundleBlocks.some((block) => {
+    const heading = block.querySelector("h2, h3, [role='heading'], [class*='heading']");
+    const headingText = textFromNode(heading);
+    if (!/save even more with bundles/i.test(headingText)) {
+      return false;
+    }
+
+    return Boolean(
+      block.querySelector("a[href*='/Product/'], [class*='SkinnyProductRowCard'], [class*='ParentBundles-module__list']")
+    );
+  });
+}
+
+function extractIsBundleProduct(root = document) {
+  const bundleHeading =
+    root.querySelector("#bundle-previews h3[class*='Text-module__headingXS']") ||
+    root.querySelector("#bundle-previews h3");
+
+  return /^products in this bundle\b/i.test(textFromNode(bundleHeading));
+}
+
+async function fetchProductPageDocument() {
+  const response = await fetch(window.location.href, {
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Knowlense could not reload the product page for SEO Health.");
+  }
+
+  const html = await response.text();
+  return new DOMParser().parseFromString(html, "text/html");
 }
 
 function extractProductId(value) {
   return value.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
 }
 
-function findLabelValue(label) {
-  const candidates = [...document.querySelectorAll("div, span, p, li, dt, strong")];
-  const normalizedLabel = normalizeText(label);
-
-  for (const node of candidates) {
-    const text = normalizeText(textFromNode(node));
-    if (text !== normalizedLabel && text !== `${normalizedLabel}:`) {
-      continue;
-    }
-
-    const parent = node.parentElement;
-    const sibling = node.nextElementSibling;
-
-    if (sibling) {
-      const siblingText = textFromNode(sibling);
-      if (siblingText) {
-        return siblingText;
-      }
-    }
-
-    if (parent) {
-      const parentText = textFromNode(parent);
-      if (parentText) {
-        return parentText.replace(textFromNode(node), "").trim().replace(/^[:\-]\s*/, "");
-      }
-    }
-  }
-
-  return "";
-}
-
-function extractDescriptionExcerpt() {
-  const headings = [...document.querySelectorAll("h2, h3, [role='heading']")];
-  const heading = headings.find((item) => normalizeText(textFromNode(item)) === "description");
-
-  if (!heading) {
-    return "";
-  }
-
-  const chunks = [];
-  let cursor = heading.parentElement?.nextElementSibling || heading.nextElementSibling;
-
-  while (cursor && chunks.join(" ").length < 320) {
-    const text = textFromNode(cursor);
-    if (text) {
-      chunks.push(text);
-    }
-
-    if (cursor.querySelector("h2, h3")) {
-      break;
-    }
-
-    cursor = cursor.nextElementSibling;
-  }
-
-  return chunks.join(" ").split(/\s+/).slice(0, 300).join(" ").trim();
-}
-
-function extractSellerName() {
-  const sellerLink = [...document.querySelectorAll("a")]
-    .find((anchor) => /seller|store/i.test(anchor.href || "") || /followers?/i.test(textFromNode(anchor.parentElement || null)));
-
-  return textFromNode(sellerLink) || "";
-}
-
-function extractPreviewData() {
-  const previewButton = [...document.querySelectorAll("button, a")]
-    .find((node) => /view preview/i.test(textFromNode(node)));
-  const thumbs = [...document.querySelectorAll("img")]
-    .filter((image) => {
-      const alt = textFromNode(image);
-      const src = image.getAttribute("src") || "";
-      return /preview|page|thumbnail|product/i.test(`${alt} ${src}`);
-    })
-    .slice(0, 8);
-
-  return {
-    buttonVisible: Boolean(previewButton),
-    thumbCount: thumbs.length,
-    textHints: dedupe([
-      ...(previewButton ? [textFromNode(previewButton)] : []),
-      ...thumbs.map((image) => image.getAttribute("alt") || "")
-    ]).filter(Boolean)
-  };
-}
-
-function extractMediaData() {
-  const thumbs = [...document.querySelectorAll("img")]
-    .filter((image) => {
-      const src = image.getAttribute("src") || "";
-      return /product|preview|thumbnail|page/i.test(src);
-    })
-    .slice(0, 12);
-  const hasVideo = Boolean(
-    document.querySelector("video, iframe[src*='youtube'], iframe[src*='vimeo'], [class*='play'], [aria-label*='video']")
-  );
-  const hasReviewSection = /what others say|ratings|reviews/i.test(document.body.innerText || "");
-
-  return {
-    imageCount: thumbs.length,
-    hasVideo,
-    hasReviewSection
-  };
-}
-
-function extractDescriptionProductLinks() {
-  const headings = [...document.querySelectorAll("h2, h3, [role='heading']")];
-  const heading = headings.find((item) => normalizeText(textFromNode(item)) === "description");
-
-  if (!heading) {
-    return [];
-  }
-
-  const links = new Set();
-  let cursor = heading.parentElement?.nextElementSibling || heading.nextElementSibling;
-
-  while (cursor) {
-    cursor.querySelectorAll("a[href*='/Product/']").forEach((anchor) => links.add(anchor.href));
-    if (cursor.querySelector("h2, h3")) {
-      break;
-    }
-
-    cursor = cursor.nextElementSibling;
-  }
-
-  return [...links];
-}
-
-function extractUnansweredQuestions() {
-  const pageText = document.body.innerText || "";
-  if (/be the first to ask a question/i.test(pageText)) {
-    return 0;
-  }
-
-  const qaSection = [...document.querySelectorAll("h2, h3, [role='heading']")]
-    .find((node) => /questions?\s*&\s*answers?/i.test(textFromNode(node)));
-
-  if (!qaSection) {
-    return 0;
-  }
-
-  let sectionText = "";
-  let cursor = qaSection.parentElement?.nextElementSibling || qaSection.nextElementSibling;
-  let hops = 0;
-
-  while (cursor && hops < 6) {
-    sectionText += ` ${textFromNode(cursor)}`;
-    if (cursor.querySelector("h2, h3")) {
-      break;
-    }
-    cursor = cursor.nextElementSibling;
-    hops += 1;
-  }
-
-  const questionCount = (sectionText.match(/\?/g) || []).length;
-  const answeredCount = (sectionText.match(/answered|seller responded|reply/gi) || []).length;
-  return Math.max(0, questionCount - answeredCount);
-}
-
-function extractProductSnapshot() {
-  const title = textFromNode(document.querySelector("h1"));
-  const descriptionExcerpt = extractDescriptionExcerpt();
-  const gradesValue = findLabelValue("Grades");
-  const tagsValue = findLabelValue("Tags");
-  const subjectsValue = findLabelValue("Subjects");
-  const resourceTypeValue = findLabelValue("Resource type");
-  const pagesValue = findLabelValue("Pages");
+function extractProductSnapshot(root = document) {
+  const title = textFromNode(root.querySelector("h1"));
+  const descriptionExcerpt = extractDescriptionExcerpt(root);
+  const descriptionText = extractDescriptionText(root);
+  const discountOffer = extractDiscountOfferDetails(root);
+  const gradesValue = extractFieldFromHighlights("Grades", root);
+  const tagsValue = extractFieldFromHighlights("Tags", root);
+  const subjectsValue = extractFieldFromHighlights("Subjects", root);
+  const resourceTypeValue = extractFieldFromHighlights("Resource type", root);
+  const pagesValue = extractFieldFromHighlights("Pages", root);
+  const currentPrice = extractCurrentProductPrice(root);
 
   if (!title) {
     return {
@@ -320,289 +745,278 @@ function extractProductSnapshot() {
     snapshot: {
       productId: extractProductId(window.location.href),
       productUrl: window.location.href,
-      sellerName: extractSellerName(),
+      sellerName: extractSellerName(root),
+      sellerStorePath: extractSellerStorePath(root),
       title,
       descriptionExcerpt,
+      descriptionText,
+      descriptionWordCount: extractDescriptionWordCount(root),
       grades: splitList(gradesValue, "grades"),
       tags: splitList(tagsValue),
       subjects: splitList(subjectsValue),
       resourceType: resourceTypeValue || null,
       pagesValue: pagesValue || null,
-      preview: extractPreviewData(),
-      media: extractMediaData(),
-      discountOfferVisible: /new users can receive 10% off their first purchase from this seller/i.test(document.body.innerText || ""),
-      bundleOfferVisible: /save even more with bundles/i.test(document.body.innerText || ""),
-      descriptionProductLinks: extractDescriptionProductLinks(),
-      unansweredQuestions: extractUnansweredQuestions()
+      currentPrice,
+      media: extractMediaData(root),
+      hasPreview: extractHasPreview(root),
+      reviewData: extractReviewData(root),
+      isBundleProduct: extractIsBundleProduct(root),
+      discountOfferVisible: discountOffer.visible,
+      discountOfferHasFirstPurchase: discountOffer.hasFirstPurchase,
+      discountOfferHasFollower: discountOffer.hasFollower,
+      bundleOfferVisible: extractBundleOfferVisible(root),
+      descriptionProductLinks: extractDescriptionProductLinks(root)
     }
   };
 }
 
-const FORMAT_HINTS = [
-  "sequence and fold activity",
-  "cut and paste activity",
-  "spinner craft",
-  "writing craft",
-  "writing activity",
-  "fold activity",
-  "sequence activity",
-  "craftivity",
-  "activity",
-  "activities",
-  "centers",
-  "craft",
-  "spinner",
-  "template",
-  "printable",
-  "worksheet",
-  "worksheets"
-];
-const GENERIC_TAILS = new Set(["animal", "animals", "plant", "plants", "resource", "resources"]);
-const TITLE_NOISE = new Set(["mostly", "used", "with", "grade", "grades"]);
-const TOPIC_ARTICLES = new Set(["a", "an", "the"]);
-const CANONICAL_TOPIC_PATTERNS = [
-  "compare and contrast",
-  "cause and effect",
-  "main idea",
-  "text evidence",
-  "reading comprehension",
-  "close reading",
-  "opinion writing",
-  "informational writing",
-  "narrative writing",
-  "parts of speech",
-  "states of matter",
-  "water cycle",
-  "plant life cycle",
-  "frog life cycle",
-  "butterfly life cycle",
-  "sunflower life cycle"
-];
-
-function tokenize(value) {
-  return normalizeText(value)
-    .replace(/[^a-z0-9\s-]/g, " ")
-    .split(" ")
-    .map((token) => token.trim())
-    .filter((token) => token.length > 1 && !TITLE_NOISE.has(token));
+function decodeHtmlHref(value) {
+  return value
+    ?.replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 }
 
-function stripFormatHints(value) {
-  let text = ` ${normalizeText(value)} `;
-  [...FORMAT_HINTS].sort((left, right) => right.length - left.length).forEach((hint) => {
-    text = text.replace(new RegExp(`\\b${hint.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), " ");
-  });
+function isLikelySearchResultContainer(container) {
+  const text = textFromNode(container);
+  if (!text) {
+    return false;
+  }
 
-  return text.replace(/\s+/g, " ").trim();
+  return /\$\d+(?:\.\d{2})?/.test(text) || /add to cart/i.test(text) || /wish list/i.test(text);
 }
 
-function cleanEntity(value) {
-  const tokens = tokenize(value);
-  if (tokens.length > 1 && GENERIC_TAILS.has(tokens[tokens.length - 1])) {
-    tokens.pop();
-  }
-
-  return tokens.join(" ").trim();
+function hasProductLink(container) {
+  return Boolean(container?.querySelector("a[href*='/Product/']"));
 }
 
-function stripLeadingArticles(value) {
-  return normalizeText(value)
-    .split(" ")
-    .filter(Boolean)
-    .filter((token, index) => !(index === 0 && TOPIC_ARTICLES.has(token)))
-    .join(" ")
-    .trim();
+function hasCommerceSignals(container) {
+  const text = textFromNode(container);
+  return /\$\d+(?:\.\d{2})?/.test(text) || /add to cart/i.test(text);
 }
 
-function extractPatternTopicsFromText(value) {
-  const topics = new Set();
-  const normalized = normalizeText(value);
-  const patterns = [
-    { regex: /\blife cycle of (?:a |an |the )?([a-z0-9\s-]{2,40})/g, build: (entity) => `${entity} life cycle` },
-    { regex: /\bparts of (?:a |an |the )?([a-z0-9\s-]{2,40})/g, build: (entity) => `parts of ${entity}` },
-    { regex: /\btypes of (?:a |an |the )?([a-z0-9\s-]{2,40})/g, build: (entity) => `types of ${entity}` },
-    { regex: /\bstages of (?:a |an |the )?([a-z0-9\s-]{2,40})/g, build: (entity) => `stages of ${entity}` }
-  ];
-
-  patterns.forEach(({ regex, build }) => {
-    for (const match of normalized.matchAll(regex)) {
-      const entity = cleanEntity(stripLeadingArticles(match[1] || ""));
-      if (entity) {
-        topics.add(build(entity));
-      }
+function findResultContainerFromActionNode(node) {
+  let current = node?.parentElement;
+  while (current && current !== current.ownerDocument.body) {
+    if (hasProductLink(current) && hasCommerceSignals(current)) {
+      return current;
     }
-  });
-
-  CANONICAL_TOPIC_PATTERNS.forEach((pattern) => {
-    if (normalized.includes(pattern)) {
-      topics.add(pattern);
-    }
-  });
-
-  return [...topics];
+    current = current.parentElement;
+  }
+  return null;
 }
 
-function buildCoreTopic(title, descriptionExcerpt = "") {
-  const normalized = normalizeText(cleanGradeText(title));
-  const patternTopic = extractPatternTopicsFromText(normalized)[0] || extractPatternTopicsFromText(descriptionExcerpt)[0];
-  if (patternTopic) {
-    return patternTopic;
+function findSearchResultContainer(link, root) {
+  const explicit = link.closest(
+    "article, li, [data-resource-id], [data-product-id], .SearchResultsPage__result, .product-list-item, [class*='search-result'], [class*='SearchResult']"
+  );
+  if (explicit && isLikelySearchResultContainer(explicit)) {
+    return explicit;
   }
 
-  const formatIndex = FORMAT_HINTS.reduce((lowest, hint) => {
-    const index = normalized.indexOf(hint);
-    if (index === -1) {
-      return lowest;
+  let node = link.parentElement;
+  while (node && node !== root.body) {
+    if (isLikelySearchResultContainer(node)) {
+      return node;
     }
-
-    return lowest === -1 ? index : Math.min(lowest, index);
-  }, -1);
-
-  const topicChunk = formatIndex > 0 ? normalized.slice(0, formatIndex).trim() : normalized;
-  const cycleMatch = topicChunk.match(/\blife cycle of (?:a |an |the )?([a-z0-9\s-]+)/);
-  if (cycleMatch?.[1]) {
-    const entity = cleanEntity(stripLeadingArticles(cycleMatch[1]));
-    if (entity) {
-      return `${entity} life cycle`;
-    }
+    node = node.parentElement;
   }
 
-  const directMatch = topicChunk.match(/\b([a-z0-9\s-]{2,40}?) life cycle\b/);
-  if (directMatch?.[1]) {
-    const entity = cleanEntity(stripLeadingArticles(directMatch[1]));
-    if (entity) {
-      return `${entity} life cycle`;
-    }
-  }
-
-  const normalizedDescription = normalizeText(descriptionExcerpt || "");
-  const descriptionCycleMatch = normalizedDescription.match(/\blife cycle of (?:a |an |the )?([a-z0-9\s-]{2,40})/);
-  if (descriptionCycleMatch?.[1]) {
-    const entity = cleanEntity(stripLeadingArticles(descriptionCycleMatch[1]));
-    if (entity) {
-      return `${entity} life cycle`;
-    }
-  }
-
-  return stripFormatHints(topicChunk);
+  return null;
 }
 
-function buildNgrams(tokens, minSize, maxSize) {
-  const phrases = [];
-
-  for (let start = 0; start < tokens.length; start += 1) {
-    for (let size = minSize; size <= maxSize; size += 1) {
-      const slice = tokens.slice(start, start + size);
-      if (slice.length === size) {
-        phrases.push(slice.join(" "));
-      }
-    }
+function buildSearchResultFromContainer(container) {
+  const anchors = [...container.querySelectorAll("a[href*='/Product/']")];
+  if (anchors.length === 0) {
+    return null;
   }
 
-  return phrases;
-}
-
-function buildCoreTopics(snapshot) {
-  const topics = new Set();
-  const mainTopic = buildCoreTopic(snapshot.title, snapshot.descriptionExcerpt);
-  if (mainTopic) {
-    topics.add(mainTopic);
-  }
-
-  const descriptionBase = stripFormatHints(snapshot.descriptionExcerpt || "");
-  const descriptionTokens = tokenize(descriptionBase)
-    .filter((token) => !GENERIC_TAILS.has(token))
-    .slice(0, 28);
-
-  buildNgrams(descriptionTokens, 2, 4)
-    .filter((phrase) => phrase.length >= 8 && phrase.split(" ").length <= 4)
-    .filter((phrase) => {
-      if (mainTopic && phrase.includes(mainTopic)) {
-        return false;
+  const candidates = anchors
+    .map((anchor, index) => {
+      const href = decodeHtmlHref(anchor.getAttribute("href"));
+      if (!href) {
+        return null;
       }
 
-      const overlap = mainTopic
-        ? mainTopic.split(" ").filter((token) => phrase.split(" ").includes(token)).length
-        : phrase.split(" ").length;
-      return overlap >= 2;
+      const absolute = new URL(href, window.location.origin).toString();
+      const text = textFromNode(anchor);
+      const ancestorText = textFromNode(anchor.parentElement);
+      return {
+        index,
+        anchor,
+        productUrl: absolute,
+        normalizedUrl: normalizeProductUrl(absolute),
+        title: text,
+        inBundleMeta: /also included in|bundle/i.test(ancestorText)
+      };
     })
-    .slice(0, 8)
-    .forEach((phrase) => topics.add(phrase));
+    .filter(Boolean);
 
-  return [...topics]
-    .map((item) => normalizeText(item))
-    .filter((item) => item.length >= 6 && item.split(" ").length <= 4)
-    .sort((left, right) => left.split(" ").length - right.split(" ").length || left.length - right.length)
-    .slice(0, 3);
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const primaryCandidates = candidates.filter((candidate) => !candidate.inBundleMeta);
+  const meaningfulPrimaryCandidates = primaryCandidates.filter((candidate) => candidate.title && candidate.title.length >= 8);
+  const meaningfulCandidates = candidates.filter((candidate) => candidate.title && candidate.title.length >= 8);
+
+  const best =
+    meaningfulPrimaryCandidates[0] ||
+    meaningfulCandidates[0] ||
+    primaryCandidates[0] ||
+    candidates[0];
+
+  if (!best?.title) {
+    return null;
+  }
+
+  return {
+    productUrl: best.productUrl,
+    normalizedUrl: best.normalizedUrl,
+    title: best.title,
+    shopName:
+      [...container.querySelectorAll("a[href^='/store/'], a[href*='/store/']")]
+        .map((anchor) => textFromNode(anchor))
+        .find(Boolean) || "",
+    priceText: textFromNode(container).match(/\$\d+(?:\.\d{2})?/)?.[0] || "",
+    snippet:
+      textFromNode(container)
+        .split(/\n|\s{2,}/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .find((line) => line !== best.title && !/\$\d+(?:\.\d{2})?/.test(line) && line.length > 24) || ""
+  };
 }
 
-function findSearchInput() {
-  return document.querySelector("input[type='search'], input[name='search'], input[placeholder*='Search']");
-}
+function parseSearchResultsFromHtml(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const actionNodes = [...doc.querySelectorAll("button, a, span, div")].filter((node) => /add to cart/i.test(textFromNode(node)));
+  const seenContainers = new Set();
+  const seenUrls = new Set();
+  const results = [];
 
-function collectSuggestionTexts(seed) {
-  const selectors = [
-    "[role='listbox'] [role='option']",
-    "[role='listbox'] li",
-    "[data-testid*='search'] li",
-    "[data-testid*='autocomplete'] li",
-    "[class*='autocomplete'] li",
-    "[class*='Autocomplete'] li",
-    "[class*='suggest'] li",
-    "[class*='search'] [role='option']"
-  ];
-  const texts = new Set();
+  actionNodes.forEach((node) => {
+    const container = findResultContainerFromActionNode(node);
+    if (!container) {
+      return;
+    }
 
-  selectors.forEach((selector) => {
-    document.querySelectorAll(selector).forEach((node) => {
-      const text = textFromNode(node);
-      if (!text || text.length < 4 || text.length > 90 || /\$\d/.test(text)) {
-        return;
-      }
+    const containerKey =
+      container.getAttribute("data-resource-id") ||
+      container.getAttribute("data-product-id") ||
+      `${container.tagName}:${textFromNode(container).slice(0, 160)}`;
 
-      if (/^see all results for\b/i.test(text)) {
-        return;
-      }
+    if (seenContainers.has(containerKey)) {
+      return;
+    }
 
-      if (normalizeText(text).includes(normalizeText(seed))) {
-        texts.add(text);
-      }
+    const result = buildSearchResultFromContainer(container);
+    if (!result || seenUrls.has(result.normalizedUrl)) {
+      return;
+    }
+
+    seenContainers.add(containerKey);
+    seenUrls.add(result.normalizedUrl);
+    results.push({
+      productUrl: result.productUrl,
+      title: result.title
     });
   });
 
-  return [...texts];
-}
-
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function collectTptSuggestions(snapshot) {
-  const input = findSearchInput();
-  const seeds = buildCoreTopics(snapshot);
-
-  if (!input || seeds.length === 0) {
-    return [];
+  if (results.length > 0) {
+    return results;
   }
 
-  const originalValue = input.value;
-  const suggestions = new Set();
+  const productLinks = [...doc.querySelectorAll("a[href*='/Product/']")];
+  productLinks.forEach((link) => {
+    const container = findSearchResultContainer(link, doc);
+    if (!container) {
+      return;
+    }
 
-  for (const seed of seeds) {
-    input.focus();
-    input.value = seed;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "a" }));
-    await wait(650);
+    const containerKey =
+      container.getAttribute("data-resource-id") ||
+      container.getAttribute("data-product-id") ||
+      `${container.tagName}:${textFromNode(container).slice(0, 160)}`;
 
-    collectSuggestionTexts(seed).forEach((item) => suggestions.add(item));
+    if (seenContainers.has(containerKey)) {
+      return;
+    }
+
+    const result = buildSearchResultFromContainer(container);
+    if (!result || seenUrls.has(result.normalizedUrl)) {
+      return;
+    }
+
+    seenContainers.add(containerKey);
+    seenUrls.add(result.normalizedUrl);
+    results.push({
+      productUrl: result.productUrl,
+      title: result.title
+    });
+  });
+
+  return results;
+}
+
+async function scanKeywordSearch(productUrl, keyword) {
+  const currentProduct = normalizeProductUrl(productUrl);
+  const searchUrl = `${window.location.origin}/browse?search=${encodeURIComponent(keyword)}`;
+  const serpTitles = [];
+  const results = [];
+  let rank = {
+    status: "beyond_page_3",
+    position: 74,
+    resultPage: null,
+    pagePosition: null,
+    searchUrl
+  };
+
+  for (let page = 1; page <= 3; page += 1) {
+    const pageUrl = page === 1 ? searchUrl : `${searchUrl}&page=${page}`;
+    const response = await fetch(pageUrl, { credentials: "include" });
+    if (!response.ok) {
+      continue;
+    }
+
+      const html = await response.text();
+      const searchResults = parseSearchResultsFromHtml(html);
+      serpTitles.push(...searchResults.map((result) => result.title));
+      searchResults.forEach((result, index) => {
+        results.push({
+          position: (page - 1) * 18 + index + 1,
+          title: result.title,
+          productUrl: result.productUrl,
+          shopName: result.shopName || "",
+          priceText: result.priceText || "",
+          snippet: result.snippet || ""
+        });
+      });
+
+      if (rank.status !== "ranked") {
+        for (let index = 0; index < searchResults.length; index += 1) {
+          if (normalizeProductUrl(searchResults[index].productUrl) === currentProduct) {
+            const pagePosition = index + 1;
+            rank = {
+              status: "ranked",
+            position: pagePosition,
+            resultPage: page,
+            pagePosition,
+            searchUrl
+          };
+          break;
+        }
+      }
+    }
   }
 
-  input.value = originalValue;
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.blur();
-
-  return [...suggestions].slice(0, 20);
+  return {
+    rank,
+    serpTitles: serpTitles.slice(0, 48),
+    results: results.slice(0, 54)
+  };
 }
 
 function injectStyles() {
@@ -613,205 +1027,443 @@ function injectStyles() {
   const style = document.createElement("style");
   style.id = STYLE_ID;
   style.textContent = `
+    #${BUBBLE_ID} {
+      position: fixed;
+      top: 146px;
+      right: 18px;
+      z-index: 2147483645;
+      width: 50px;
+      height: 50px;
+      border: 1px solid rgba(15, 23, 42, 0.1);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.98);
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+      backdrop-filter: blur(10px);
+    }
+
+    #${BUBBLE_ID}:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+      background: #ffffff;
+    }
+
+    #${BUBBLE_ID} svg {
+      width: 30px;
+      height: 30px;
+      color: #6d5efc;
+    }
+
     #${PANEL_ID} {
       position: fixed;
-      top: 132px;
-      right: 24px;
-      z-index: 99999;
-      width: 340px;
-      max-height: calc(100vh - 156px);
-      overflow: hidden;
+      top: 146px;
+      right: 76px;
+      z-index: 2147483644;
+      width: min(320px, calc(100vw - 112px));
+      max-height: calc(100vh - 176px);
       border: 1px solid rgba(15, 23, 42, 0.08);
-      border-radius: 24px;
+      border-radius: 20px;
       background: rgba(255, 255, 255, 0.98);
-      box-shadow: 0 30px 80px rgba(15, 23, 42, 0.16);
-      backdrop-filter: blur(14px);
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.16);
+      backdrop-filter: blur(10px);
       font-family: Plus Jakarta Sans, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: #0f172a;
+      overflow: hidden;
+      transform-origin: top right;
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+
+    #${PANEL_ID}[hidden] {
+      display: block !important;
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+      pointer-events: none;
+      visibility: hidden;
     }
 
     #${PANEL_ID} * {
       box-sizing: border-box;
     }
 
-    .knowlense-panel-shell {
+    .knowlense-shell {
       display: flex;
-      max-height: calc(100vh - 156px);
       flex-direction: column;
+      max-height: calc(100vh - 176px);
     }
 
-    .knowlense-panel-header {
-      padding: 18px 18px 14px;
-      border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    .knowlense-header {
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.16);
     }
 
-    .knowlense-panel-eyebrow {
+    .knowlense-badge {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
       border-radius: 999px;
       background: #eef2ff;
       color: #6d5efc;
-      padding: 6px 10px;
-      font-size: 11px;
+      padding: 5px 9px;
+      font-size: 10px;
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
 
-    .knowlense-panel-title {
-      margin: 12px 0 0;
-      font-size: 21px;
+    .knowlense-title {
+      margin: 10px 0 0;
+      font-size: 16px;
       line-height: 1.1;
       font-weight: 800;
       letter-spacing: -0.04em;
     }
 
-    .knowlense-panel-subtitle {
-      margin: 8px 0 0;
-      font-size: 13px;
-      line-height: 1.55;
-      color: #64748b;
+    .knowlense-body {
+      padding: 12px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
 
-    .knowlense-panel-body {
-      overflow: auto;
-      padding: 16px 18px 18px;
-    }
-
-    .knowlense-panel-section {
+    .knowlense-product-meta {
+      display: grid;
+      gap: 8px;
+      padding: 10px 12px;
       border: 1px solid rgba(148, 163, 184, 0.14);
-      border-radius: 18px;
+      border-radius: 16px;
       background: #ffffff;
-      padding: 14px;
+      margin-bottom: 12px;
     }
 
-    .knowlense-panel-section + .knowlense-panel-section {
-      margin-top: 12px;
+    .knowlense-meta-label {
+      font-size: 11px;
+      color: #64748b;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
 
-    .knowlense-meta-row {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      font-size: 12px;
+    .knowlense-meta-value {
+      font-size: 13px;
+      line-height: 1.45;
+      color: #0f172a;
+      font-weight: 700;
+    }
+
+    .knowlense-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .knowlense-tab {
+      min-height: 38px;
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 8px;
+      font-size: 11px;
+      line-height: 1.25;
+      font-weight: 700;
+      color: #475569;
+      cursor: pointer;
+      transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+    }
+
+    .knowlense-tab.is-active {
+      background: #f8f7ff;
+      border-color: rgba(109, 94, 252, 0.22);
+      color: #111827;
+    }
+
+    .knowlense-tab-panel {
+      display: none;
+      padding: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 16px;
+      background: #ffffff;
+    }
+
+    .knowlense-tab-panel.is-active {
+      display: block;
+    }
+
+    .knowlense-input-label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 11px;
+      color: #475569;
+      font-weight: 700;
+    }
+
+    .knowlense-keyword-input {
+      width: 100%;
+      min-height: 72px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 14px;
+      padding: 10px 12px;
+      font: inherit;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #0f172a;
+      resize: vertical;
+      outline: none;
+    }
+
+    .knowlense-keyword-input:focus {
+      border-color: rgba(109, 94, 252, 0.36);
+      box-shadow: 0 0 0 4px rgba(109, 94, 252, 0.1);
+    }
+
+    .knowlense-keyword-help {
+      margin-top: 6px;
+      font-size: 11px;
+      line-height: 1.45;
       color: #64748b;
     }
 
-    .knowlense-meta-row strong {
-      display: block;
-      color: #111827;
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
+    .knowlense-keyword-error {
+      display: none;
+      margin-top: 8px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #dc2626;
+      font-weight: 600;
     }
 
-    .knowlense-panel-action {
+    .knowlense-keyword-error.is-visible {
+      display: block;
+    }
+
+    .knowlense-keyword-action {
       width: 100%;
-      height: 44px;
+      margin-top: 10px;
+      min-height: 42px;
       border: 0;
       border-radius: 999px;
       background: #111827;
       color: #ffffff;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
       cursor: pointer;
       transition: transform 160ms ease, opacity 160ms ease, background 160ms ease;
     }
 
-    .knowlense-panel-action:hover:not(:disabled) {
-      transform: translateY(-1px);
+    .knowlense-keyword-action:hover:not(:disabled) {
       background: #000000;
+      transform: translateY(-1px);
     }
 
-    .knowlense-panel-action:disabled {
-      opacity: 0.65;
-      cursor: wait;
+    .knowlense-keyword-action:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
     }
 
-    .knowlense-panel-input {
-      width: 100%;
-      margin-bottom: 10px;
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      border-radius: 14px;
-      background: #ffffff;
-      padding: 12px 14px;
-      font-size: 14px;
-      color: #0f172a;
-      outline: none;
-    }
-
-    .knowlense-panel-input:focus {
-      border-color: rgba(109, 94, 252, 0.45);
-      box-shadow: 0 0 0 4px rgba(109, 94, 252, 0.12);
-    }
-
-    .knowlense-panel-status {
+    .knowlense-keyword-status {
       margin-top: 10px;
       font-size: 12px;
       line-height: 1.5;
       color: #64748b;
     }
 
-    .knowlense-panel-status.error {
-      color: #dc2626;
-    }
-
-    .knowlense-panel-status.success {
-      color: #059669;
-    }
-
-    .knowlense-keyword-list {
+    .knowlense-keyword-results {
       display: grid;
       gap: 10px;
-      margin: 0;
-      padding: 0;
-      list-style: none;
+      margin-top: 12px;
     }
 
-    .knowlense-keyword-item {
+    .knowlense-health-results {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .knowlense-keyword-card {
       border: 1px solid rgba(148, 163, 184, 0.14);
-      border-radius: 16px;
+      border-radius: 14px;
       background: #ffffff;
       padding: 12px;
     }
 
-    .knowlense-keyword-top {
+    .knowlense-keyword-card-head {
       display: flex;
+      justify-content: space-between;
+      gap: 10px;
       align-items: flex-start;
+      margin-bottom: 10px;
+    }
+
+    .knowlense-keyword-name {
+      font-size: 13px;
+      line-height: 1.4;
+      font-weight: 800;
+      color: #0f172a;
+    }
+
+    .knowlense-keyword-score {
+      border-radius: 999px;
+      background: #f8f7ff;
+      color: #6d5efc;
+      padding: 5px 9px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .knowlense-check-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .knowlense-check-group {
+      display: grid;
+      gap: 7px;
+    }
+
+    .knowlense-check-group + .knowlense-check-group {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .knowlense-check-group-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .knowlense-check-group-title {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #475569;
+    }
+
+    .knowlense-check-group-summary {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      background: #f8fafc;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      padding: 3px 8px;
+      font-size: 10px;
+      line-height: 1.2;
+      font-weight: 700;
+      color: #64748b;
+    }
+
+    .knowlense-check-row {
+      display: grid;
+      grid-template-columns: 16px 1fr;
+      gap: 8px;
+      align-items: start;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #334155;
+    }
+
+    .knowlense-check-mark {
+      width: 16px;
+      height: 16px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+      margin-top: 1px;
+    }
+
+    .knowlense-check-mark.good {
+      background: #ecfdf5;
+      color: #059669;
+    }
+
+    .knowlense-check-mark.bad {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+
+    .knowlense-check-copy {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .knowlense-rank-trophy {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      color: #d97706;
+      flex: 0 0 auto;
+    }
+
+    .knowlense-rank-trophy svg {
+      width: 14px;
+      height: 14px;
+      display: block;
+    }
+
+    .knowlense-suggestion-block {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .knowlense-suggestion-label {
+      margin-bottom: 6px;
+      font-size: 11px;
+      color: #64748b;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .knowlense-track-toggle {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(148, 163, 184, 0.14);
+      display: flex;
+      align-items: center;
       justify-content: space-between;
       gap: 10px;
     }
 
-    .knowlense-keyword-name {
-      font-size: 14px;
-      line-height: 1.45;
-      font-weight: 700;
-      color: #111827;
+    .knowlense-track-toggle-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      line-height: 1.4;
+      font-weight: 600;
+      color: #334155;
+      cursor: pointer;
     }
 
-    .knowlense-keyword-rank {
-      white-space: nowrap;
-      border-radius: 999px;
-      padding: 5px 10px;
+    .knowlense-track-toggle-label input {
+      margin: 0;
+      width: 14px;
+      height: 14px;
+      accent-color: #6d5efc;
+    }
+
+    .knowlense-track-toggle-meta {
       font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
+      line-height: 1.4;
+      color: #64748b;
+      text-align: right;
     }
 
-    .knowlense-keyword-rank.ranked {
-      background: #ecfdf5;
-      color: #047857;
-    }
-
-    .knowlense-keyword-rank.missing {
-      background: #fff7ed;
-      color: #c2410c;
-    }
-
-    .knowlense-keyword-meta {
-      margin-top: 8px;
+    .knowlense-chip-list {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
@@ -828,240 +1480,530 @@ function injectStyles() {
       color: #475569;
     }
 
-    .knowlense-keyword-link {
-      margin-top: 8px;
-      display: inline-flex;
-      font-size: 12px;
-      color: #6d5efc;
-      text-decoration: none;
-      font-weight: 600;
-    }
-
-    .knowlense-keyword-link:hover {
-      text-decoration: underline;
-    }
-
-    .knowlense-score {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-    }
-
-    .knowlense-score strong {
-      font-size: 34px;
-      line-height: 1;
+    .knowlense-panel-heading {
+      font-size: 14px;
+      line-height: 1.3;
       font-weight: 800;
-      letter-spacing: -0.04em;
-      color: #111827;
+      letter-spacing: -0.03em;
+      margin: 0 0 6px;
     }
 
-    .knowlense-score span {
+    .knowlense-panel-copy {
+      margin: 0;
       font-size: 12px;
-      color: #64748b;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-
-    .knowlense-panel-empty {
-      font-size: 13px;
       line-height: 1.55;
       color: #64748b;
     }
 
-    @media (max-width: 1500px) {
+    @media (max-width: 1180px) {
+      #${BUBBLE_ID} {
+        top: auto;
+        right: 14px;
+        bottom: 18px;
+      }
+
       #${PANEL_ID} {
         top: auto;
-        right: 16px;
-        bottom: 16px;
-        width: min(360px, calc(100vw - 32px));
+        right: 14px;
+        bottom: 78px;
+        width: min(320px, calc(100vw - 28px));
+        max-height: min(72vh, 560px);
+      }
+
+      .knowlense-shell {
         max-height: min(72vh, 560px);
       }
     }
   `;
 
-  document.head.appendChild(style);
+  (document.head || document.documentElement || document.body).appendChild(style);
 }
 
-function createPanel() {
-  injectStyles();
-
-  const panel = document.createElement("aside");
-  panel.id = PANEL_ID;
-  panel.innerHTML = `
-    <div class="knowlense-panel-shell">
-      <div class="knowlense-panel-header">
-        <div class="knowlense-panel-eyebrow">Knowlense SEO</div>
-        <h3 class="knowlense-panel-title">TPT Listing SEO Auditor</h3>
-        <p class="knowlense-panel-subtitle">Enter one target keyword to audit ranking, keyword placement, metadata coverage, media completeness, and listing SEO basics.</p>
-      </div>
-      <div class="knowlense-panel-body">
-        <section class="knowlense-panel-section knowlense-panel-meta"></section>
-        <section class="knowlense-panel-section knowlense-panel-intent"></section>
-        <section class="knowlense-panel-section">
-          <input class="knowlense-panel-input" type="text" placeholder="Enter one target keyword" />
-          <button class="knowlense-panel-action" type="button">Run SEO audit</button>
-          <div class="knowlense-panel-status">Connect the extension through the website, then run the SEO audit.</div>
-        </section>
-        <section class="knowlense-panel-section">
-          <div class="knowlense-panel-empty">No SEO audit yet. Enter one keyword, then run the check to score this listing and generate 5 clear action items.</div>
-          <ul class="knowlense-keyword-list" hidden></ul>
-        </section>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(panel);
-
-  PANEL_STATE.panel = panel;
-  PANEL_STATE.meta = panel.querySelector(".knowlense-panel-meta");
-  PANEL_STATE.intent = panel.querySelector(".knowlense-panel-intent");
-  PANEL_STATE.status = panel.querySelector(".knowlense-panel-status");
-  PANEL_STATE.action = panel.querySelector(".knowlense-panel-action");
-  PANEL_STATE.keywordInput = panel.querySelector(".knowlense-panel-input");
-  PANEL_STATE.results = panel.querySelector(".knowlense-keyword-list");
-  PANEL_STATE.body = panel.querySelector(".knowlense-panel-empty");
-}
-
-function renderMeta(snapshot) {
-  if (!PANEL_STATE.meta) {
+function setActiveTab(tabId) {
+  PANEL_STATE.activeTab = tabId;
+  if (!PANEL_STATE.panel) {
     return;
   }
 
-  PANEL_STATE.meta.innerHTML = `
-    <div class="knowlense-meta-row">
-      <div>
-        <span>Product</span>
-        <strong>${snapshot.title}</strong>
-      </div>
-      <div style="text-align:right">
-        <span>ID</span>
-        <strong>${snapshot.productId || "N/A"}</strong>
-      </div>
-    </div>
-    <div class="knowlense-meta-row" style="margin-top:10px">
-      <div>
-        <span>Store</span>
-        <strong>${snapshot.sellerName || "Unknown"}</strong>
-      </div>
-      <div style="text-align:right">
-        <span>Pages</span>
-        <strong>${snapshot.pagesValue || "Not set"}</strong>
-      </div>
-    </div>
-  `;
-}
-
-function renderIntent(analysis) {
-  if (!PANEL_STATE.intent) {
-    return;
-  }
-
-  const audit = analysis?.audit;
-  if (!audit) {
-    PANEL_STATE.intent.innerHTML = "";
-    return;
-  }
-
-  const chipMarkup = (items) =>
-    items.length
-      ? items.map((item) => `<span class="knowlense-chip">${item}</span>`).join("")
-      : '<span class="knowlense-chip">None</span>';
-
-  PANEL_STATE.intent.innerHTML = `
-    <div class="knowlense-score">
-      <strong>${audit.seoScore}</strong>
-      <span>SEO score</span>
-    </div>
-    <div style="font-size:12px;color:#64748b;margin:14px 0 8px">Keyword and rank</div>
-    <div class="knowlense-keyword-meta">
-      ${chipMarkup([
-        audit.keyword,
-        audit.rank.status === "ranked" ? `Page ${audit.rank.resultPage} · #${audit.rank.position}` : "Outside top 3 pages (>73)"
-      ])}
-    </div>
-    <div style="font-size:12px;color:#64748b;margin:12px 0 8px">Checks</div>
-    <div class="knowlense-keyword-meta">
-      ${chipMarkup([
-        audit.checks.titleContainsKeyword ? "Title keyword: yes" : "Title keyword: missing",
-        audit.checks.descriptionContainsKeyword ? "Description keyword: yes" : "Description keyword: missing",
-        audit.checks.tagsComplete ? "6 tags: yes" : `${audit.counts.tagsCount}/6 tags`,
-        audit.checks.subjectsComplete ? "3 subjects: yes" : `${audit.counts.subjectsCount}/3 subjects`
-      ])}
-    </div>
-  `;
-}
-
-function setPanelStatus(message, kind) {
-  if (!PANEL_STATE.status) {
-    return;
-  }
-
-  PANEL_STATE.status.textContent = message;
-  PANEL_STATE.status.className = `knowlense-panel-status${kind ? ` ${kind}` : ""}`;
-}
-
-function renderResults(payload) {
-  if (!PANEL_STATE.results || !PANEL_STATE.body) {
-    return;
-  }
-
-  const audit = payload?.analysis?.audit;
-  const actions = audit?.actionItems ?? [];
-  PANEL_STATE.results.innerHTML = "";
-
-  if (!audit || !actions.length) {
-    PANEL_STATE.body.hidden = false;
-    PANEL_STATE.results.hidden = true;
-    PANEL_STATE.body.textContent = "No SEO action items were generated for this product yet.";
-    return;
-  }
-
-  PANEL_STATE.body.hidden = false;
-  PANEL_STATE.results.hidden = false;
-  PANEL_STATE.body.textContent = `${audit.note} Title mentions: ${audit.counts.titleKeywordMentions}. Description mentions: ${audit.counts.descriptionKeywordMentions}.`;
-
-  actions.forEach((item, index) => {
-    const element = document.createElement("li");
-    element.className = "knowlense-keyword-item";
-    element.innerHTML = `
-      <div class="knowlense-keyword-top">
-        <div class="knowlense-keyword-name">${item}</div>
-        <div class="knowlense-keyword-rank ranked">Step ${index + 1}</div>
-      </div>
-    `;
-    PANEL_STATE.results.appendChild(element);
+  PANEL_STATE.panel.querySelectorAll(".knowlense-tab").forEach((button) => {
+    const active = button.getAttribute("data-tab") === tabId;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
   });
+
+  PANEL_STATE.panel.querySelectorAll(".knowlense-tab-panel").forEach((panel) => {
+    panel.classList.toggle("is-active", panel.getAttribute("data-panel") === tabId);
+  });
+}
+
+function setKeywordError(message) {
+  if (!PANEL_STATE.keywordError) {
+    return;
+  }
+
+  PANEL_STATE.keywordError.textContent = message || "";
+  PANEL_STATE.keywordError.classList.toggle("is-visible", Boolean(message));
+}
+
+function setKeywordStatus(message) {
+  if (PANEL_STATE.keywordStatus) {
+    PANEL_STATE.keywordStatus.textContent = message;
+  }
+}
+
+function parseKeywordInput(rawValue, productTitle) {
+  const normalizedTitle = normalizeText(productTitle);
+  const keywords = rawValue
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (!keywords.length) {
+    return { ok: false, error: "Enter at least one keyword." };
+  }
+
+  if (keywords.length > 3) {
+    return { ok: false, error: "You can analyze up to 3 keywords at a time." };
+  }
+
+  const deduped = [];
+  const seen = new Set();
+
+  for (const keyword of keywords) {
+    const normalized = normalizeText(keyword);
+    if (normalized.length < 3) {
+      return { ok: false, error: `Keyword "${keyword}" is too short.` };
+    }
+
+    if (keyword.length > 60 || normalized.split(" ").length > 8) {
+      return { ok: false, error: `Keyword "${keyword}" is too long. Keep it concise.` };
+    }
+
+    if (normalized === normalizedTitle) {
+      return { ok: false, error: `Keyword "${keyword}" cannot be identical to the full product title.` };
+    }
+
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      deduped.push(keyword);
+    }
+  }
+
+  return { ok: true, keywords: deduped };
 }
 
 async function loadExtensionSession() {
   const stored = await chrome.storage.local.get(["knowlense_extension_session", "knowlense_settings"]);
   return {
     session: stored.knowlense_extension_session ?? null,
-    apiUrl: stored.knowlense_settings?.apiUrl || DEFAULT_API_URL
+    apiUrl: stored.knowlense_settings?.apiUrl || "https://api.knowlense.com"
   };
 }
 
-async function analyzeCurrentProduct() {
-  const sessionState = await loadExtensionSession();
+async function refreshPanelConnectionState() {
+  const sessionState = await loadExtensionSession().catch(() => ({ session: null }));
+  const isConnected = Boolean(sessionState?.session?.sessionToken);
 
-  if (!sessionState.session?.sessionToken) {
-    throw new Error("Connect the extension through the website before running the SEO audit.");
+  if (PANEL_STATE.healthAction) {
+    PANEL_STATE.healthAction.disabled = !isConnected;
+    PANEL_STATE.healthAction.removeAttribute("title");
   }
 
-  const extracted = extractProductSnapshot();
+  if (PANEL_STATE.keywordAction) {
+    PANEL_STATE.keywordAction.disabled = !isConnected;
+    PANEL_STATE.keywordAction.removeAttribute("title");
+  }
+
+  if (PANEL_STATE.healthStatus && !isConnected) {
+    PANEL_STATE.healthStatus.textContent = "Connect the extension through the website to run SEO Health.";
+  } else if (PANEL_STATE.healthStatus && isConnected && !PANEL_STATE.healthResults?.innerHTML) {
+    PANEL_STATE.healthStatus.textContent = "Check the full product quality, metadata, media, description, reviews, and store signals.";
+  }
+
+  if (PANEL_STATE.keywordStatus && !isConnected) {
+    PANEL_STATE.keywordStatus.textContent = "Connect the extension through the website to run Keyword SEO.";
+  } else if (PANEL_STATE.keywordStatus && isConnected && !PANEL_STATE.keywordResults?.innerHTML) {
+    PANEL_STATE.keywordStatus.textContent = "Check rank, title placement, description placement, and related keyword suggestions.";
+  }
+}
+
+function refreshMountedProductMeta() {
+  if (!PANEL_STATE.productMetaValue) {
+    return;
+  }
+
+  const liveTitle = textFromNode(document.querySelector("h1"));
+  if (liveTitle) {
+    PANEL_STATE.productMetaValue.textContent = liveTitle;
+  }
+}
+
+function buildKeywordCheck(message, passed) {
+  return `
+    <div class="knowlense-check-row">
+      <span class="knowlense-check-mark ${passed ? "good" : "bad"}">${passed ? "✓" : "×"}</span>
+      <span class="knowlense-check-copy">${message}</span>
+    </div>
+  `;
+}
+
+function countPhraseOccurrences(text, phrase) {
+  const normalizedText = normalizeText(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const normalizedPhrase = normalizeText(phrase).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  if (!normalizedText || !normalizedPhrase) {
+    return 0;
+  }
+
+  const matches = normalizeText(text).match(new RegExp(`\\b${normalizedPhrase}\\b`, "g"));
+  return matches?.length ?? 0;
+}
+
+function firstWords(text, limit) {
+  return (text || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, limit)
+    .join(" ")
+    .trim();
+}
+
+function analyzeDescriptionPlacement(descriptionExcerpt, keyword) {
+  const leadingDescription = (descriptionExcerpt || "").slice(0, 300);
+  const mentionCount = countPhraseOccurrences(leadingDescription, keyword);
+
+  if (mentionCount === 0) {
+    return {
+      mentionCount,
+      status: "missing",
+      message: `The description does not reference "${keyword}" at the beginning. Placing the keyword earlier can strengthen search relevance and improve ranking potential for this query.`,
+      containsKeyword: false,
+      overused: false
+    };
+  }
+
+  if (mentionCount <= 3) {
+    return {
+      mentionCount,
+      status: "good",
+      message: `The description references "${keyword}" at the beginning, which supports stronger search relevance and ranking potential for this query.`,
+      containsKeyword: true,
+      overused: false
+    };
+  }
+
+  return {
+    mentionCount,
+    status: "stuffed",
+    message: `The description repeats "${keyword}" too heavily at the beginning. Keep the keyword early, but use it more naturally to preserve readability and balanced optimization.`,
+    containsKeyword: true,
+    overused: true
+  };
+}
+
+async function fetchTrackedKeywordTargets(baseUrl, sessionToken, snapshot) {
+  const productUrl = encodeURIComponent(snapshot.productUrl || "");
+  const productId = encodeURIComponent(snapshot.productId || "");
+  const response = await fetch(
+    `${baseUrl}/v1/rank-tracking/targets?activeOnly=true&productUrl=${productUrl}${productId ? `&productId=${productId}` : ""}`,
+    {
+      headers: {
+        Authorization: `Bearer ${sessionToken}`
+      }
+    }
+  );
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok || !Array.isArray(payload?.targets)) {
+    return new Map();
+  }
+
+  return new Map(payload.targets.map((target) => [normalizeText(target.keyword), target]));
+}
+
+function bindKeywordTrackingToggles(items, snapshot) {
+  if (!PANEL_STATE.keywordResults) {
+    return;
+  }
+
+  const itemMap = new Map(items.map((item) => [normalizeText(item.keyword), item]));
+  PANEL_STATE.keywordResults.querySelectorAll("[data-track-keyword]").forEach((input) => {
+    input.addEventListener("change", async (event) => {
+      const checkbox = event.currentTarget;
+      const keyword = checkbox.getAttribute("data-track-keyword") || "";
+      const normalizedKeyword = normalizeText(keyword);
+      const item = itemMap.get(normalizedKeyword);
+      const metaNode = checkbox
+        .closest(".knowlense-track-toggle")
+        ?.querySelector(".knowlense-track-toggle-meta");
+
+      if (!item) {
+        checkbox.checked = false;
+        return;
+      }
+
+      checkbox.disabled = true;
+      const sessionState = await loadExtensionSession().catch(() => ({ session: null, apiUrl: "" }));
+      const sessionToken = sessionState.session?.sessionToken;
+      const baseUrl = sessionState.apiUrl?.replace(/\/$/, "");
+
+      if (!sessionToken || !baseUrl) {
+        checkbox.checked = false;
+        checkbox.disabled = false;
+        if (metaNode) {
+          metaNode.textContent = "Connect the extension first.";
+        }
+        return;
+      }
+
+      try {
+        if (checkbox.checked) {
+          const response = await fetch(`${baseUrl}/v1/rank-tracking/targets`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${sessionToken}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              productId: snapshot.productId,
+              productUrl: snapshot.productUrl,
+              productTitle: snapshot.title,
+              sellerName: snapshot.sellerName,
+              keyword: item.keyword,
+              initialCheck: {
+                checkedAt: new Date().toISOString(),
+                status: item.liveRank.status,
+                resultPage: item.liveRank.resultPage,
+                pagePosition: item.liveRank.pagePosition,
+                searchUrl: item.liveRank.searchUrl
+              }
+            })
+          });
+          const payload = await response.json().catch(() => null);
+
+          if (!response.ok || !payload?.target) {
+            throw new Error(payload?.error || `Knowlense could not start tracking "${item.keyword}".`);
+          }
+
+          checkbox.setAttribute("data-target-id", payload.target.id);
+          if (metaNode) {
+            metaNode.textContent = `Tracking active since ${new Date(payload.target.startedAt).toLocaleDateString()}.`;
+          }
+        } else {
+          const targetId = checkbox.getAttribute("data-target-id");
+          if (targetId) {
+            const response = await fetch(`${baseUrl}/v1/rank-tracking/targets/${targetId}`, {
+              method: "DELETE",
+              headers: {
+                Authorization: `Bearer ${sessionToken}`
+              }
+            });
+            if (!response.ok) {
+              const payload = await response.json().catch(() => null);
+              throw new Error(payload?.error || `Knowlense could not stop tracking "${item.keyword}".`);
+            }
+          }
+          checkbox.removeAttribute("data-target-id");
+          if (metaNode) {
+            metaNode.textContent = "Tracking is off.";
+          }
+        }
+      } catch (error) {
+        checkbox.checked = !checkbox.checked;
+        if (metaNode) {
+          metaNode.textContent = error instanceof Error ? error.message : "Tracking could not be updated.";
+        }
+      } finally {
+        checkbox.disabled = false;
+      }
+    });
+  });
+}
+
+function renderKeywordResults(items) {
+  if (!PANEL_STATE.keywordResults) {
+    return;
+  }
+
+  if (!items.length) {
+    PANEL_STATE.keywordResults.innerHTML = "";
+    return;
+  }
+
+  PANEL_STATE.keywordResults.innerHTML = items
+    .map(({ keyword, audit, liveRank, tracking }) => {
+      const titleGood = audit.counts.titleKeywordMentions === 1;
+      const titleMessage =
+        audit.titlePlacement?.message ||
+        (titleGood
+          ? "The title mentions this keyword exactly once."
+          : audit.counts.titleKeywordMentions === 0
+            ? "The title does not mention this keyword."
+            : "The title repeats this keyword too often.");
+      const descriptionGood = audit.descriptionPlacement?.status === "good";
+      const rankText =
+        liveRank.status === "ranked"
+          ? `Page ${liveRank.resultPage}, position ${liveRank.pagePosition}`
+          : "Outside the first 3 pages. Average position >73.";
+      const showTrophy =
+        liveRank.status === "ranked" &&
+        liveRank.resultPage === 1 &&
+        typeof liveRank.pagePosition === "number" &&
+        liveRank.pagePosition >= 1 &&
+        liveRank.pagePosition <= 3;
+      const rankMessage = `Current rank: ${rankText}${
+        showTrophy
+          ? ' <span class="knowlense-rank-trophy" aria-label="Top 3 result" title="Top 3 result"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5.5h8v2.2c0 2.8-1.8 5.2-4.4 6.1V16h2.8a1 1 0 0 1 1 1V18H8.6v-1a1 1 0 0 1 1-1h2.8v-2.2C9.8 12.9 8 10.5 8 7.7V5.5Z" fill="currentColor"></path><path d="M16 6h2.2a.8.8 0 0 1 .8.8c0 2.4-1.3 4.2-3.4 4.9M8 6H5.8a.8.8 0 0 0-.8.8c0 2.4 1.3 4.2 3.4 4.9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9.4 20h5.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></span>'
+          : ""
+      }`;
+      const suggestions = audit.relatedSuggestions?.length
+        ? audit.relatedSuggestions.map((item) => `<span class="knowlense-chip">${item}</span>`).join("")
+        : '<span class="knowlense-chip">No related keyword suggestions are available right now.</span>';
+      const trackingMeta = tracking?.id
+        ? `Tracking active since ${new Date(tracking.startedAt).toLocaleDateString()}.`
+        : "Tracking is off.";
+
+      return `
+        <div class="knowlense-keyword-card">
+          <div class="knowlense-keyword-card-head">
+            <div class="knowlense-keyword-name">${keyword}</div>
+            <div class="knowlense-keyword-score">${audit.seoScore}/100</div>
+          </div>
+          <div class="knowlense-check-list">
+            ${buildKeywordCheck(rankMessage, liveRank.status === "ranked")}
+            ${buildKeywordCheck(
+              titleMessage,
+              titleGood
+            )}
+            ${buildKeywordCheck(
+              descriptionGood
+                ? audit.descriptionPlacement.message
+                : audit.descriptionPlacement?.message ||
+                  "The description is not optimized near the start for this keyword.",
+              descriptionGood
+            )}
+          </div>
+          <div class="knowlense-suggestion-block">
+            <div class="knowlense-suggestion-label">Related keyword suggestions</div>
+            <div class="knowlense-chip-list">${suggestions}</div>
+          </div>
+          <div class="knowlense-track-toggle">
+            <label class="knowlense-track-toggle-label">
+              <input
+                type="checkbox"
+                data-track-keyword="${keyword}"
+                ${tracking?.id ? "checked" : ""}
+                ${tracking?.id ? `data-target-id="${tracking.id}"` : ""}
+              />
+              <span>Track this keyword</span>
+            </label>
+            <div class="knowlense-track-toggle-meta">${trackingMeta}</div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderSeoHealthResult(analysis) {
+  if (!PANEL_STATE.healthResults) {
+    return;
+  }
+
+  if (!analysis?.health) {
+    PANEL_STATE.healthResults.innerHTML = "";
+    return;
+  }
+
+  const groupDefinitions = [
+    {
+      title: "Search Visibility",
+      ids: ["title-length", "subjects", "tags"]
+    },
+    {
+      title: "Product Completeness",
+      ids: ["grades", "pages", "description-length"]
+    },
+    {
+      title: "Media & Buyer Experience",
+      ids: ["product-images", "preview", "video"]
+    },
+    {
+      title: "Conversion & Store Growth",
+      ids: ["discount", "internal-links", "bundle-inclusion", "product-pricing", "recent-reviews", "recent-review-frequency", "review-score"]
+    }
+  ];
+
+  const criteriaById = new Map(analysis.health.criteria.map((criterion) => [criterion.id, criterion]));
+  const groupedChecks = groupDefinitions
+    .map((group) => {
+      const items = group.ids
+        .map((id) => criteriaById.get(id))
+        .filter(Boolean);
+
+      if (!items.length) {
+        return "";
+      }
+
+      const passedCount = items.filter((criterion) => criterion.passed).length;
+      const checks = items
+        .map((criterion) => buildKeywordCheck(criterion.message, criterion.passed))
+        .join("");
+
+      return `
+        <div class="knowlense-check-group">
+          <div class="knowlense-check-group-head">
+            <div class="knowlense-check-group-title">${group.title}</div>
+            <div class="knowlense-check-group-summary">${passedCount} of ${items.length} checks passed</div>
+          </div>
+          <div class="knowlense-check-list">${checks}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  PANEL_STATE.healthResults.innerHTML = `
+    <div class="knowlense-keyword-card">
+      <div class="knowlense-keyword-card-head">
+        <div class="knowlense-keyword-name">SEO Health</div>
+        <div class="knowlense-keyword-score">${analysis.health.seoHealthScore}/100</div>
+      </div>
+      ${groupedChecks}
+    </div>
+  `;
+}
+
+async function runSeoHealthAudit() {
+  const fetchedDocument = await fetchProductPageDocument().catch(() => null);
+  const liveExtracted = extractProductSnapshot(document);
+  if (!liveExtracted.ok) {
+    throw new Error(liveExtracted.error);
+  }
+
+  const fetchedExtracted = fetchedDocument ? extractProductSnapshot(fetchedDocument) : null;
+  const extracted = {
+    ok: true,
+    snapshot: {
+      ...((fetchedExtracted && fetchedExtracted.ok ? fetchedExtracted.snapshot : {}) || {}),
+      ...liveExtracted.snapshot
+    }
+  };
+
   if (!extracted.ok) {
     throw new Error(extracted.error);
   }
 
-  const keyword = PANEL_STATE.keywordInput?.value?.trim();
-  if (!keyword) {
-    throw new Error("Enter one keyword before running the SEO audit.");
+  extracted.snapshot.descriptionLinkDetails = await resolveDescriptionLinkDetails(
+    extracted.snapshot.descriptionProductLinks || []
+  );
+
+  const sessionState = await loadExtensionSession();
+  if (!sessionState.session?.sessionToken) {
+    throw new Error("Connect the extension through the website before running SEO Health.");
   }
 
-  extracted.snapshot.auditKeyword = keyword;
-
-  const response = await fetch(`${sessionState.apiUrl.replace(/\/$/, "")}/v1/product-seo-audit/analyze`, {
+  const baseUrl = sessionState.apiUrl.replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/v1/product-seo-health/analyze`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${sessionState.session.sessionToken}`,
@@ -1077,67 +2019,297 @@ async function analyzeCurrentProduct() {
     throw new Error("Your extension session expired. Reconnect it from the website and try again.");
   }
 
-  if (!response.ok || !payload?.analysis) {
-    throw new Error(payload?.error || "Knowlense could not complete the SEO audit.");
+  if (!response.ok || !payload?.analysis?.health) {
+    throw new Error(payload?.error || "Knowlense could not run SEO Health.");
   }
 
-  return {
-    snapshot: extracted.snapshot,
-    payload
-  };
+  return payload.analysis;
 }
 
-async function handleAnalyzeClick() {
-  if (!PANEL_STATE.action) {
-    return;
+async function runKeywordAudit() {
+  const extracted = extractProductSnapshot();
+  if (!extracted.ok) {
+    throw new Error(extracted.error);
   }
 
-  PANEL_STATE.action.disabled = true;
-  PANEL_STATE.action.textContent = "Analyzing...";
-  setPanelStatus("Checking rank, keyword placement, metadata coverage, media completeness, and action items...", "");
-
-  try {
-    const result = await analyzeCurrentProduct();
-    renderMeta(result.snapshot);
-    renderIntent(result.payload.analysis);
-    renderResults(result.payload);
-    setPanelStatus(result.payload.warning || "SEO audit completed.", result.payload.warning ? "error" : "success");
-  } catch (error) {
-    setPanelStatus(error.message, "error");
-  } finally {
-    PANEL_STATE.action.disabled = false;
-    PANEL_STATE.action.textContent = "Run SEO audit";
+  const sessionState = await loadExtensionSession();
+  if (!sessionState.session?.sessionToken) {
+    throw new Error("Connect the extension through the website before running Keyword SEO.");
   }
-}
 
-function mountProductPanel() {
-  if (!isProductPage()) {
-    if (PANEL_STATE.panel) {
-      PANEL_STATE.panel.remove();
-      PANEL_STATE.panel = null;
-      PANEL_STATE.mountedUrl = null;
+  const parsed = parseKeywordInput(PANEL_STATE.keywordInput?.value ?? "", extracted.snapshot.title);
+  if (!parsed.ok) {
+    throw new Error(parsed.error);
+  }
+
+  const baseUrl = sessionState.apiUrl.replace(/\/$/, "");
+  const requests = parsed.keywords.map(async (keyword) => {
+    const searchScan = await scanKeywordSearch(extracted.snapshot.productUrl, keyword);
+    const localDescription = analyzeDescriptionPlacement(extracted.snapshot.descriptionExcerpt, keyword);
+    const { descriptionExcerpt, ...snapshotForApi } = extracted.snapshot;
+    const response = await fetch(`${baseUrl}/v1/product-seo-audit/analyze`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${sessionState.session.sessionToken}`,
+        "Content-Type": "application/json"
+      },
+        body: JSON.stringify({
+          ...snapshotForApi,
+          auditKeyword: keyword,
+          serpTitles: searchScan.serpTitles,
+          liveRank: {
+            status: searchScan.rank.status,
+            resultPage: searchScan.rank.resultPage,
+            pagePosition: searchScan.rank.pagePosition
+          },
+          descriptionAudit: {
+            mentionCount: localDescription.mentionCount,
+            status: localDescription.status,
+            containsKeyword: localDescription.containsKeyword,
+            overused: localDescription.overused,
+            message: localDescription.message
+          }
+        })
+      });
+
+    const payload = await response.json().catch(() => null);
+
+    if (response.status === 401) {
+      await chrome.storage.local.remove("knowlense_extension_session");
+      throw new Error("Your extension session expired. Reconnect it from the website and try again.");
     }
+
+    if (!response.ok || !payload?.analysis?.audit) {
+      throw new Error(payload?.error || `Knowlense could not analyze "${keyword}".`);
+    }
+
+    const mergedAudit = {
+      ...payload.analysis.audit,
+      descriptionPlacement: {
+        mentionCount: localDescription.mentionCount,
+        status: localDescription.status,
+        message: localDescription.message
+      },
+      checks: {
+        ...payload.analysis.audit.checks,
+        descriptionContainsKeyword: localDescription.containsKeyword,
+        descriptionKeywordOverused: localDescription.overused
+      },
+        counts: {
+          ...payload.analysis.audit.counts,
+          descriptionKeywordMentions: localDescription.mentionCount
+        }
+      };
+
+    return {
+      keyword,
+      liveRank: searchScan.rank,
+      audit: mergedAudit
+    };
+  });
+  const results = await Promise.all(requests);
+  const trackedMap = await fetchTrackedKeywordTargets(baseUrl, sessionState.session.sessionToken, extracted.snapshot);
+  const enrichedResults = results.map((result) => ({
+    ...result,
+    tracking: trackedMap.get(normalizeText(result.keyword)) || null
+  }));
+
+  return { results: enrichedResults, snapshot: extracted.snapshot };
+}
+
+function createPanelShell() {
+  injectStyles();
+
+  const mountRoot = document.body || document.documentElement;
+  if (!mountRoot) {
     return;
   }
 
-  if (PANEL_STATE.mountedUrl === window.location.href && PANEL_STATE.panel) {
-    return;
+  const meta = extractProductMeta();
+
+  const bubble = document.createElement("button");
+  bubble.id = BUBBLE_ID;
+  bubble.type = "button";
+  bubble.setAttribute("aria-label", "Open Knowlense product tools");
+  bubble.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3.8" y="3.8" width="16.4" height="16.4" rx="4.8" stroke="currentColor" stroke-width="1.9"></rect>
+      <path d="M7.4 15.8 10.55 12.65 12.9 15 16.55 10.9" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"></path>
+      <path d="M14.95 10.9h2v2" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"></path>
+      <circle cx="7.4" cy="15.8" r="1.1" fill="currentColor"></circle>
+      <circle cx="10.55" cy="12.65" r="1.1" fill="currentColor"></circle>
+      <circle cx="12.9" cy="15" r="1.1" fill="currentColor"></circle>
+      <circle cx="16.55" cy="10.9" r="1.1" fill="currentColor"></circle>
+    </svg>
+  `;
+
+  const panel = document.createElement("aside");
+  panel.id = PANEL_ID;
+  panel.hidden = true;
+  panel.innerHTML = `
+    <div class="knowlense-shell">
+      <div class="knowlense-header">
+        <div class="knowlense-badge">Knowlense</div>
+        <h3 class="knowlense-title">Product Analysis</h3>
+      </div>
+      <div class="knowlense-body">
+        <div class="knowlense-product-meta">
+          <div>
+            <div class="knowlense-meta-label">Product</div>
+            <div class="knowlense-meta-value">${meta.title}</div>
+          </div>
+        </div>
+        <div class="knowlense-tabs" role="tablist" aria-label="Knowlense product tabs">
+          <button class="knowlense-tab is-active" type="button" data-tab="keyword-seo" role="tab" aria-selected="true">Keyword SEO</button>
+            <button class="knowlense-tab" type="button" data-tab="criteria-seo" role="tab" aria-selected="false">SEO Health</button>
+          <button class="knowlense-tab" type="button" data-tab="opportunity-finder" role="tab" aria-selected="false">Opportunity Finder</button>
+        </div>
+        <div class="knowlense-tab-panel is-active" data-panel="keyword-seo">
+          <h4 class="knowlense-panel-heading">Keyword SEO Audit</h4>
+          <label class="knowlense-input-label" for="knowlense-keyword-input">Target keywords</label>
+          <textarea
+            id="knowlense-keyword-input"
+            class="knowlense-keyword-input"
+            rows="3"
+            placeholder="Enter up to 3 keywords, separated by commas"
+          ></textarea>
+          <div class="knowlense-keyword-help">Use up to 3 concise keywords. Separate them with commas.</div>
+          <div class="knowlense-keyword-error"></div>
+          <button class="knowlense-keyword-action" type="button">Run keyword audit</button>
+          <div class="knowlense-keyword-status">Check rank, title placement, description placement, and related keyword suggestions.</div>
+          <div class="knowlense-keyword-results"></div>
+        </div>
+        <div class="knowlense-tab-panel" data-panel="criteria-seo">
+          <h4 class="knowlense-panel-heading">SEO Health Audit</h4>
+          <p class="knowlense-panel-copy">Review the full product page against the main TPT product SEO criteria.</p>
+          <button class="knowlense-keyword-action knowlense-health-action" type="button">Run SEO Health</button>
+          <div class="knowlense-keyword-status knowlense-health-status">Check the full product quality, metadata, media, description, reviews, and store signals.</div>
+          <div class="knowlense-health-results"></div>
+        </div>
+        <div class="knowlense-tab-panel" data-panel="opportunity-finder">
+          <h4 class="knowlense-panel-heading">Opportunity Finder</h4>
+          <p class="knowlense-panel-copy">Opportunity Finder is reserved for a future workflow and is not active yet.</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  mountRoot.appendChild(bubble);
+  mountRoot.appendChild(panel);
+
+  bubble.addEventListener("click", () => {
+    panel.hidden = !panel.hidden;
+  });
+
+  panel.querySelectorAll(".knowlense-tab").forEach((button) => {
+    button.addEventListener("click", () => {
+      setActiveTab(button.getAttribute("data-tab"));
+    });
+  });
+
+  PANEL_STATE.bubble = bubble;
+  PANEL_STATE.panel = panel;
+  PANEL_STATE.keywordInput = panel.querySelector(".knowlense-keyword-input");
+  PANEL_STATE.keywordAction = panel.querySelector(".knowlense-keyword-action");
+  PANEL_STATE.keywordError = panel.querySelector(".knowlense-keyword-error");
+  PANEL_STATE.keywordStatus = panel.querySelector(".knowlense-keyword-status");
+  PANEL_STATE.keywordResults = panel.querySelector(".knowlense-keyword-results");
+  PANEL_STATE.healthAction = panel.querySelector(".knowlense-health-action");
+  PANEL_STATE.healthStatus = panel.querySelector(".knowlense-health-status");
+  PANEL_STATE.healthResults = panel.querySelector(".knowlense-health-results");
+  PANEL_STATE.productMetaValue = panel.querySelector(".knowlense-meta-value");
+  setActiveTab(PANEL_STATE.activeTab);
+  refreshMountedProductMeta();
+  refreshPanelConnectionState();
+
+  PANEL_STATE.keywordAction?.addEventListener("click", async () => {
+    setKeywordError("");
+    renderKeywordResults([]);
+    PANEL_STATE.keywordAction.disabled = true;
+    PANEL_STATE.keywordAction.textContent = "Analyzing...";
+    setKeywordStatus("Running audits for the current keywords...");
+
+    try {
+      const { results, snapshot } = await runKeywordAudit();
+      renderKeywordResults(results);
+      bindKeywordTrackingToggles(results, snapshot);
+      setKeywordStatus(`Audit complete for ${results.length} keyword${results.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setKeywordError(error instanceof Error ? error.message : "Knowlense could not run the keyword audit.");
+      setKeywordStatus("Fix the issue above and try again.");
+    } finally {
+      PANEL_STATE.keywordAction.disabled = false;
+      PANEL_STATE.keywordAction.textContent = "Run keyword audit";
+    }
+  });
+
+  PANEL_STATE.healthAction?.addEventListener("click", async () => {
+    renderSeoHealthResult(null);
+    PANEL_STATE.healthAction.disabled = true;
+    PANEL_STATE.healthAction.textContent = "Analyzing...";
+    if (PANEL_STATE.healthStatus) {
+      PANEL_STATE.healthStatus.textContent = "Running SEO Health for this product...";
+    }
+
+    try {
+      const analysis = await runSeoHealthAudit();
+      renderSeoHealthResult(analysis);
+      if (PANEL_STATE.healthStatus) {
+        PANEL_STATE.healthStatus.textContent = "SEO Health audit completed.";
+      }
+    } catch (error) {
+      if (PANEL_STATE.healthStatus) {
+        PANEL_STATE.healthStatus.textContent = error instanceof Error ? error.message : "Knowlense could not run SEO Health.";
+      }
+    } finally {
+      PANEL_STATE.healthAction.disabled = false;
+      PANEL_STATE.healthAction.textContent = "Run SEO Health";
+    }
+  });
+
+}
+
+function unmountPanelShell() {
+  if (PANEL_STATE.bubble) {
+    PANEL_STATE.bubble.remove();
+    PANEL_STATE.bubble = null;
   }
 
   if (PANEL_STATE.panel) {
     PANEL_STATE.panel.remove();
+    PANEL_STATE.panel = null;
   }
 
-  const snapshotResult = extractProductSnapshot();
-  if (!snapshotResult.ok) {
+  PANEL_STATE.keywordInput = null;
+  PANEL_STATE.keywordAction = null;
+  PANEL_STATE.keywordError = null;
+  PANEL_STATE.keywordStatus = null;
+  PANEL_STATE.keywordResults = null;
+  PANEL_STATE.healthAction = null;
+  PANEL_STATE.healthStatus = null;
+  PANEL_STATE.healthResults = null;
+  PANEL_STATE.productMetaValue = null;
+
+  PANEL_STATE.mountedUrl = null;
+}
+
+function mountProductPanel() {
+  if (!isProductPage()) {
+    unmountPanelShell();
     return;
   }
 
-  createPanel();
-  renderMeta(snapshotResult.snapshot);
-  PANEL_STATE.action.addEventListener("click", () => {
-    void handleAnalyzeClick();
-  });
+  if (!document.body && !document.documentElement) {
+    return;
+  }
+
+  if (PANEL_STATE.mountedUrl === window.location.href && PANEL_STATE.panel && PANEL_STATE.bubble) {
+    refreshMountedProductMeta();
+    return;
+  }
+
+  unmountPanelShell();
+  createPanelShell();
   PANEL_STATE.mountedUrl = window.location.href;
 }
 

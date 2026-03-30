@@ -3,7 +3,15 @@ import { cors } from "hono/cors";
 import { createClient } from "@supabase/supabase-js";
 import { analyzeKeywordSnapshot, type SearchSnapshot } from "./lib/keywordFinder";
 import { analyzeProductKeywords, findRecentProductRun, type ProductKeywordSnapshot } from "./lib/productKeywords";
-import { analyzeProductSeoAudit, type ProductSeoAuditSnapshot } from "./lib/seoAuditor";
+import {
+  createOrUpdateRankTrackingTarget,
+  deactivateRankTrackingTarget,
+  listRankTrackingTargets,
+  readRankTrackingDashboard,
+  runScheduledRankTracking,
+  type RankTrackingStatus
+} from "./lib/rankTracking";
+import { analyzeProductSeoAudit, analyzeProductSeoHealth, type ProductSeoAuditSnapshot } from "./lib/seoAuditor";
 
 type Bindings = {
   CORS_ORIGIN?: string;
@@ -103,11 +111,16 @@ type StoredProductSeoAudit = {
   audit: {
     keyword: string;
     seoScore: number;
-    rank: {
-      status: "ranked" | "beyond_page_3";
-      position: number;
-      resultPage: number | null;
-      searchUrl: string;
+    relatedSuggestions: string[];
+    titlePlacement: {
+      mentionCount: number;
+      status: "good" | "missing" | "stuffed";
+      message: string;
+    };
+    descriptionPlacement: {
+      mentionCount: number;
+      status: "good" | "missing" | "stuffed";
+      message: string;
     };
     checks: {
       titleContainsKeyword: boolean;
@@ -122,7 +135,6 @@ type StoredProductSeoAudit = {
       discountEnabled: boolean;
       bundleEnabled: boolean;
       hasInternalProductLink: boolean;
-      unansweredQuestions: number;
     };
     counts: {
       titleLength: number;
@@ -1195,11 +1207,114 @@ app.get("/v1/product-seo-audit/runs", async (c) => {
 
     return c.json({ runs });
   } catch {
-    return c.json({
-      runs: [],
-      warning: "Product SEO audit history is unavailable until the D1 migration is applied."
-    });
+  return c.json({
+    runs: [],
+    warning: "Product SEO audit history is unavailable until the D1 migration is applied."
+  });
   }
+});
+
+app.use("/v1/product-seo-health/*", async (c, next) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  await next();
+});
+
+app.post("/v1/product-seo-health/analyze", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as ProductSeoAuditSnapshot | null;
+
+  if (!body?.productUrl || !body?.title) {
+    return c.json({ error: "Invalid SEO health payload." }, 400);
+  }
+
+  const user = c.get("user");
+  const analysis = await analyzeProductSeoHealth(body, {
+    db: c.env.DB,
+    userId: user.id
+  });
+
+  return c.json({ analysis });
+});
+
+app.use("/v1/rank-tracking/*", async (c, next) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  await next();
+});
+
+app.get("/v1/rank-tracking/targets", async (c) => {
+  const user = c.get("user");
+  const productId = c.req.query("productId") || null;
+  const productUrl = c.req.query("productUrl") || null;
+  const activeOnly = c.req.query("activeOnly") !== "false";
+  const targets = await listRankTrackingTargets(c.env.DB, user.id, {
+    productId,
+    productUrl,
+    activeOnly
+  });
+
+  return c.json({ targets });
+});
+
+app.post("/v1/rank-tracking/targets", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as
+    | {
+        productId?: string | null;
+        productUrl?: string;
+        productTitle?: string;
+        sellerName?: string | null;
+        keyword?: string;
+        initialCheck?: {
+          checkedAt?: string;
+          status?: RankTrackingStatus;
+          resultPage?: number | null;
+          pagePosition?: number | null;
+          searchUrl?: string | null;
+        };
+      }
+    | null;
+
+  if (!body?.productUrl || !body?.productTitle || !body?.keyword?.trim() || !body.initialCheck?.status) {
+    return c.json({ error: "Invalid rank tracking payload." }, 400);
+  }
+
+  const user = c.get("user");
+  const target = await createOrUpdateRankTrackingTarget(c.env.DB, {
+    userId: user.id,
+    productId: body.productId ?? null,
+    productUrl: body.productUrl,
+    productTitle: body.productTitle,
+    sellerName: body.sellerName ?? null,
+    keyword: body.keyword,
+    initialCheck: {
+      checkedAt: body.initialCheck.checkedAt,
+      source: "manual",
+      status: body.initialCheck.status,
+      resultPage: body.initialCheck.resultPage ?? null,
+      pagePosition: body.initialCheck.pagePosition ?? null,
+      searchUrl: body.initialCheck.searchUrl ?? null
+    }
+  });
+
+  return c.json({ target });
+});
+
+app.delete("/v1/rank-tracking/targets/:targetId", async (c) => {
+  const user = c.get("user");
+  const targetId = c.req.param("targetId");
+
+  if (!targetId) {
+    return c.json({ error: "Missing rank tracking target id." }, 400);
+  }
+
+  await deactivateRankTrackingTarget(c.env.DB, user.id, targetId);
+  return c.json({ success: true });
 });
 
 app.use("/v1/dashboard/*", async (c, next) => {
@@ -1319,6 +1434,23 @@ app.get("/v1/dashboard/extension-status", async (c) => {
       connected: false,
       warning: "Extension status is temporarily unavailable."
     });
+  }
+});
+
+app.get("/v1/dashboard/rank-tracking", async (c) => {
+  const user = c.get("user");
+  const range = (c.req.query("range") as "7d" | "30d" | "90d" | "all" | undefined) ?? "30d";
+  const targetId = c.req.query("targetId") || null;
+
+  try {
+    const rankTracking = await readRankTrackingDashboard(c.env.DB, user.id, {
+      range,
+      targetId
+    });
+
+    return c.json({ rankTracking });
+  } catch {
+    return c.json({ error: "Rank tracking dashboard data is temporarily unavailable." }, 500);
   }
 });
 
@@ -1561,4 +1693,9 @@ app.post("/v1/webhooks/paddle", async (c) => {
   });
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled: async (_controller: ScheduledController, env: Bindings, ctx: ExecutionContext) => {
+    ctx.waitUntil(runScheduledRankTracking(env.DB));
+  }
+};
