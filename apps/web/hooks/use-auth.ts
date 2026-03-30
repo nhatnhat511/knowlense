@@ -22,11 +22,7 @@ export function useAuthGuard(nextPath: string) {
     const client = supabase;
     let active = true;
 
-    async function hydrate() {
-      const {
-        data: { session }
-      } = await client.auth.getSession();
-
+    async function applySession(session: Awaited<ReturnType<typeof client.auth.getSession>>["data"]["session"], redirectIfMissing: boolean) {
       if (!active) {
         return;
       }
@@ -34,10 +30,16 @@ export function useAuthGuard(nextPath: string) {
       if (!session?.access_token) {
         setUser(null);
         setAccessToken("");
-        router.replace(`/auth/sign-in?next=${encodeURIComponent(nextPath)}`);
+        if (redirectIfMissing) {
+          router.replace(`/auth/sign-in?next=${encodeURIComponent(nextPath)}`);
+        }
+        if (active) {
+          setIsLoading(false);
+        }
         return;
       }
 
+      setAccessToken(session.access_token);
       try {
         const profile = await fetchApiProfile(session.access_token);
 
@@ -56,7 +58,9 @@ export function useAuthGuard(nextPath: string) {
         await client.auth.signOut();
         setUser(null);
         setAccessToken("");
-        router.replace(`/auth/sign-in?next=${encodeURIComponent(nextPath)}`);
+        if (redirectIfMissing) {
+          router.replace(`/auth/sign-in?next=${encodeURIComponent(nextPath)}`);
+        }
       } finally {
         if (active) {
           setIsLoading(false);
@@ -64,20 +68,32 @@ export function useAuthGuard(nextPath: string) {
       }
     }
 
+    async function hydrate() {
+      const {
+        data: { session }
+      } = await client.auth.getSession();
+
+      await applySession(session, true);
+    }
+
     void hydrate();
 
     const {
       data: { subscription }
-    } = client.auth.onAuthStateChange((_event, session) => {
+    } = client.auth.onAuthStateChange((event, session) => {
       if (!active) {
         return;
       }
 
-      if (!session?.access_token) {
+      if (event === "SIGNED_OUT") {
         setUser(null);
         setAccessToken("");
-      } else {
-        setAccessToken(session.access_token);
+        router.replace(`/auth/sign-in?next=${encodeURIComponent(nextPath)}`);
+        return;
+      }
+
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        void applySession(session, false);
       }
     });
 

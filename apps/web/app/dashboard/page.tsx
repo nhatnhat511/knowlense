@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, startTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Bell, CreditCard, LayoutGrid, LifeBuoy, Moon, PlugZap, RefreshCw, Shield, Sparkles, Sun, UserRound } from "lucide-react";
+import { Bell, CreditCard, LayoutGrid, LifeBuoy, PlugZap, RefreshCw, Shield, Sparkles, UserRound } from "lucide-react";
 import { BrandLockup } from "@/components/brand/brand";
 import { useSessionStore, useToast } from "@/components/providers/app-providers";
 import { useAuthGuard } from "@/hooks/use-auth";
@@ -14,12 +14,11 @@ import { fetchRankTrackingDashboard, startDashboardTrial, type RankTrackingDashb
 import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice, revokeOtherExtensionDevices } from "@/lib/api/extension-connect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-type ThemeMode = "light" | "dark";
-type DensityMode = "compact" | "comfortable";
-type Section = "overview" | "account" | "subscription" | "connect" | "support" | "privacy";
+type Section = "overview" | "rankings" | "account" | "subscription" | "connect" | "support" | "privacy";
 
 const SECTION_META: Record<Section, { title: string; description: string }> = {
-  overview: { title: "Overview", description: "An overview of your Knowlense workspace, including account, billing, extension, and recent activity." },
+  overview: { title: "Dashboard", description: "A tighter overview of your account, subscription state, extension access, and latest workspace signals." },
+  rankings: { title: "Keyword Rankings", description: "Track keyword movement over time for the exact product + keyword pairs started from the extension." },
   account: { title: "Account", description: "Manage your website identity, session state, and account shortcuts without leaving the dashboard." },
   subscription: { title: "Subscription", description: "Review free, trial, and premium states, start a trial, and upgrade to Premium from this workspace." },
   connect: { title: "Connect extension", description: "Approve extension sessions from the dashboard instead of leaving the workspace." },
@@ -91,42 +90,11 @@ function TopButton({ dark, active, label, onClick, children }: { dark: boolean; 
   );
 }
 
-function DensityButton({
-  dark,
-  active,
-  label,
-  onClick
-}: {
-  dark: boolean;
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className={cn(
-        "h-8 rounded-full px-3 text-xs font-semibold transition",
-        dark
-          ? active
-            ? "bg-white text-gray-900"
-            : "text-white/60 hover:text-white"
-          : active
-            ? "bg-white text-gray-900 shadow-sm"
-            : "text-gray-500 hover:text-gray-900"
-      )}
-      onClick={onClick}
-      type="button"
-    >
-      {label}
-    </button>
-  );
-}
-
 function Card({ dark, compact, title, description, children }: { dark: boolean; compact?: boolean; title: string; description?: string; children: React.ReactNode }) {
   return (
     <article className={cn("rounded-2xl border shadow-[0_20px_55px_rgba(15,23,42,0.08)]", compact ? "p-3.5 sm:p-4" : "p-4 sm:p-5", dark ? "border-white/10 bg-[#111318]" : "border-gray-100 bg-white")}>
-      <h3 className={cn("text-base font-bold tracking-[-0.04em] sm:text-lg", dark ? "text-white" : "text-gray-900")}>{title}</h3>
-      {description ? <p className={cn("mt-1 text-sm leading-6", dark ? "text-white/55" : "text-gray-500")}>{description}</p> : null}
+      <h3 className={cn("text-[0.98rem] font-bold tracking-[-0.04em] sm:text-base", dark ? "text-white" : "text-gray-900")}>{title}</h3>
+      {description ? <p className={cn("mt-1 text-[13px] leading-6", dark ? "text-white/55" : "text-gray-500")}>{description}</p> : null}
       <div className={cn(compact ? "mt-3" : "mt-4")}>{children}</div>
     </article>
   );
@@ -265,8 +233,6 @@ function DashboardContent() {
   const { accessToken, isLoading: authLoading } = useAuthGuard("/dashboard");
   const { metrics, overview, loading, error, refresh } = useDashboardData(accessToken, Boolean(accessToken));
   const extensionStatus = useExtensionStatus(accessToken, Boolean(accessToken));
-  const [theme, setTheme] = useState<ThemeMode>("light");
-  const [density, setDensity] = useState<DensityMode>("comfortable");
   const [checkoutLoading, setCheckoutLoading] = useState<"" | "monthly" | "yearly">("");
   const [trialLoading, setTrialLoading] = useState(false);
   const [connectBusy, setConnectBusy] = useState(false);
@@ -289,8 +255,8 @@ function DashboardContent() {
 
   const section = (searchParams.get("section") as Section) || "overview";
   const requestId = searchParams.get("request");
-  const dark = theme === "dark";
-  const compact = density === "compact";
+  const dark = false;
+  const compact = true;
   const firstName = user?.name ?? "there";
   const initials = firstName.slice(0, 2).toUpperCase() || "KN";
   const quotaAtLimit = Boolean(metrics?.keywordRuns.disabled || overview?.quota.atLimit);
@@ -298,26 +264,6 @@ function DashboardContent() {
   const billing = metrics?.billing;
   const planLabel = billing?.status === "active" ? "Premium" : billing?.status === "trial" ? "Premium Trial" : billing?.status === "expired" ? "Trial expired" : "Free";
   const sidebarCollapsed = true;
-
-  useEffect(() => {
-    const savedTheme = window.localStorage.getItem("knowlense-dashboard-theme");
-    if (savedTheme === "light" || savedTheme === "dark") {
-      setTheme(savedTheme);
-    }
-
-    const savedDensity = window.localStorage.getItem("knowlense-dashboard-density");
-    if (savedDensity === "compact" || savedDensity === "comfortable") {
-      setDensity(savedDensity);
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem("knowlense-dashboard-theme", theme);
-  }, [theme]);
-
-  useEffect(() => {
-    window.localStorage.setItem("knowlense-dashboard-density", density);
-  }, [density]);
 
   useEffect(() => {
     if (!accessToken) {
@@ -506,31 +452,10 @@ function DashboardContent() {
     }
   }
 
-  async function handleDashboardRefresh() {
-    refresh();
-    if (!accessToken) {
-      return;
-    }
-
-    setRankLoading(true);
-    try {
-      const result = await fetchRankTrackingDashboard(accessToken, {
-        range: rankRange,
-        targetId: selectedTargetId
-      });
-      setRankTracking(result);
-      setRankError("");
-    } catch (error) {
-      setRankError(error instanceof Error ? error.message : "Unable to load rank tracking.");
-    } finally {
-      setRankLoading(false);
-    }
-  }
-
   function overviewView() {
     return (
       <>
-        <div className={cn("mt-5 grid gap-3.5 md:grid-cols-2", compact ? "xl:grid-cols-4" : "xl:grid-cols-4 2xl:gap-4")}>
+        <div className={cn("mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4")}>
           <Metric compact={compact} dark={dark} loading={loading} title="Website sessions" value={metrics ? String(metrics.websiteSessions.value) : "..."} delta={metrics?.websiteSessions.delta ?? "--"} icon={<Sparkles size={18} />} />
           <Metric
             compact={compact}
@@ -566,118 +491,114 @@ function DashboardContent() {
 
         {error ? <div className={cn("mt-4 rounded-2xl border px-4 py-3 text-sm", dark ? "border-red-500/20 bg-red-500/10 text-red-200" : "border-red-200 bg-red-50 text-red-700")}>{error}</div> : null}
 
-        <div className={cn("mt-5 grid gap-3.5", compact ? "xl:grid-cols-[0.95fr_1.05fr]" : "xl:grid-cols-[0.9fr_1.1fr] 2xl:gap-4")}>
-          <Card compact={compact} dark={dark} title="Rank Tracking Summary" description="Daily rank tracking is tied to the exact product + keyword pair selected from the extension.">
-            {rankLoading && !rankTracking ? <Skeleton className="h-[220px] w-full" /> : null}
-            {!rankLoading && rankTracking ? (
-              <>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {[
-                    { label: "Active targets", value: String(rankTracking.summary.activeTargets) },
-                    { label: "Collecting baseline", value: String(rankTracking.summary.baselinePending) },
-                    { label: "Improving", value: String(rankTracking.summary.improving) },
-                    { label: "Declining", value: String(rankTracking.summary.declining) }
-                  ].map((item) => (
-                    <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")} key={item.label}>
-                      <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>{item.label}</div>
-                      <div className={cn("mt-2 text-[1.5rem] font-semibold tracking-[-0.05em]", dark ? "text-white" : "text-black")}>{item.value}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className={cn("mt-4 rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
-                  <div className={cn("text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>Insight</div>
-                  <p className={cn("mt-2 text-sm leading-6", dark ? "text-white/60" : "text-gray-600")}>
-                    {rankTracking.chart.insight}
-                  </p>
-                </div>
-              </>
-            ) : null}
-            {!rankLoading && !rankTracking && !rankError ? (
-              <div className={cn("rounded-[20px] border border-dashed px-4 py-5 text-sm", dark ? "border-white/10 bg-white/5 text-white/55" : "border-gray-200 bg-[#fafafa] text-gray-500")}>
-                Start tracking keywords from the extension to build rank history here.
-              </div>
-            ) : null}
-            {rankError ? <div className={cn("mt-4 rounded-2xl border px-4 py-3 text-sm", dark ? "border-red-500/20 bg-red-500/10 text-red-200" : "border-red-200 bg-red-50 text-red-700")}>{rankError}</div> : null}
-          </Card>
-
-          <Card compact={compact} dark={dark} title="Keyword Rankings" description="This keyword rankings area appears immediately and starts plotting real movement after the first 7 daily checks are collected.">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { id: "7d", label: "7 days" },
-                  { id: "30d", label: "30 days" },
-                  { id: "90d", label: "90 days" },
-                  { id: "all", label: "All time" }
-                ].map((item) => (
-                  <RankFilterButton
-                    active={rankRange === item.id}
-                    dark={dark}
-                    key={item.id}
-                    label={item.label}
-                    onClick={() => startTransition(() => setRankRange(item.id as "7d" | "30d" | "90d" | "all"))}
-                  />
-                ))}
-              </div>
-              <select
-                className={cn("min-w-[220px] rounded-xl border px-3 py-2 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white" : "border-gray-200 bg-white text-gray-900")}
-                onChange={(event) => startTransition(() => setSelectedTargetId(event.target.value || null))}
-                value={selectedTargetId ?? ""}
-              >
-                <option value="">Select a tracked keyword</option>
-                {(rankTracking?.filters.targets ?? []).map((target) => (
-                  <option key={target.id} value={target.id}>
-                    {target.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
-                <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>Current keyword rank</div>
-                <div className={cn("mt-2 text-base font-semibold sm:text-lg", dark ? "text-white" : "text-black")}>{rankTracking?.chart.currentRankLabel ?? "No rank data yet"}</div>
-              </div>
-              <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
-                <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>Best keyword rank</div>
-                <div className={cn("mt-2 text-base font-semibold sm:text-lg", dark ? "text-white" : "text-black")}>{rankTracking?.chart.bestRankLabel ?? "No rank data yet"}</div>
-              </div>
-              <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
-                <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>Tracked keyword</div>
-                <div className={cn("mt-2 text-base font-semibold sm:text-lg", dark ? "text-white" : "text-black")}>{rankTracking?.chart.keyword || "No target selected"}</div>
-              </div>
-            </div>
-
-              <div className="mt-4">
-                {rankLoading && !rankTracking ? <Skeleton className="h-[280px] w-full" /> : null}
-                {!rankLoading && rankTracking?.chart.targetId && rankTracking.chart.baselineReady ? (
-                <RankTrendChart dark={dark} points={rankTracking.chart.points} />
-              ) : null}
-              {!rankLoading && rankTracking?.chart.targetId && !rankTracking.chart.baselineReady ? (
-                <RankTrendChart
-                  dark={dark}
-                  emptyCopy={`${rankTracking.chart.baselineProgress} of 7 daily checks are complete. The chart will unlock after the first baseline week is collected.`}
-                  emptyTitle="Collecting baseline data"
-                  points={[]}
-                />
-              ) : null}
-              {!rankLoading && !rankTracking?.chart.targetId ? (
-                <RankTrendChart
-                  dark={dark}
-                  emptyCopy="Start tracking a keyword from the extension, or select a tracked keyword here to view its upcoming trend line."
-                  emptyTitle="Keyword rankings chart will appear here"
-                  points={[]}
-                />
-              ) : null}
-            </div>
-          </Card>
-        </div>
-
-        <div className={cn("mt-5 grid gap-3.5", compact ? "xl:grid-cols-3" : "xl:grid-cols-3 2xl:gap-4")}>
+        <div className={cn("mt-4 grid gap-3 xl:grid-cols-3")}>
           <Card compact={compact} dark={dark} title="Current account"><div className={cn("text-[1.8rem] font-bold tracking-[-0.06em] break-words sm:text-[2rem]", dark ? "text-white" : "text-gray-900")}>{overview?.currentAccount.value ?? "..."}</div><p className={cn("mt-2 text-sm", dark ? "text-white/55" : "text-gray-500")}>{overview?.currentAccount.status ?? "Loading"}</p></Card>
           <Card compact={compact} dark={dark} title="Latest query"><div className={cn("text-[1.8rem] font-bold tracking-[-0.06em] break-words sm:text-[2rem]", dark ? "text-white" : "text-gray-900")}>{overview?.latestQuery.value ?? "..."}</div><p className={cn("mt-2 text-sm", dark ? "text-white/55" : "text-gray-500")}>{overview?.latestQuery.status === "waiting" || overview?.latestQuery.status === "processing" ? "Auto-refreshing until completed" : overview?.latestQuery.updatedAt ? new Date(overview.latestQuery.updatedAt).toLocaleString() : "No recent query"}</p></Card>
           <Card compact={compact} dark={dark} title="Next action"><div className={cn("text-[1.8rem] font-bold tracking-[-0.06em] break-words sm:text-[2rem]", dark ? "text-white" : "text-gray-900")}>{extensionStatus?.status === "active" ? overview?.nextAction.value ?? "Review runs" : "Connect"}</div><p className={cn("mt-2 text-sm", dark ? "text-white/55" : "text-gray-500")}>{quotaAtLimit ? "Upgrade to continue analyzing" : extensionStatus?.status === "active" ? "Extension connected" : "Extension needs connection"}</p></Card>
         </div>
       </>
+    );
+  }
+
+  function rankingsView() {
+    return (
+      <div className="mt-4 grid gap-3 xl:grid-cols-[0.92fr_1.08fr]">
+        <Card compact={compact} dark={dark} title="Rank Tracking Summary" description="Daily tracking is tied to the exact product + keyword pair selected from the extension.">
+          {rankLoading && !rankTracking ? <Skeleton className="h-[220px] w-full" /> : null}
+          {!rankLoading && rankTracking ? (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  { label: "Active targets", value: String(rankTracking.summary.activeTargets) },
+                  { label: "Collecting baseline", value: String(rankTracking.summary.baselinePending) },
+                  { label: "Improving", value: String(rankTracking.summary.improving) },
+                  { label: "Declining", value: String(rankTracking.summary.declining) }
+                ].map((item) => (
+                  <div className={cn("rounded-[18px] border p-3", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")} key={item.label}>
+                    <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>{item.label}</div>
+                    <div className={cn("mt-2 text-[1.35rem] font-semibold tracking-[-0.05em]", dark ? "text-white" : "text-black")}>{item.value}</div>
+                  </div>
+                ))}
+              </div>
+              <div className={cn("mt-3 rounded-[18px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+                <div className={cn("text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>Insight</div>
+                <p className={cn("mt-2 text-sm leading-6", dark ? "text-white/60" : "text-gray-600")}>{rankTracking.chart.insight}</p>
+              </div>
+            </>
+          ) : null}
+          {!rankLoading && !rankTracking && !rankError ? <div className={cn("rounded-[18px] border border-dashed px-4 py-5 text-sm", dark ? "border-white/10 bg-white/5 text-white/55" : "border-gray-200 bg-[#fafafa] text-gray-500")}>Start tracking keywords from the extension to build rank history here.</div> : null}
+          {rankError ? <div className={cn("mt-4 rounded-2xl border px-4 py-3 text-sm", dark ? "border-red-500/20 bg-red-500/10 text-red-200" : "border-red-200 bg-red-50 text-red-700")}>{rankError}</div> : null}
+        </Card>
+
+        <Card compact={compact} dark={dark} title="Keyword Rankings" description="The chart appears immediately and fills with real movement after the first 7 daily checks are collected.">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              {[
+                { id: "7d", label: "7 days" },
+                { id: "30d", label: "30 days" },
+                { id: "90d", label: "90 days" },
+                { id: "all", label: "All time" }
+              ].map((item) => (
+                <RankFilterButton
+                  active={rankRange === item.id}
+                  dark={dark}
+                  key={item.id}
+                  label={item.label}
+                  onClick={() => startTransition(() => setRankRange(item.id as "7d" | "30d" | "90d" | "all"))}
+                />
+              ))}
+            </div>
+            <select
+              className={cn("min-w-[220px] rounded-xl border px-3 py-2 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white" : "border-gray-200 bg-white text-gray-900")}
+              onChange={(event) => startTransition(() => setSelectedTargetId(event.target.value || null))}
+              value={selectedTargetId ?? ""}
+            >
+              <option value="">Select a tracked keyword</option>
+              {(rankTracking?.filters.targets ?? []).map((target) => (
+                <option key={target.id} value={target.id}>
+                  {target.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div className={cn("rounded-[18px] border p-3", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+              <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>Current keyword rank</div>
+              <div className={cn("mt-2 text-sm font-semibold sm:text-base", dark ? "text-white" : "text-black")}>{rankTracking?.chart.currentRankLabel ?? "No rank data yet"}</div>
+            </div>
+            <div className={cn("rounded-[18px] border p-3", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+              <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>Best keyword rank</div>
+              <div className={cn("mt-2 text-sm font-semibold sm:text-base", dark ? "text-white" : "text-black")}>{rankTracking?.chart.bestRankLabel ?? "No rank data yet"}</div>
+            </div>
+            <div className={cn("rounded-[18px] border p-3", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+              <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>Tracked keyword</div>
+              <div className={cn("mt-2 text-sm font-semibold sm:text-base", dark ? "text-white" : "text-black")}>{rankTracking?.chart.keyword || "No target selected"}</div>
+            </div>
+          </div>
+
+          <div className="mt-3">
+            {rankLoading && !rankTracking ? <Skeleton className="h-[280px] w-full" /> : null}
+            {!rankLoading && rankTracking?.chart.targetId && rankTracking.chart.baselineReady ? <RankTrendChart dark={dark} points={rankTracking.chart.points} /> : null}
+            {!rankLoading && rankTracking?.chart.targetId && !rankTracking.chart.baselineReady ? (
+              <RankTrendChart
+                dark={dark}
+                emptyCopy={`${rankTracking.chart.baselineProgress} of 7 daily checks are complete. The chart will unlock after the first baseline week is collected.`}
+                emptyTitle="Collecting baseline data"
+                points={[]}
+              />
+            ) : null}
+            {!rankLoading && !rankTracking?.chart.targetId ? (
+              <RankTrendChart
+                dark={dark}
+                emptyCopy="Start tracking a keyword from the extension, or select a tracked keyword here to view its upcoming trend line."
+                emptyTitle="Keyword rankings chart will appear here"
+                points={[]}
+              />
+            ) : null}
+          </div>
+        </Card>
+      </div>
     );
   }
 
@@ -798,39 +719,38 @@ function DashboardContent() {
   }
 
   return (
-    <main className={cn("min-h-screen transition-colors", dark ? "bg-[#0e1014] text-white" : "bg-gray-50 text-gray-900")}>
-      <div className={cn("grid min-h-screen lg:grid-cols-[92px_minmax(0,1fr)] 2xl:grid-cols-[248px_minmax(0,1fr)]", dark ? "bg-[#0e1014]" : "bg-gray-50")}>
-        <aside className={cn("px-4 py-5 2xl:px-5 2xl:py-6", dark ? "border-r border-white/10 bg-[#0f1116]" : "border-r border-gray-100 bg-white")}>
+    <main className={cn("min-h-screen transition-colors", dark ? "bg-[#0e1014] text-white" : "app-shell text-gray-900")}>
+      <div className={cn("grid min-h-screen lg:grid-cols-[92px_minmax(0,1fr)] 2xl:grid-cols-[248px_minmax(0,1fr)]", dark ? "bg-[#0e1014]" : "bg-transparent")}>
+        <aside className={cn("px-4 py-4 2xl:px-5 2xl:py-5", dark ? "border-r border-white/10 bg-[#0f1116]" : "border-r border-[#e7e1d5] bg-[#fbf7ef]/88")}>
           <div className="flex justify-center 2xl:hidden">
-            <BrandLockup compact href="/dashboard" iconOnly subtitle="" />
+            <BrandLockup compact href="/" iconOnly subtitle="" />
           </div>
           <div className="hidden 2xl:flex">
-            <BrandLockup compact href="/dashboard" subtitle="" />
+            <BrandLockup compact href="/" subtitle="" />
           </div>
-          <div className={cn("mt-6 border-t pt-5 2xl:mt-7 2xl:pt-6", dark ? "border-white/8" : "border-gray-100")}><p className={cn("hidden px-1 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-gray-400")}>Workspace</p><nav className="mt-3 space-y-1"><SidebarItem active={section === "overview"} dark={dark} icon={<LayoutGrid size={16} />} iconOnly={sidebarCollapsed} label="Dashboard" onClick={() => setSection("overview")} /><SidebarItem active={section === "account"} dark={dark} icon={<UserRound size={16} />} iconOnly={sidebarCollapsed} label="Account" onClick={() => setSection("account")} /><SidebarItem active={section === "subscription"} dark={dark} icon={<CreditCard size={16} />} iconOnly={sidebarCollapsed} label="Subscription" onClick={() => setSection("subscription")} /><SidebarItem active={section === "connect"} dark={dark} icon={<PlugZap size={16} />} iconOnly={sidebarCollapsed} label="Connect" onClick={() => setSection("connect")} /></nav></div>
-          <div className={cn("mt-6 border-t pt-5 2xl:mt-7 2xl:pt-6", dark ? "border-white/8" : "border-gray-100")}><p className={cn("hidden px-1 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-gray-400")}>More</p><div className="mt-3 space-y-1"><SidebarItem active={section === "support"} dark={dark} icon={<LifeBuoy size={16} />} iconOnly={sidebarCollapsed} label="Support" onClick={() => setSection("support")} /><SidebarItem active={section === "privacy"} dark={dark} icon={<Shield size={16} />} iconOnly={sidebarCollapsed} label="Privacy" onClick={() => setSection("privacy")} /><button className={cn("flex w-full rounded-xl px-3 py-2.5 text-left text-sm transition", sidebarCollapsed ? "justify-center 2xl:justify-start" : "items-center gap-3", dark ? "text-white/55 hover:bg-white/6 hover:text-white" : "text-gray-500 hover:bg-gray-50 hover:text-gray-900")} onClick={handleSignOut} title={sidebarCollapsed ? "Log out" : undefined} type="button"><span className={cn("grid h-8 w-8 place-items-center rounded-lg border", dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white")}><RefreshCw size={16} /></span><span className={cn(sidebarCollapsed ? "hidden 2xl:inline font-medium" : "font-medium")}>Log out</span></button></div></div>
+          <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-1 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>Workspace</p><nav className="mt-3 space-y-1"><SidebarItem active={section === "overview"} dark={dark} icon={<LayoutGrid size={16} />} iconOnly={sidebarCollapsed} label="Dashboard" onClick={() => setSection("overview")} /><SidebarItem active={section === "rankings"} dark={dark} icon={<Sparkles size={16} />} iconOnly={sidebarCollapsed} label="Keyword Rankings" onClick={() => setSection("rankings")} /><SidebarItem active={section === "account"} dark={dark} icon={<UserRound size={16} />} iconOnly={sidebarCollapsed} label="Account" onClick={() => setSection("account")} /><SidebarItem active={section === "subscription"} dark={dark} icon={<CreditCard size={16} />} iconOnly={sidebarCollapsed} label="Subscription" onClick={() => setSection("subscription")} /><SidebarItem active={section === "connect"} dark={dark} icon={<PlugZap size={16} />} iconOnly={sidebarCollapsed} label="Connect" onClick={() => setSection("connect")} /></nav></div>
+          <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-1 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>More</p><div className="mt-3 space-y-1"><SidebarItem active={section === "support"} dark={dark} icon={<LifeBuoy size={16} />} iconOnly={sidebarCollapsed} label="Support" onClick={() => setSection("support")} /><SidebarItem active={section === "privacy"} dark={dark} icon={<Shield size={16} />} iconOnly={sidebarCollapsed} label="Privacy" onClick={() => setSection("privacy")} /><button className={cn("flex w-full rounded-xl px-3 py-2.5 text-left text-sm transition", sidebarCollapsed ? "justify-center 2xl:justify-start" : "items-center gap-3", dark ? "text-white/55 hover:bg-white/6 hover:text-white" : "text-gray-500 hover:bg-[#f3eee3] hover:text-gray-900")} onClick={handleSignOut} title={sidebarCollapsed ? "Log out" : undefined} type="button"><span className={cn("grid h-8 w-8 place-items-center rounded-lg border", dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white")}><RefreshCw size={16} /></span><span className={cn(sidebarCollapsed ? "hidden 2xl:inline font-medium" : "font-medium")}>Log out</span></button></div></div>
         </aside>
 
         <section className="min-w-0">
-          <header className={cn("border-b", compact ? "px-5 py-3.5 sm:px-6" : "px-6 py-4 sm:px-8", dark ? "border-white/10 bg-[#0f1116]" : "border-gray-100 bg-white")}>
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-              <div><h1 className={cn(compact ? "text-[1.9rem] sm:text-[2rem]" : "text-[2.15rem]", "font-extrabold tracking-[-0.08em]", dark ? "text-white" : "text-gray-900")}>Dashboard</h1><p className={cn("mt-1 text-sm", dark ? "text-white/55" : "text-gray-500")}>{section === "overview" ? `Welcome back, ${authLoading ? "..." : firstName}.` : `${sectionMeta.title} is inside your workspace.`}</p></div>
-              <div className="flex flex-wrap items-center gap-2 self-start lg:justify-end lg:self-auto">
-                <div className={cn("inline-flex items-center gap-1 rounded-full border p-1", dark ? "border-white/10 bg-[#111318]" : "border-gray-200 bg-gray-50")}>
-                  <DensityButton active={density === "compact"} dark={dark} label="Compact" onClick={() => setDensity("compact")} />
-                  <DensityButton active={density === "comfortable"} dark={dark} label="Comfortable" onClick={() => setDensity("comfortable")} />
-                </div>
-                <TopButton active={theme === "light"} dark={dark} label="Light mode" onClick={() => setTheme("light")}><Sun size={17} /></TopButton><TopButton active={theme === "dark"} dark={dark} label="Dark mode" onClick={() => setTheme("dark")}><Moon size={17} /></TopButton><TopButton dark={dark} label="Refresh dashboard" onClick={handleDashboardRefresh}><RefreshCw size={17} /></TopButton><TopButton dark={dark} label="Notifications" onClick={() => showToast(overview?.recentRuns[0] ? `Latest run: ${overview.recentRuns[0].query}` : "No new dashboard notifications.")}><Bell size={17} /></TopButton><button className={cn("inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 transition", dark ? "border-white/10 bg-[#111318] hover:bg-white/6" : "border-gray-200 bg-white hover:bg-gray-50")} onClick={() => setSection("account")} type="button"><span className="grid h-8 w-8 place-items-center rounded-full bg-[#eef2ff] text-xs font-semibold text-[#6f5cff]">{initials}</span><span className={cn("text-sm font-medium", dark ? "text-white" : "text-gray-900")}>{authLoading ? "Loading" : firstName}</span></button></div>
+          <header className={cn("border-b px-5 py-3 sm:px-6", dark ? "border-white/10 bg-[#0f1116]" : "border-[#e7e1d5] bg-[#fbf7ef]/72")}>
+            <div className="flex items-center justify-between gap-4">
+              <div><h1 className={cn("text-[1.65rem] font-extrabold tracking-[-0.08em]", dark ? "text-white" : "text-gray-900")}>{sectionMeta.title}</h1><p className={cn("mt-0.5 text-[13px]", dark ? "text-white/55" : "text-gray-500")}>{section === "overview" ? `Welcome back, ${authLoading ? "..." : firstName}.` : sectionMeta.description}</p></div>
+              <div className="flex items-center gap-2">
+                <TopButton dark={dark} label="Notifications" onClick={() => showToast(overview?.recentRuns[0] ? `Latest run: ${overview.recentRuns[0].query}` : "No new dashboard notifications.")}><Bell size={17} /></TopButton>
+                <button className={cn("inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 transition", dark ? "border-white/10 bg-[#111318] hover:bg-white/6" : "border-gray-200 bg-white hover:bg-gray-50")} onClick={() => setSection("account")} type="button"><span className="grid h-8 w-8 place-items-center rounded-full bg-[#eef2ff] text-xs font-semibold text-[#6f5cff]">{initials}</span><span className={cn("text-sm font-medium", dark ? "text-white" : "text-gray-900")}>{authLoading ? "Loading" : firstName}</span></button>
+              </div>
             </div>
           </header>
 
-          <div className={cn(compact ? "px-5 py-5 sm:px-6" : "px-6 py-6 sm:px-8", dark ? "bg-[#0e1014]" : "bg-gray-50")}>
+          <div className={cn("px-5 py-4 sm:px-6", dark ? "bg-[#0e1014]" : "bg-transparent")}>
             <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-              <div><h2 className={cn(compact ? "text-[1.65rem]" : "text-[1.85rem]", "font-extrabold tracking-[-0.07em]", dark ? "text-white" : "text-gray-900")}>{sectionMeta.title}</h2><p className={cn("mt-2 max-w-3xl text-sm leading-7", dark ? "text-white/55" : "text-gray-500")}>{sectionMeta.description}</p></div>
-              <div className={cn("pt-1 text-sm", dark ? "text-white/40" : "text-gray-500")}>{section === "overview" ? "Home / Dashboard" : `Home / Dashboard / ${sectionMeta.title}`}</div>
+              <div><h2 className={cn("text-[1.35rem] font-extrabold tracking-[-0.07em]", dark ? "text-white" : "text-gray-900")}>{sectionMeta.title}</h2><p className={cn("mt-1 max-w-3xl text-[13px] leading-6", dark ? "text-white/55" : "text-gray-500")}>{sectionMeta.description}</p></div>
+              <div className={cn("pt-1 text-[13px]", dark ? "text-white/40" : "text-gray-500")}>{section === "overview" ? "Home / Dashboard" : `Home / Dashboard / ${sectionMeta.title}`}</div>
             </div>
 
             {section === "overview" ? overviewView() : null}
+            {section === "rankings" ? rankingsView() : null}
             {section === "account" ? accountView() : null}
             {section === "subscription" ? subscriptionView() : null}
             {section === "connect" ? connectView() : null}
