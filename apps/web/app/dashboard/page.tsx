@@ -933,13 +933,9 @@ function DashboardContent() {
               </div> : null}
             </div>
           </Card>
-          <Card compact={compact} dark={dark} title="Workspace controls" description="Keep the important account actions close without repeating full navigation cards.">
-            <div className="flex flex-wrap gap-3">
-              <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-white/8 text-white hover:bg-white/12" : "bg-gray-100 text-gray-900 hover:bg-gray-200")} onClick={() => setSection("subscription")} type="button">Open subscription</button>
-              <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-white/8 text-white hover:bg-white/12" : "bg-gray-100 text-gray-900 hover:bg-gray-200")} onClick={() => setSection("support")} type="button">Open support</button>
-              <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-red-500/15 text-red-200 hover:bg-red-500/20" : "bg-red-50 text-red-700 hover:bg-red-100")} onClick={handleSignOut} type="button">Log out</button>
-            </div>
-          </Card>
+          <div className="flex">
+            <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-red-500/15 text-red-200 hover:bg-red-500/20" : "bg-red-50 text-red-700 hover:bg-red-100")} onClick={handleSignOut} type="button">Log out</button>
+          </div>
         </div>
         {connectedBrowsersCard()}
       </div>
@@ -991,7 +987,7 @@ function DashboardContent() {
             </div>
           </div>
           <div className="mt-5 pt-4 2xl:mt-6 2xl:pt-5"><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>Workspace</p><nav className="mt-3 space-y-1"><SidebarItem active={section === "overview"} dark={dark} icon={<LayoutGrid size={16} />} iconOnly={sidebarCollapsed} label="Dashboard" onClick={() => setSection("overview")} /><SidebarItem active={section === "rankings"} dark={dark} icon={<Sparkles size={16} />} iconOnly={sidebarCollapsed} label="Keyword Rankings" onClick={() => setSection("rankings")} /><SidebarItem active={section === "account"} dark={dark} icon={<UserRound size={16} />} iconOnly={sidebarCollapsed} label="Account" onClick={() => setSection("account")} /><SidebarItem active={section === "subscription"} dark={dark} icon={<CreditCard size={16} />} iconOnly={sidebarCollapsed} label="Subscription" onClick={() => setSection("subscription")} /></nav></div>
-          <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>More</p><div className="mt-3 space-y-1"><SidebarItem active={section === "support"} dark={dark} icon={<LifeBuoy size={16} />} iconOnly={sidebarCollapsed} label="Support" onClick={() => setSection("support")} /><SidebarItem active={section === "privacy"} dark={dark} icon={<Shield size={16} />} iconOnly={sidebarCollapsed} label="Privacy" onClick={() => setSection("privacy")} /><button className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition", sidebarCollapsed ? "justify-center 2xl:justify-start" : "", dark ? "text-white/55 hover:bg-white/6 hover:text-white" : "text-gray-500 hover:bg-[#f3eee3] hover:text-gray-900")} onClick={handleSignOut} title={sidebarCollapsed ? "Log out" : undefined} type="button"><span className={cn("grid h-8 w-8 place-items-center rounded-lg border", dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white")}><RefreshCw size={16} /></span><span className={cn(sidebarCollapsed ? "hidden 2xl:inline font-medium" : "font-medium")}>Log out</span></button></div></div>
+          <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>More</p><div className="mt-3 space-y-1"><SidebarItem active={section === "support"} dark={dark} icon={<LifeBuoy size={16} />} iconOnly={sidebarCollapsed} label="Support" onClick={() => setSection("support")} /><SidebarItem active={section === "privacy"} dark={dark} icon={<Shield size={16} />} iconOnly={sidebarCollapsed} label="Privacy" onClick={() => setSection("privacy")} /></div></div>
         </aside>
 
         <section className="min-w-0">
