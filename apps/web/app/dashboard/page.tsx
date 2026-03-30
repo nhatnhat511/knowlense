@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, startTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Bell, CreditCard, LayoutGrid, LifeBuoy, PlugZap, RefreshCw, Shield, Sparkles, UserRound } from "lucide-react";
+import { Bell, CreditCard, LayoutGrid, LifeBuoy, Moon, PlugZap, RefreshCw, Shield, Sparkles, Sun, UserRound } from "lucide-react";
 import { BrandLockup } from "@/components/brand/brand";
 import { useSessionStore, useToast } from "@/components/providers/app-providers";
 import { useAuthGuard } from "@/hooks/use-auth";
@@ -14,6 +14,7 @@ import { fetchRankTrackingDashboard, startDashboardTrial, type RankTrackingDashb
 import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice, revokeOtherExtensionDevices } from "@/lib/api/extension-connect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
+type ThemeMode = "light" | "dark";
 type Section = "overview" | "rankings" | "account" | "subscription" | "connect" | "support" | "privacy";
 
 const SECTION_META: Record<Section, { title: string; description: string }> = {
@@ -82,6 +83,31 @@ function TopButton({ dark, active, label, onClick, children }: { dark: boolean; 
     <button
       aria-label={label}
       className={cn("inline-flex h-10 w-10 items-center justify-center rounded-xl border transition", dark ? active ? "border-white/15 bg-white/10 text-white" : "border-white/10 bg-[#121212] text-white/70 hover:bg-white/6 hover:text-white" : active ? "border-gray-200 bg-gray-50 text-gray-900" : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-900")}
+      onClick={onClick}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
+
+function ThemeButton({
+  dark,
+  active,
+  label,
+  onClick,
+  children
+}: {
+  dark: boolean;
+  active: boolean;
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      aria-label={label}
+      className={cn("inline-flex h-10 w-10 items-center justify-center rounded-xl border transition", dark ? active ? "border-white/20 bg-white/12 text-white" : "border-white/10 bg-[#111318] text-white/70 hover:bg-white/8 hover:text-white" : active ? "border-gray-300 bg-white text-gray-900" : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-900")}
       onClick={onClick}
       type="button"
     >
@@ -233,6 +259,7 @@ function DashboardContent() {
   const { accessToken, isLoading: authLoading } = useAuthGuard("/dashboard");
   const { metrics, overview, loading, error, refresh } = useDashboardData(accessToken, Boolean(accessToken));
   const extensionStatus = useExtensionStatus(accessToken, Boolean(accessToken));
+  const [theme, setTheme] = useState<ThemeMode>("light");
   const [checkoutLoading, setCheckoutLoading] = useState<"" | "monthly" | "yearly">("");
   const [trialLoading, setTrialLoading] = useState(false);
   const [connectBusy, setConnectBusy] = useState(false);
@@ -255,7 +282,7 @@ function DashboardContent() {
 
   const section = (searchParams.get("section") as Section) || "overview";
   const requestId = searchParams.get("request");
-  const dark = false;
+  const dark = theme === "dark";
   const compact = true;
   const firstName = user?.name ?? "there";
   const initials = firstName.slice(0, 2).toUpperCase() || "KN";
@@ -264,6 +291,17 @@ function DashboardContent() {
   const billing = metrics?.billing;
   const planLabel = billing?.status === "active" ? "Premium" : billing?.status === "trial" ? "Premium Trial" : billing?.status === "expired" ? "Trial expired" : "Free";
   const sidebarCollapsed = true;
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("knowlense-dashboard-theme");
+    if (savedTheme === "light" || savedTheme === "dark") {
+      setTheme(savedTheme);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("knowlense-dashboard-theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!accessToken) {
@@ -664,18 +702,16 @@ function DashboardContent() {
   function connectView() {
     return (
       <div className={cn("mt-5 grid gap-3.5", compact ? "xl:grid-cols-[1.15fr_0.85fr]" : "xl:grid-cols-[1.1fr_0.9fr] 2xl:gap-4")}>
-        <Card compact={compact} dark={dark} title="Connect extension" description="The extension does not ask for website credentials directly. Approval happens here.">
+        <Card compact={compact} dark={dark} title="Approval request">
           <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}>
-            <div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Current status</div>
             <div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{extensionStatus?.status === "active" ? "Connected" : requestId ? "Pending approval" : "Waiting for request"}</div>
             <p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{requestId ? "An extension request was detected. Approve it below and return to the popup." : "Open the extension popup and choose Connect via website. Once the popup sends a request, approve it here."}</p>
             <div className="mt-4 flex flex-wrap gap-3">
               <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={!requestId || connectBusy} onClick={() => void handleConnect()} type="button">{connectBusy ? "Connecting..." : "Approve extension"}</button>
-              <button className={cn("inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} onClick={refresh} type="button">Refresh status</button>
             </div>
           </div>
         </Card>
-        <Card compact={compact} dark={dark} title="Connected browsers" description="Each extension browser session is managed like a separate device and can be revoked here.">
+        <Card compact={compact} dark={dark} title="Connected browsers">
           <div className="space-y-3 text-sm leading-6">
             {!devicesLoading && extensionDevices.some((device) => device.status === "active") ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -714,8 +750,8 @@ function DashboardContent() {
     );
   }
 
-  function textPanel(title: string, items: string[]) {
-    return <div className="mt-5"><Card compact={compact} dark={dark} title={title} description="Embedded directly in the workspace to avoid forcing a page change."><div className="space-y-3 text-sm leading-6">{items.map((item) => <div className={cn("rounded-[18px] border p-3.5", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>{item}</div>)}</div></Card></div>;
+  function textPanel(items: string[]) {
+    return <div className="mt-5"><Card compact={compact} dark={dark} title="Summary"><div className="space-y-3 text-sm leading-6">{items.map((item) => <div className={cn("rounded-[18px] border p-3.5", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>{item}</div>)}</div></Card></div>;
   }
 
   return (
@@ -726,10 +762,10 @@ function DashboardContent() {
             <BrandLockup compact href="/" iconOnly subtitle="" />
           </div>
           <div className="hidden 2xl:flex">
-            <BrandLockup compact href="/" subtitle="" />
+            <BrandLockup compact href="/" subtitle="Seller insight layer for TPT" />
           </div>
-          <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-1 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>Workspace</p><nav className="mt-3 space-y-1"><SidebarItem active={section === "overview"} dark={dark} icon={<LayoutGrid size={16} />} iconOnly={sidebarCollapsed} label="Dashboard" onClick={() => setSection("overview")} /><SidebarItem active={section === "rankings"} dark={dark} icon={<Sparkles size={16} />} iconOnly={sidebarCollapsed} label="Keyword Rankings" onClick={() => setSection("rankings")} /><SidebarItem active={section === "account"} dark={dark} icon={<UserRound size={16} />} iconOnly={sidebarCollapsed} label="Account" onClick={() => setSection("account")} /><SidebarItem active={section === "subscription"} dark={dark} icon={<CreditCard size={16} />} iconOnly={sidebarCollapsed} label="Subscription" onClick={() => setSection("subscription")} /><SidebarItem active={section === "connect"} dark={dark} icon={<PlugZap size={16} />} iconOnly={sidebarCollapsed} label="Connect" onClick={() => setSection("connect")} /></nav></div>
-          <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-1 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>More</p><div className="mt-3 space-y-1"><SidebarItem active={section === "support"} dark={dark} icon={<LifeBuoy size={16} />} iconOnly={sidebarCollapsed} label="Support" onClick={() => setSection("support")} /><SidebarItem active={section === "privacy"} dark={dark} icon={<Shield size={16} />} iconOnly={sidebarCollapsed} label="Privacy" onClick={() => setSection("privacy")} /><button className={cn("flex w-full rounded-xl px-3 py-2.5 text-left text-sm transition", sidebarCollapsed ? "justify-center 2xl:justify-start" : "items-center gap-3", dark ? "text-white/55 hover:bg-white/6 hover:text-white" : "text-gray-500 hover:bg-[#f3eee3] hover:text-gray-900")} onClick={handleSignOut} title={sidebarCollapsed ? "Log out" : undefined} type="button"><span className={cn("grid h-8 w-8 place-items-center rounded-lg border", dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white")}><RefreshCw size={16} /></span><span className={cn(sidebarCollapsed ? "hidden 2xl:inline font-medium" : "font-medium")}>Log out</span></button></div></div>
+          <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>Workspace</p><nav className="mt-3 space-y-1"><SidebarItem active={section === "overview"} dark={dark} icon={<LayoutGrid size={16} />} iconOnly={sidebarCollapsed} label="Dashboard" onClick={() => setSection("overview")} /><SidebarItem active={section === "rankings"} dark={dark} icon={<Sparkles size={16} />} iconOnly={sidebarCollapsed} label="Keyword Rankings" onClick={() => setSection("rankings")} /><SidebarItem active={section === "account"} dark={dark} icon={<UserRound size={16} />} iconOnly={sidebarCollapsed} label="Account" onClick={() => setSection("account")} /><SidebarItem active={section === "subscription"} dark={dark} icon={<CreditCard size={16} />} iconOnly={sidebarCollapsed} label="Subscription" onClick={() => setSection("subscription")} /><SidebarItem active={section === "connect"} dark={dark} icon={<PlugZap size={16} />} iconOnly={sidebarCollapsed} label="Connect" onClick={() => setSection("connect")} /></nav></div>
+          <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>More</p><div className="mt-3 space-y-1"><SidebarItem active={section === "support"} dark={dark} icon={<LifeBuoy size={16} />} iconOnly={sidebarCollapsed} label="Support" onClick={() => setSection("support")} /><SidebarItem active={section === "privacy"} dark={dark} icon={<Shield size={16} />} iconOnly={sidebarCollapsed} label="Privacy" onClick={() => setSection("privacy")} /><button className={cn("flex w-full rounded-xl px-3 py-2.5 text-left text-sm transition", sidebarCollapsed ? "justify-center 2xl:justify-start" : "items-center gap-3", dark ? "text-white/55 hover:bg-white/6 hover:text-white" : "text-gray-500 hover:bg-[#f3eee3] hover:text-gray-900")} onClick={handleSignOut} title={sidebarCollapsed ? "Log out" : undefined} type="button"><span className={cn("grid h-8 w-8 place-items-center rounded-lg border", dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white")}><RefreshCw size={16} /></span><span className={cn(sidebarCollapsed ? "hidden 2xl:inline font-medium" : "font-medium")}>Log out</span></button></div></div>
         </aside>
 
         <section className="min-w-0">
@@ -737,6 +773,8 @@ function DashboardContent() {
             <div className="flex items-center justify-between gap-4">
               <div><h1 className={cn("text-[1.65rem] font-extrabold tracking-[-0.08em]", dark ? "text-white" : "text-gray-900")}>{sectionMeta.title}</h1><p className={cn("mt-0.5 text-[13px]", dark ? "text-white/55" : "text-gray-500")}>{section === "overview" ? `Welcome back, ${authLoading ? "..." : firstName}.` : sectionMeta.description}</p></div>
               <div className="flex items-center gap-2">
+                <ThemeButton active={!dark} dark={dark} label="Light mode" onClick={() => setTheme("light")}><Sun size={17} /></ThemeButton>
+                <ThemeButton active={dark} dark={dark} label="Dark mode" onClick={() => setTheme("dark")}><Moon size={17} /></ThemeButton>
                 <TopButton dark={dark} label="Notifications" onClick={() => showToast(overview?.recentRuns[0] ? `Latest run: ${overview.recentRuns[0].query}` : "No new dashboard notifications.")}><Bell size={17} /></TopButton>
                 <button className={cn("inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 transition", dark ? "border-white/10 bg-[#111318] hover:bg-white/6" : "border-gray-200 bg-white hover:bg-gray-50")} onClick={() => setSection("account")} type="button"><span className="grid h-8 w-8 place-items-center rounded-full bg-[#eef2ff] text-xs font-semibold text-[#6f5cff]">{initials}</span><span className={cn("text-sm font-medium", dark ? "text-white" : "text-gray-900")}>{authLoading ? "Loading" : firstName}</span></button>
               </div>
@@ -744,23 +782,20 @@ function DashboardContent() {
           </header>
 
           <div className={cn("px-5 py-4 sm:px-6", dark ? "bg-[#0e1014]" : "bg-transparent")}>
-            <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-              <div><h2 className={cn("text-[1.35rem] font-extrabold tracking-[-0.07em]", dark ? "text-white" : "text-gray-900")}>{sectionMeta.title}</h2><p className={cn("mt-1 max-w-3xl text-[13px] leading-6", dark ? "text-white/55" : "text-gray-500")}>{sectionMeta.description}</p></div>
-              <div className={cn("pt-1 text-[13px]", dark ? "text-white/40" : "text-gray-500")}>{section === "overview" ? "Home / Dashboard" : `Home / Dashboard / ${sectionMeta.title}`}</div>
-            </div>
+            <div className={cn("mb-3 text-[13px]", dark ? "text-white/40" : "text-gray-500")}>{section === "overview" ? "Home / Dashboard" : `Home / Dashboard / ${sectionMeta.title}`}</div>
 
             {section === "overview" ? overviewView() : null}
             {section === "rankings" ? rankingsView() : null}
             {section === "account" ? accountView() : null}
             {section === "subscription" ? subscriptionView() : null}
             {section === "connect" ? connectView() : null}
-            {section === "support" ? textPanel("Support center", [
+            {section === "support" ? textPanel([
               "Auth issues: if sign-in loops or callback problems happen, clear the current session and sign in again from the website.",
               "Extension issues: open the popup, choose Connect via website, then approve the request in the Connect extension section.",
               "Billing issues: if plan state looks wrong, refresh the workspace and retry the Premium upgrade flow.",
               "Quota issues: if keyword runs hit the limit, the workspace should steer the user toward Premium."
             ]) : null}
-            {section === "privacy" ? textPanel("Privacy summary", [
+            {section === "privacy" ? textPanel([
               "Supabase handles website identity and authentication.",
               "Cloudflare Workers and D1 handle product logic, extension sessions, and workspace data.",
               "Paddle handles checkout, tax, and invoice processing for paid plans.",

@@ -92,7 +92,14 @@ export function useAuthGuard(nextPath: string) {
         return;
       }
 
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+      if (event === "TOKEN_REFRESHED") {
+        if (session?.access_token) {
+          setAccessToken(session.access_token);
+        }
+        return;
+      }
+
+      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
         void applySession(session, false);
       }
     });
