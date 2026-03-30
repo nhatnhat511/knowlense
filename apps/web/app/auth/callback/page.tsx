@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { exchangeOAuthCode } from "@/lib/api/auth";
 import { fetchApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
@@ -29,6 +28,25 @@ function AuthCallbackContent() {
     const client = supabase;
     let active = true;
     let redirectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function readHashSession() {
+      if (typeof window === "undefined" || !window.location.hash) {
+        return null;
+      }
+
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+
+      if (!accessToken || !refreshToken) {
+        return null;
+      }
+
+      return {
+        accessToken,
+        refreshToken
+      };
+    }
 
     async function finalizeWithSession() {
       const {
@@ -57,12 +75,12 @@ function AuthCallbackContent() {
 
     async function completeCallback() {
       const authCode = searchParams.get("code");
+      const hashSession = readHashSession();
 
-      if (authCode) {
-        const result = await exchangeOAuthCode(authCode);
+      if (hashSession) {
         const sessionResult = await client.auth.setSession({
-          access_token: result.session.accessToken,
-          refresh_token: result.session.refreshToken
+          access_token: hashSession.accessToken,
+          refresh_token: hashSession.refreshToken
         });
 
         if (!active) {
@@ -71,6 +89,17 @@ function AuthCallbackContent() {
 
         if (sessionResult.error) {
           setStatus(sessionResult.error.message);
+          return;
+        }
+      } else if (authCode) {
+        const exchangeResult = await client.auth.exchangeCodeForSession(authCode);
+
+        if (!active) {
+          return;
+        }
+
+        if (exchangeResult.error) {
+          setStatus(exchangeResult.error.message);
           return;
         }
       }
