@@ -895,14 +895,6 @@ function DashboardContent() {
                 </div>
               </div>
             </div>
-            <div className={cn(compact ? "mt-4 grid gap-3 sm:grid-cols-4" : "mt-6 grid gap-3 sm:grid-cols-4")}>
-              {[
-                { label: "Plan", value: planLabel, copy: billing?.trialActive ? `${billing.trialDaysRemaining} days left in trial.` : "Upgrade when you want recurring research usage." },
-                { label: "Website session", value: accessToken ? "Active" : "Inactive", copy: "The website remains the primary sign-in surface." },
-                { label: "Sign-in method", value: signInMethodMeta.label, copy: signInMethod === "email" ? "Email password access is enabled for this account." : "This account signs in through the linked provider." },
-                { label: "Extension access", value: extensionStatus?.status === "active" ? "Connected" : "Approval based", copy: "Each browser session is approved from this workspace." }
-              ].map((item) => <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")} key={item.label}><div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>{item.label}</div><div className={cn("mt-2 text-base font-semibold sm:text-lg", dark ? "text-white" : "text-black")}>{item.value}</div><div className={cn("mt-1 text-sm leading-6", dark ? "text-white/55" : "text-neutral-500")}>{item.copy}</div></div>)}
-            </div>
             <div className={cn("mt-4 rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -937,7 +929,7 @@ function DashboardContent() {
               {signInMethod === "email" ? <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                 <input className={cn("h-11 rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")} onChange={(event) => setNextPassword(event.target.value)} placeholder="New password" type="password" value={nextPassword} />
                 <input className={cn("h-11 rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirm password" type="password" value={confirmPassword} />
-                <button className={cn("inline-flex h-11 items-center justify-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={passwordBusy} onClick={() => void handlePasswordUpdate()} type="button">{passwordBusy ? "Saving..." : "Update password"}</button>
+                <button className={cn("inline-flex h-11 min-w-[164px] items-center justify-center whitespace-nowrap rounded-full px-5 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={passwordBusy} onClick={() => void handlePasswordUpdate()} type="button">{passwordBusy ? "Saving..." : "Update password"}</button>
               </div> : null}
             </div>
           </Card>

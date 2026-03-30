@@ -291,6 +291,11 @@ function normalizeSupabaseUser(user: {
   email_confirmed_at?: string | null;
   user_metadata?: Record<string, unknown> | null;
   app_metadata?: Record<string, unknown> | null;
+  identities?: Array<{
+    provider?: string | null;
+    last_sign_in_at?: string | null;
+    created_at?: string | null;
+  }> | null;
 }) {
   const metadata = user.user_metadata ?? {};
   const appMetadata = user.app_metadata ?? {};
@@ -303,7 +308,20 @@ function normalizeSupabaseUser(user: {
           ? user.email.split("@")[0]
           : null;
   const avatarUrl = typeof metadata.avatar_url === "string" ? metadata.avatar_url : null;
-  const providerValue = typeof appMetadata.provider === "string" ? appMetadata.provider.toLowerCase() : "unknown";
+  const identityProviders = Array.isArray(user.identities)
+    ? user.identities
+        .map((identity) => typeof identity?.provider === "string" ? identity.provider.toLowerCase() : null)
+        .filter((provider): provider is string => Boolean(provider))
+    : [];
+  const appProviders = Array.isArray(appMetadata.providers)
+    ? appMetadata.providers
+        .map((provider) => typeof provider === "string" ? provider.toLowerCase() : null)
+        .filter((provider): provider is string => Boolean(provider))
+    : [];
+  const providerCandidates = [...identityProviders, ...appProviders];
+  const providerValue =
+    providerCandidates.find((provider) => provider === "google" || provider === "github" || provider === "email")
+    ?? (typeof appMetadata.provider === "string" ? appMetadata.provider.toLowerCase() : "unknown");
   const signInMethod: "email" | "google" | "github" | "unknown" =
     providerValue === "google" || providerValue === "github" || providerValue === "email" ? providerValue : "unknown";
 
