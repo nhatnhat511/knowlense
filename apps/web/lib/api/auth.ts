@@ -15,6 +15,7 @@ export type AuthApiUser = {
   avatarUrl: string | null;
   emailConfirmed: boolean;
   authType: "supabase" | "extension";
+  signInMethod: "email" | "google" | "github" | "unknown";
 };
 
 async function postAuthResource<TResponse>(path: string, body: Record<string, unknown>, accessToken?: string) {

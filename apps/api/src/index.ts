@@ -35,6 +35,7 @@ type Variables = {
     avatarUrl: string | null;
     emailConfirmed: boolean;
     authType: "supabase" | "extension";
+    signInMethod: "email" | "google" | "github" | "unknown";
   };
 };
 
@@ -214,23 +215,52 @@ function deriveExtensionDeviceLabel(userAgent: string | null) {
   return `${browser} on ${os}`;
 }
 
-function makeFriendlyExtensionDeviceLabels<T extends { id: string; label: string; lastSeenAt: string; status: "active" | "revoked" | "expired" }>(devices: T[]) {
-  const counts = new Map<string, number>();
-  const activeDeviceId = devices
+function mergeExtensionDevices<T extends { id: string; label: string; createdAt: string; lastSeenAt: string; status: "active" | "revoked" | "expired"; userAgent?: string | null }>(devices: T[]) {
+  const groups = new Map<string, T[]>();
+
+  for (const device of devices) {
+    const key = (device.userAgent ?? "").trim().toLowerCase() || device.label.trim().toLowerCase();
+    groups.set(key, [...(groups.get(key) ?? []), device]);
+  }
+
+  const merged = Array.from(groups.values()).map((group) => {
+    const sorted = [...group].sort((left, right) => {
+      const leftRank = left.status === "active" ? 0 : left.status === "expired" ? 1 : 2;
+      const rightRank = right.status === "active" ? 0 : right.status === "expired" ? 1 : 2;
+      if (leftRank !== rightRank) {
+        return leftRank - rightRank;
+      }
+
+      return new Date(right.lastSeenAt).getTime() - new Date(left.lastSeenAt).getTime();
+    });
+
+    const representative = sorted[0];
+    const oldestCreatedAt = group.reduce((oldest, device) =>
+      new Date(device.createdAt).getTime() < new Date(oldest).getTime() ? device.createdAt : oldest,
+      representative.createdAt
+    );
+    const latestSeenAt = group.reduce((latest, device) =>
+      new Date(device.lastSeenAt).getTime() > new Date(latest).getTime() ? device.lastSeenAt : latest,
+      representative.lastSeenAt
+    );
+
+    return {
+      ...representative,
+      createdAt: oldestCreatedAt,
+      lastSeenAt: latestSeenAt
+    };
+  });
+
+  const mostRecentActiveDeviceId = merged
     .filter((device) => device.status === "active")
     .sort((left, right) => new Date(right.lastSeenAt).getTime() - new Date(left.lastSeenAt).getTime())[0]?.id ?? null;
 
-  return devices.map((device) => {
-    const seen = (counts.get(device.label) ?? 0) + 1;
-    counts.set(device.label, seen);
-    const duplicateCount = devices.filter((entry) => entry.label === device.label).length;
-    const duplicateSuffix = duplicateCount > 1 ? ` ${seen}` : "";
-    const label = device.id === activeDeviceId ? `${device.label}${duplicateSuffix} (Most recent)` : `${device.label}${duplicateSuffix}`;
-    return {
+  return merged
+    .sort((left, right) => new Date(right.lastSeenAt).getTime() - new Date(left.lastSeenAt).getTime())
+    .map((device) => ({
       ...device,
-      label
-    };
-  });
+      label: device.id === mostRecentActiveDeviceId ? `${device.label} (Most recent)` : device.label
+    }));
 }
 
 async function ensureExtensionSessionSupport(db: D1Database) {
@@ -260,8 +290,10 @@ function normalizeSupabaseUser(user: {
   email?: string | null;
   email_confirmed_at?: string | null;
   user_metadata?: Record<string, unknown> | null;
+  app_metadata?: Record<string, unknown> | null;
 }) {
   const metadata = user.user_metadata ?? {};
+  const appMetadata = user.app_metadata ?? {};
   const displayName =
     typeof metadata.display_name === "string"
       ? metadata.display_name
@@ -271,6 +303,9 @@ function normalizeSupabaseUser(user: {
           ? user.email.split("@")[0]
           : null;
   const avatarUrl = typeof metadata.avatar_url === "string" ? metadata.avatar_url : null;
+  const providerValue = typeof appMetadata.provider === "string" ? appMetadata.provider.toLowerCase() : "unknown";
+  const signInMethod: "email" | "google" | "github" | "unknown" =
+    providerValue === "google" || providerValue === "github" || providerValue === "email" ? providerValue : "unknown";
 
   return {
     id: user.id,
@@ -278,7 +313,8 @@ function normalizeSupabaseUser(user: {
     name: displayName,
     avatarUrl,
     emailConfirmed: Boolean(user.email_confirmed_at),
-    authType: "supabase" as const
+    authType: "supabase" as const,
+    signInMethod
   };
 }
 
@@ -503,7 +539,8 @@ async function authenticateExtensionToken(env: Bindings, token: string) {
     name: session.user_email?.split("@")[0] ?? null,
     avatarUrl: null,
     emailConfirmed: true,
-    authType: "extension" as const
+    authType: "extension" as const,
+    signInMethod: "unknown" as const
   };
 }
 
@@ -1031,19 +1068,49 @@ app.post("/v1/extension/session/authorize", async (c) => {
   }
 
   const user = c.get("user");
-  const sessionId = crypto.randomUUID();
   const sessionToken = createExtensionToken();
   const tokenHash = await hashToken(sessionToken);
   const sessionExpiresAt = isoFromNow(60 * 24 * 365);
   const userAgent = c.req.header("User-Agent") ?? null;
   const deviceLabel = deriveExtensionDeviceLabel(userAgent);
+  const existingSession = await c.env.DB.prepare(
+    `SELECT id
+     FROM extension_sessions
+     WHERE user_id = ?1
+       AND COALESCE(user_agent, '') = ?2
+     ORDER BY datetime(COALESCE(last_seen_at, created_at)) DESC
+     LIMIT 1`
+  )
+    .bind(user.id, userAgent ?? "")
+    .first<{ id: string }>();
+  const sessionId = existingSession?.id ?? crypto.randomUUID();
 
   try {
-    await c.env.DB.batch([
+    const statements = [
+      existingSession
+        ? c.env.DB.prepare(
+            `UPDATE extension_sessions
+             SET user_email = ?2,
+                 token_hash = ?3,
+                 expires_at = ?4,
+                 revoked_at = NULL,
+                 device_label = ?5,
+                 user_agent = ?6,
+                 last_seen_at = CURRENT_TIMESTAMP
+             WHERE id = ?1`
+          ).bind(sessionId, user.email, tokenHash, sessionExpiresAt, deviceLabel, userAgent)
+        : c.env.DB.prepare(
+            `INSERT INTO extension_sessions (id, user_id, user_email, token_hash, expires_at, device_label, user_agent, last_seen_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP)`
+          ).bind(sessionId, user.id, user.email, tokenHash, sessionExpiresAt, deviceLabel, userAgent),
       c.env.DB.prepare(
-        `INSERT INTO extension_sessions (id, user_id, user_email, token_hash, expires_at, device_label, user_agent, last_seen_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP)`
-      ).bind(sessionId, user.id, user.email, tokenHash, sessionExpiresAt, deviceLabel, userAgent),
+        `UPDATE extension_sessions
+         SET revoked_at = CURRENT_TIMESTAMP
+         WHERE user_id = ?1
+           AND COALESCE(user_agent, '') = ?2
+           AND id <> ?3
+           AND revoked_at IS NULL`
+      ).bind(user.id, userAgent ?? "", sessionId),
       c.env.DB.prepare(
         `UPDATE extension_connection_requests
          SET status = 'authorized',
@@ -1053,7 +1120,9 @@ app.post("/v1/extension/session/authorize", async (c) => {
              token_plaintext = ?5
          WHERE id = ?1`
       ).bind(requestId, user.id, user.email, sessionId, sessionToken)
-    ]);
+    ];
+
+    await c.env.DB.batch(statements);
   } catch {
     return c.json({ error: "Unable to authorize extension session." }, 500);
   }
@@ -1754,11 +1823,12 @@ app.get("/v1/dashboard/extension-devices", async (c) => {
         createdAt: row.created_at,
         lastSeenAt: row.last_seen_at ?? row.created_at,
         expiresAt: row.expires_at,
-        status
+        status,
+        userAgent: row.user_agent
       };
     });
 
-    return c.json({ devices: makeFriendlyExtensionDeviceLabels(devices) });
+    return c.json({ devices: mergeExtensionDevices(devices) });
   } catch {
     return c.json({ error: "Unable to load extension devices." }, 500);
   }

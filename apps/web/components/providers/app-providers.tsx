@@ -7,6 +7,7 @@ export type AppUser = {
   email: string | null;
   name: string;
   avatarUrl: string | null;
+  signInMethod: "email" | "google" | "github" | "unknown";
 };
 
 type SessionStoreValue = {

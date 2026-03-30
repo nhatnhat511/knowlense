@@ -51,7 +51,8 @@ export function useAuthGuard(nextPath: string) {
           id: profile.id,
           email: profile.email,
           name: profile.name ?? profile.email?.split("@")[0] ?? "there",
-          avatarUrl: profile.avatarUrl
+          avatarUrl: profile.avatarUrl,
+          signInMethod: profile.signInMethod
         });
         setAccessToken(session.access_token);
       } catch {

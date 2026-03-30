@@ -1,17 +1,20 @@
 "use client";
 
-import { Suspense, useEffect, useState, startTransition } from "react";
+import { Suspense, useEffect, useRef, useState, startTransition, type ChangeEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Bell, CreditCard, LayoutGrid, LifeBuoy, Moon, PlugZap, RefreshCw, Shield, Sparkles, Sun, UserRound } from "lucide-react";
+import { Bell, CreditCard, Globe2, KeyRound, LayoutGrid, LifeBuoy, Moon, PlugZap, RefreshCw, Shield, Sparkles, Sun, Trash2, Upload, UserRound } from "lucide-react";
+import { FaBrave, FaChrome, FaEdge, FaFirefoxBrowser, FaSafari } from "react-icons/fa6";
+import { SiGithub, SiGoogle } from "react-icons/si";
 import { BrandLockup } from "@/components/brand/brand";
 import { useSessionStore, useToast } from "@/components/providers/app-providers";
 import { useAuthGuard } from "@/hooks/use-auth";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useExtensionStatus } from "@/hooks/use-extension-status";
-import { signOutFromApi } from "@/lib/api/auth";
+import { changePassword, signOutFromApi } from "@/lib/api/auth";
 import { createCheckout } from "@/lib/api/billing";
 import { fetchRankTrackingDashboard, startDashboardTrial, type RankTrackingDashboard } from "@/lib/api/dashboard";
 import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice, revokeOtherExtensionDevices } from "@/lib/api/extension-connect";
+import { fetchApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type ThemeMode = "light" | "dark";
@@ -49,30 +52,59 @@ function getBrowserBadge(label: string) {
   const normalized = label.toLowerCase();
 
   if (normalized.includes("chrome")) {
-    return { glyph: "C", tone: "bg-[#e8f0ff] text-[#2563eb]" };
+    return { icon: <FaChrome size={18} />, tone: "bg-[#e8f0ff] text-[#2563eb]" };
   }
 
   if (normalized.includes("brave")) {
-    return { glyph: "B", tone: "bg-[#fff0ea] text-[#ea580c]" };
+    return { icon: <FaBrave size={18} />, tone: "bg-[#fff0ea] text-[#ea580c]" };
   }
 
   if (normalized.includes("edge")) {
-    return { glyph: "E", tone: "bg-[#e8fbf4] text-[#0f766e]" };
+    return { icon: <FaEdge size={18} />, tone: "bg-[#e8fbf4] text-[#0f766e]" };
   }
 
   if (normalized.includes("firefox")) {
-    return { glyph: "F", tone: "bg-[#fff1e7] text-[#c2410c]" };
+    return { icon: <FaFirefoxBrowser size={18} />, tone: "bg-[#fff1e7] text-[#c2410c]" };
   }
 
   if (normalized.includes("safari")) {
-    return { glyph: "S", tone: "bg-[#eef2ff] text-[#4f46e5]" };
+    return { icon: <FaSafari size={18} />, tone: "bg-[#eef2ff] text-[#4f46e5]" };
   }
 
   if (normalized.includes("browser")) {
-    return { glyph: "W", tone: "bg-[#eff6ff] text-[#1d4ed8]" };
+    return { icon: <Globe2 size={18} />, tone: "bg-[#eff6ff] text-[#1d4ed8]" };
   }
 
-  return { glyph: "?", tone: "bg-gray-100 text-gray-600" };
+  return { icon: <Globe2 size={18} />, tone: "bg-gray-100 text-gray-600" };
+}
+
+function getSignInMethodMeta(method: "email" | "google" | "github" | "unknown") {
+  switch (method) {
+    case "google":
+      return {
+        label: "Google",
+        icon: <SiGoogle size={16} />,
+        tone: "bg-[#fff7e8] text-[#b45309]"
+      };
+    case "github":
+      return {
+        label: "GitHub",
+        icon: <SiGithub size={16} />,
+        tone: "bg-[#f3f4f6] text-[#111827]"
+      };
+    case "email":
+      return {
+        label: "Email",
+        icon: <UserRound size={16} />,
+        tone: "bg-[#eef2ff] text-[#4338ca]"
+      };
+    default:
+      return {
+        label: "Unknown",
+        icon: <Globe2 size={16} />,
+        tone: "bg-gray-100 text-gray-600"
+      };
+  }
 }
 
 function Skeleton({ className }: { className: string }) {
@@ -284,10 +316,11 @@ function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { showToast } = useToast();
-  const { user } = useSessionStore();
+  const { user, setUser } = useSessionStore();
   const { accessToken, isLoading: authLoading } = useAuthGuard("/dashboard");
   const { metrics, overview, loading, error, refresh } = useDashboardData(accessToken, Boolean(accessToken));
   const extensionStatus = useExtensionStatus(accessToken, Boolean(accessToken));
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [checkoutLoading, setCheckoutLoading] = useState<"" | "monthly" | "yearly">("");
   const [trialLoading, setTrialLoading] = useState(false);
@@ -308,6 +341,10 @@ function DashboardContent() {
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [deviceActionId, setDeviceActionId] = useState("");
   const [bulkRevokeBusy, setBulkRevokeBusy] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [nextPassword, setNextPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const requestId = searchParams.get("request");
   const requestedSection = searchParams.get("section");
@@ -321,6 +358,9 @@ function DashboardContent() {
   const billing = metrics?.billing;
   const planLabel = billing?.status === "active" ? "Premium" : billing?.status === "trial" ? "Premium Trial" : billing?.status === "expired" ? "Trial expired" : "Free";
   const sidebarCollapsed = true;
+  const signInMethod = user?.signInMethod ?? "unknown";
+  const signInMethodMeta = getSignInMethodMeta(signInMethod);
+  const supabase = getSupabaseBrowserClient();
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("knowlense-dashboard-theme");
@@ -486,6 +526,112 @@ function DashboardContent() {
     }
   }
 
+  async function refreshProfile() {
+    if (!accessToken) {
+      return;
+    }
+
+    const profile = await fetchApiProfile(accessToken);
+    setUser({
+      id: profile.id,
+      email: profile.email,
+      name: profile.name ?? profile.email?.split("@")[0] ?? "there",
+      avatarUrl: profile.avatarUrl,
+      signInMethod: profile.signInMethod
+    });
+  }
+
+  async function updateAvatar(nextAvatarUrl: string | null) {
+    if (!accessToken || !supabase) {
+      showToast("Your website session is required to update this profile.");
+      return;
+    }
+
+    setAvatarBusy(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: {
+          avatar_url: nextAvatarUrl
+        }
+      });
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      await refreshProfile();
+      showToast(nextAvatarUrl ? "Profile photo updated." : "Profile photo removed.");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to update the profile photo.");
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function handleAvatarSelection(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      showToast("Choose an image file for the profile photo.");
+      return;
+    }
+
+    if (file.size > 768 * 1024) {
+      showToast("Choose an image under 750 KB for the profile photo.");
+      return;
+    }
+
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(new Error("Unable to read this image file."));
+      reader.readAsDataURL(file);
+    }).catch((error) => {
+      showToast(error instanceof Error ? error.message : "Unable to prepare the profile photo.");
+      return "";
+    });
+
+    if (!dataUrl) {
+      return;
+    }
+
+    await updateAvatar(dataUrl);
+  }
+
+  async function handlePasswordUpdate() {
+    if (!accessToken) {
+      showToast("Your website session is required to update the password.");
+      return;
+    }
+
+    if (nextPassword.length < 8) {
+      showToast("Use at least 8 characters for the new password.");
+      return;
+    }
+
+    if (nextPassword !== confirmPassword) {
+      showToast("The password confirmation does not match.");
+      return;
+    }
+
+    setPasswordBusy(true);
+    try {
+      await changePassword(nextPassword, accessToken);
+      setNextPassword("");
+      setConfirmPassword("");
+      showToast("Password updated.");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to update the password.");
+    } finally {
+      setPasswordBusy(false);
+    }
+  }
+
   async function handleRevokeExtensionDevice(sessionId: string) {
     if (!accessToken) {
       return;
@@ -550,7 +696,7 @@ function DashboardContent() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
                   <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold", badge.tone)}>
-                    {badge.glyph}
+                    {badge.icon}
                   </div>
                   <div className="min-w-0">
                     <div className={cn("text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>{device.label}</div>
@@ -728,23 +874,71 @@ function DashboardContent() {
   }
 
   function accountView() {
+    const accountValue = overview?.currentAccount.value ?? user?.email ?? "Loading...";
+
     return (
       <div className={cn("mt-5 grid gap-3.5", compact ? "xl:grid-cols-[1.05fr_0.95fr]" : "xl:grid-cols-[1.05fr_0.95fr] 2xl:gap-4")}>
         <div className="space-y-3.5">
           <Card compact={compact} dark={dark} title="Account profile" description="Identity, session, and extension access stay visible together in one place.">
             <div className="flex items-center gap-4">
-              <div className={cn("flex h-16 w-16 items-center justify-center rounded-full text-xl font-semibold", dark ? "bg-white/8 text-white" : "bg-gray-100 text-black")}>{initials}</div>
+              <div className={cn("flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full text-xl font-semibold", dark ? "bg-white/8 text-white" : "bg-gray-100 text-black")}>
+                {user?.avatarUrl ? <img alt="Profile avatar" className="h-full w-full object-cover" src={user.avatarUrl} /> : initials}
+              </div>
               <div>
-                <div className={cn("text-lg font-semibold tracking-[-0.04em] break-words sm:text-xl", dark ? "text-white" : "text-black")}>{overview?.currentAccount.value ?? user?.email ?? "Loading..."}</div>
-                <div className={cn("mt-1 text-sm", dark ? "text-white/55" : "text-gray-500")}>{planLabel} plan with {extensionStatus?.status === "active" ? "an active extension session." : "website-first access."}</div>
+                <div className={cn("text-lg font-semibold tracking-[-0.04em] break-words sm:text-xl", dark ? "text-white" : "text-black")}>{accountValue}</div>
+                <div className={cn("mt-1 flex flex-wrap items-center gap-2 text-sm", dark ? "text-white/55" : "text-gray-500")}>
+                  <span>{planLabel} plan</span>
+                  <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold", signInMethodMeta.tone)}>
+                    {signInMethodMeta.icon}
+                    {signInMethodMeta.label}
+                  </span>
+                </div>
               </div>
             </div>
-            <div className={cn(compact ? "mt-4 grid gap-3 sm:grid-cols-3" : "mt-6 grid gap-3 sm:grid-cols-3")}>
+            <div className={cn(compact ? "mt-4 grid gap-3 sm:grid-cols-4" : "mt-6 grid gap-3 sm:grid-cols-4")}>
               {[
                 { label: "Plan", value: planLabel, copy: billing?.trialActive ? `${billing.trialDaysRemaining} days left in trial.` : "Upgrade when you want recurring research usage." },
                 { label: "Website session", value: accessToken ? "Active" : "Inactive", copy: "The website remains the primary sign-in surface." },
+                { label: "Sign-in method", value: signInMethodMeta.label, copy: signInMethod === "email" ? "Email password access is enabled for this account." : "This account signs in through the linked provider." },
                 { label: "Extension access", value: extensionStatus?.status === "active" ? "Connected" : "Approval based", copy: "Each browser session is approved from this workspace." }
               ].map((item) => <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")} key={item.label}><div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>{item.label}</div><div className={cn("mt-2 text-base font-semibold sm:text-lg", dark ? "text-white" : "text-black")}>{item.value}</div><div className={cn("mt-1 text-sm leading-6", dark ? "text-white/55" : "text-neutral-500")}>{item.copy}</div></div>)}
+            </div>
+            <div className={cn("mt-4 rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className={cn("text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>Profile photo</div>
+                  <div className={cn("mt-1 text-sm leading-6", dark ? "text-white/55" : "text-neutral-500")}>Update the avatar used across your website account.</div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <input accept="image/*" className="hidden" onChange={(event) => void handleAvatarSelection(event)} ref={avatarInputRef} type="file" />
+                  <button className={cn("inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-medium transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} disabled={avatarBusy} onClick={() => avatarInputRef.current?.click()} type="button">
+                    <Upload size={16} />
+                    {avatarBusy ? "Updating..." : "Change avatar"}
+                  </button>
+                  {user?.avatarUrl ? <button className={cn("inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-medium transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} disabled={avatarBusy} onClick={() => void updateAvatar(null)} type="button">
+                    <Trash2 size={16} />
+                    Remove
+                  </button> : null}
+                </div>
+              </div>
+            </div>
+            <div className={cn("mt-3 rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className={cn("flex items-center gap-2 text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>
+                    <KeyRound size={16} />
+                    Password
+                  </div>
+                  <div className={cn("mt-1 text-sm leading-6", dark ? "text-white/55" : "text-neutral-500")}>
+                    {signInMethod === "email" ? "Change the password for this email-based account." : `Password changes are managed through ${signInMethodMeta.label}.`}
+                  </div>
+                </div>
+              </div>
+              {signInMethod === "email" ? <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                <input className={cn("h-11 rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")} onChange={(event) => setNextPassword(event.target.value)} placeholder="New password" type="password" value={nextPassword} />
+                <input className={cn("h-11 rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirm password" type="password" value={confirmPassword} />
+                <button className={cn("inline-flex h-11 items-center justify-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={passwordBusy} onClick={() => void handlePasswordUpdate()} type="button">{passwordBusy ? "Saving..." : "Update password"}</button>
+              </div> : null}
             </div>
           </Card>
           <Card compact={compact} dark={dark} title="Workspace controls" description="Keep the important account actions close without repeating full navigation cards.">

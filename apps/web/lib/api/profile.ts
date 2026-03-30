@@ -7,6 +7,7 @@ export type ApiProfile = {
   avatarUrl: string | null;
   emailConfirmed: boolean;
   authType: "supabase" | "extension";
+  signInMethod: "email" | "google" | "github" | "unknown";
 };
 
 export function getApiBaseUrl() {
