@@ -710,12 +710,27 @@ app.use("/v1/me", async (c, next) => {
 
 app.get("/v1/me", async (c) => {
   const user = c.get("user");
-  const billing = await readBillingProfile(c.env.DB, user.id);
 
-  return c.json({
-    user,
-    billing
-  });
+  try {
+    const billing = await readBillingProfile(c.env.DB, user.id);
+
+    return c.json({
+      user,
+      billing
+    });
+  } catch {
+    return c.json({
+      user,
+      billing: {
+        status: "free" as const,
+        planName: "Free",
+        trialEligible: true,
+        trialActive: false,
+        trialDaysRemaining: 0
+      },
+      warning: "Billing status is temporarily unavailable."
+    });
+  }
 });
 
 app.use("/v1/auth/change-password", async (c, next) => {

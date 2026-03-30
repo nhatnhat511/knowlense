@@ -58,10 +58,21 @@ function AuthCallbackContent() {
       }
 
       if (session?.access_token) {
-        try {
-          await fetchApiProfile(session.access_token);
-        } catch {
-          await client.auth.signOut();
+        let profileValidated = false;
+
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          try {
+            await fetchApiProfile(session.access_token);
+            profileValidated = true;
+            break;
+          } catch {
+            if (attempt < 4) {
+              await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+            }
+          }
+        }
+
+        if (!profileValidated) {
           return false;
         }
 
@@ -114,7 +125,7 @@ function AuthCallbackContent() {
       const retryTimer = setTimeout(async () => {
         const ready = await finalizeWithSession();
         if (!ready && active) {
-          setStatus("The callback completed, but no active session was created. Return to sign in if needed.");
+          setStatus("The callback completed, but the website session could not be confirmed yet. Return to sign in if needed.");
         }
       }, 1200);
 
