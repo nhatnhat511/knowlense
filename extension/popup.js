@@ -63,6 +63,24 @@ async function persistConnectRequest(request) {
   await storage.set({ knowlense_connect_request: request });
 }
 
+function isFreshConnectRequest(request) {
+  if (!request?.requestId) {
+    return false;
+  }
+
+  const expiresAt = typeof request.expiresAt === "string" ? new Date(request.expiresAt).getTime() : NaN;
+  if (!Number.isNaN(expiresAt) && expiresAt <= Date.now()) {
+    return false;
+  }
+
+  const startedAt = typeof request.startedAt === "number" ? request.startedAt : 0;
+  if (!startedAt) {
+    return false;
+  }
+
+  return Date.now() - startedAt < 2 * 60 * 1000;
+}
+
 async function fetchApiProfile(token) {
   const response = await fetch(`${apiUrl()}/v1/me`, {
     headers: {
@@ -105,7 +123,8 @@ async function startConnectFlow() {
 
   const request = {
     requestId: payload.requestId,
-    expiresAt: payload.expiresAt
+    expiresAt: payload.expiresAt,
+    startedAt: Date.now()
   };
 
   await persistConnectRequest(request);
@@ -115,7 +134,10 @@ async function startConnectFlow() {
 }
 
 async function pollConnectFlow() {
-  if (!state.connectRequest?.requestId) {
+  if (!isFreshConnectRequest(state.connectRequest)) {
+    if (state.connectRequest) {
+      await persistConnectRequest(null);
+    }
     return;
   }
 
@@ -251,12 +273,15 @@ async function boot() {
     } catch {
       setStatus("We could not verify your connection right now. Try again shortly.", "error");
     }
-  } else if (state.connectRequest?.requestId) {
+  } else if (isFreshConnectRequest(state.connectRequest)) {
     setStatus("Waiting for account approval...", "success");
     setTimeout(() => {
       void pollConnectFlow().catch((error) => setStatus(error.message, "error"));
     }, 200);
   } else {
+    if (state.connectRequest) {
+      await persistConnectRequest(null);
+    }
     setStatus("Connect your account to get started.");
   }
 

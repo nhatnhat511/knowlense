@@ -971,7 +971,7 @@ app.get("/v1/extension/session/poll", async (c) => {
   }
 
   const request = await c.env.DB.prepare(
-    `SELECT id, status, user_email, session_id, expires_at, claimed_at
+    `SELECT id, status, user_id, user_email, session_id, expires_at, claimed_at, token_plaintext
      FROM extension_connection_requests
      WHERE id = ?1
      LIMIT 1`
@@ -980,10 +980,12 @@ app.get("/v1/extension/session/poll", async (c) => {
     .first<{
       id: string;
       status: string;
+      user_id: string | null;
       user_email: string | null;
       session_id: string | null;
       expires_at: string;
       claimed_at: string | null;
+      token_plaintext: string | null;
     }>();
 
   if (!request) {
@@ -998,33 +1000,20 @@ app.get("/v1/extension/session/poll", async (c) => {
     return c.json({ status: request.status });
   }
 
+  if (!request.token_plaintext || !request.user_id) {
+    return c.json({ status: "authorized" });
+  }
+
   const session = await c.env.DB.prepare(
-    `SELECT token_hash, user_id, user_email, expires_at
+    `SELECT user_id, user_email, expires_at
      FROM extension_sessions
      WHERE id = ?1
        AND revoked_at IS NULL
      LIMIT 1`
   )
     .bind(request.session_id)
-    .first<{ token_hash: string; user_id: string; user_email: string | null; expires_at: string }>();
-
-  if (!session) {
-    return c.json({ status: "pending" });
-  }
-
-  const tokenDelivery = await c.env.DB.prepare(
-    `SELECT token_plaintext
-     FROM extension_connection_requests
-     WHERE id = ?1
-     LIMIT 1`
-  )
-    .bind(requestId)
-    .first<{ token_plaintext: string | null }>()
+    .first<{ user_id: string; user_email: string | null; expires_at: string }>()
     .catch(() => null);
-
-  if (!tokenDelivery?.token_plaintext) {
-    return c.json({ status: "pending" });
-  }
 
   await c.env.DB.prepare(
     `UPDATE extension_connection_requests
@@ -1034,17 +1023,17 @@ app.get("/v1/extension/session/poll", async (c) => {
     .bind(requestId)
     .run();
 
-  const billing = await readBillingProfile(c.env.DB, session.user_id);
+  const billing = await readBillingProfile(c.env.DB, request.user_id);
 
   return c.json({
     status: "connected",
-    sessionToken: tokenDelivery.token_plaintext,
+    sessionToken: request.token_plaintext,
     user: {
-      id: session.user_id,
-      email: session.user_email
+      id: request.user_id,
+      email: request.user_email ?? session?.user_email ?? null
     },
     billing,
-    expiresAt: session.expires_at
+    expiresAt: session?.expires_at ?? isoFromNow(60 * 24 * 365)
   });
 });
 
