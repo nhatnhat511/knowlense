@@ -130,7 +130,7 @@ async function startConnectFlow() {
   await persistConnectRequest(request);
   chrome.tabs.create({ url: `${config.connectUrl}?request=${encodeURIComponent(request.requestId)}` });
   setStatus("Waiting for account approval...", "success");
-  await pollConnectFlow();
+  chrome.runtime.sendMessage({ type: "knowlense.extensionConnect.wakeup" }).catch(() => null);
 }
 
 async function pollConnectFlow() {
@@ -254,6 +254,39 @@ function attachEvents() {
   elements.disconnectSession.addEventListener("click", handleDisconnect);
 }
 
+function attachStorageSync() {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local") {
+      return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "knowlense_extension_session")) {
+      state.session = changes.knowlense_extension_session.newValue ?? null;
+      render();
+
+      if (state.session?.sessionToken) {
+        void persistConnectRequest(null);
+        setStatus("Your account is now connected.", "success");
+        return;
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "knowlense_connect_request")) {
+      state.connectRequest = changes.knowlense_connect_request.newValue ?? null;
+
+      if (state.session?.sessionToken) {
+        return;
+      }
+
+      if (isFreshConnectRequest(state.connectRequest)) {
+        setStatus("Waiting for account approval...", "success");
+      } else {
+        setStatus("Connect your account to get started.");
+      }
+    }
+  });
+}
+
 async function boot() {
   await loadState();
 
@@ -275,9 +308,7 @@ async function boot() {
     }
   } else if (isFreshConnectRequest(state.connectRequest)) {
     setStatus("Waiting for account approval...", "success");
-    setTimeout(() => {
-      void pollConnectFlow().catch((error) => setStatus(error.message, "error"));
-    }, 200);
+    chrome.runtime.sendMessage({ type: "knowlense.extensionConnect.wakeup" }).catch(() => null);
   } else {
     if (state.connectRequest) {
       await persistConnectRequest(null);
@@ -286,6 +317,7 @@ async function boot() {
   }
 
   attachEvents();
+  attachStorageSync();
   render();
 }
 

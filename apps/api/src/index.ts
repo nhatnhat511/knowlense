@@ -1023,7 +1023,7 @@ app.get("/v1/extension/session/poll", async (c) => {
     .bind(requestId)
     .run();
 
-  const billing = await readBillingProfile(c.env.DB, request.user_id);
+  const billing = await readBillingProfile(c.env.DB, request.user_id).catch(() => null);
 
   return c.json({
     status: "connected",
