@@ -9,7 +9,7 @@ function ConnectRedirectContent() {
 
   useEffect(() => {
     const requestId = searchParams.get("request");
-    const nextUrl = requestId ? `/dashboard?section=connect&request=${encodeURIComponent(requestId)}` : "/dashboard?section=connect";
+    const nextUrl = requestId ? `/dashboard?section=account&request=${encodeURIComponent(requestId)}` : "/dashboard?section=account";
     router.replace(nextUrl);
   }, [router, searchParams]);
 

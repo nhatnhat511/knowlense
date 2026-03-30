@@ -15,14 +15,13 @@ import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDev
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type ThemeMode = "light" | "dark";
-type Section = "overview" | "rankings" | "account" | "subscription" | "connect" | "support" | "privacy";
+type Section = "overview" | "rankings" | "account" | "subscription" | "support" | "privacy";
 
 const SECTION_META: Record<Section, { title: string; description: string }> = {
   overview: { title: "Dashboard", description: "A tighter overview of your account, subscription state, extension access, and latest workspace signals." },
   rankings: { title: "Keyword Rankings", description: "Track keyword movement over time for the exact product + keyword pairs started from the extension." },
-  account: { title: "Account", description: "Manage your website identity, session state, and account shortcuts without leaving the dashboard." },
+  account: { title: "Account", description: "Manage your website identity, connected browsers, and account shortcuts without leaving the dashboard." },
   subscription: { title: "Subscription", description: "Review free, trial, and premium states, start a trial, and upgrade to Premium from this workspace." },
-  connect: { title: "Connect extension", description: "Approve extension sessions from the dashboard instead of leaving the workspace." },
   support: { title: "Support", description: "Troubleshooting guidance and support escalation live directly in the dashboard." },
   privacy: { title: "Privacy", description: "The key privacy and data-handling commitments are embedded directly into the app workspace." }
 };
@@ -44,6 +43,36 @@ function formatDeviceTime(value: string) {
     hour: "numeric",
     minute: "2-digit"
   }).format(date);
+}
+
+function getBrowserBadge(label: string) {
+  const normalized = label.toLowerCase();
+
+  if (normalized.includes("chrome")) {
+    return { glyph: "C", tone: "bg-[#e8f0ff] text-[#2563eb]" };
+  }
+
+  if (normalized.includes("brave")) {
+    return { glyph: "B", tone: "bg-[#fff0ea] text-[#ea580c]" };
+  }
+
+  if (normalized.includes("edge")) {
+    return { glyph: "E", tone: "bg-[#e8fbf4] text-[#0f766e]" };
+  }
+
+  if (normalized.includes("firefox")) {
+    return { glyph: "F", tone: "bg-[#fff1e7] text-[#c2410c]" };
+  }
+
+  if (normalized.includes("safari")) {
+    return { glyph: "S", tone: "bg-[#eef2ff] text-[#4f46e5]" };
+  }
+
+  if (normalized.includes("browser")) {
+    return { glyph: "W", tone: "bg-[#eff6ff] text-[#1d4ed8]" };
+  }
+
+  return { glyph: "?", tone: "bg-gray-100 text-gray-600" };
 }
 
 function Skeleton({ className }: { className: string }) {
@@ -280,8 +309,9 @@ function DashboardContent() {
   const [deviceActionId, setDeviceActionId] = useState("");
   const [bulkRevokeBusy, setBulkRevokeBusy] = useState(false);
 
-  const section = (searchParams.get("section") as Section) || "overview";
   const requestId = searchParams.get("request");
+  const requestedSection = searchParams.get("section");
+  const section: Section = requestedSection === "rankings" || requestedSection === "account" || requestedSection === "subscription" || requestedSection === "support" || requestedSection === "privacy" ? requestedSection : requestId ? "account" : "overview";
   const dark = theme === "dark";
   const compact = true;
   const firstName = user?.name ?? "there";
@@ -498,6 +528,55 @@ function DashboardContent() {
     }
   }
 
+  function connectedBrowsersCard() {
+    return (
+      <Card compact={compact} dark={dark} title="Connected browsers">
+        <div className="space-y-3 text-sm leading-6">
+          {!devicesLoading && extensionDevices.some((device) => device.status === "active") ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className={cn("text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>Keep the most recent browser</div>
+                <div className="mt-1 text-xs">Revoke every other active browser session and leave the latest active device connected.</div>
+              </div>
+              <button className={cn("inline-flex h-9 items-center rounded-full border px-3 text-xs font-semibold transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} disabled={bulkRevokeBusy} onClick={() => void handleRevokeOtherExtensionDevices()} type="button">{bulkRevokeBusy ? "Revoking..." : "Revoke all other browsers"}</button>
+            </div>
+          </div> : null}
+          {devicesLoading ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>Loading connected browsers...</div> : null}
+          {!devicesLoading && extensionDevices.length === 0 ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>No browser sessions have been approved yet. Open the popup and approve a request here to create the first device.</div> : null}
+          {!devicesLoading ? extensionDevices.map((device) => {
+            const badge = getBrowserBadge(device.label);
+
+            return <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={device.id}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold", badge.tone)}>
+                    {badge.glyph}
+                  </div>
+                  <div className="min-w-0">
+                    <div className={cn("text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>{device.label}</div>
+                    <div className="mt-1 text-xs">
+                      Last seen: {formatDeviceTime(device.lastSeenAt)}
+                    </div>
+                    <div className="mt-1 text-xs">
+                      Created: {formatDeviceTime(device.createdAt)}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={cn("inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]", device.status === "active" ? dark ? "bg-emerald-400/15 text-emerald-200" : "bg-emerald-100 text-emerald-700" : device.status === "revoked" ? dark ? "bg-white/10 text-white/70" : "bg-gray-200 text-gray-700" : dark ? "bg-amber-400/15 text-amber-200" : "bg-amber-100 text-amber-700")}>{device.status}</span>
+                  {device.status === "active" ? <button className={cn("inline-flex h-9 items-center rounded-full border px-3 text-xs font-semibold transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} disabled={deviceActionId === device.id} onClick={() => void handleRevokeExtensionDevice(device.id)} type="button">{deviceActionId === device.id ? "Revoking..." : "Revoke"}</button> : null}
+                </div>
+              </div>
+            </div>;
+          }) : null}
+          <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>
+            Disconnecting from the popup now revokes the current browser token on the server, not just the local extension copy.
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
   function overviewView() {
     return (
       <>
@@ -523,7 +602,7 @@ function DashboardContent() {
             icon={<LayoutGrid size={18} />}
             action={quotaAtLimit ? <button className={cn("inline-flex h-9 items-center rounded-full px-4 text-xs font-semibold", dark ? "bg-white/10 text-white/60" : "bg-gray-100 text-gray-400")} disabled type="button">Quota reached</button> : null}
           />
-          <Metric
+      <Metric
             compact={compact}
             dark={dark}
             loading={loading}
@@ -531,7 +610,7 @@ function DashboardContent() {
             value={extensionStatus?.label ?? metrics?.extensionStatus.label ?? "..."}
             delta={extensionStatus?.status === "active" ? "+0.95%" : "Reconnect"}
             icon={<PlugZap size={18} />}
-            action={extensionStatus?.status !== "active" ? <button className={cn("inline-flex h-9 items-center rounded-full px-4 text-xs font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} onClick={() => setSection("connect")} type="button">Connect</button> : null}
+            action={extensionStatus?.status !== "active" ? <button className={cn("inline-flex h-9 items-center rounded-full px-4 text-xs font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} onClick={() => setSection("account")} type="button">Connect</button> : null}
           />
         </div>
 
@@ -650,31 +729,33 @@ function DashboardContent() {
 
   function accountView() {
     return (
-      <div className={cn("mt-5 grid gap-3.5", compact ? "xl:grid-cols-[1.15fr_0.85fr]" : "xl:grid-cols-[1.1fr_0.9fr] 2xl:gap-4")}>
-        <Card compact={compact} dark={dark} title="Account profile" description="Identity, session, and access state stay visible inside the dashboard.">
-          <div className="flex items-center gap-4">
-            <div className={cn("flex h-16 w-16 items-center justify-center rounded-full text-xl font-semibold", dark ? "bg-white/8 text-white" : "bg-gray-100 text-black")}>{initials}</div>
-            <div>
-              <div className={cn("text-lg font-semibold tracking-[-0.04em] break-words sm:text-xl", dark ? "text-white" : "text-black")}>{overview?.currentAccount.value ?? user?.email ?? "Loading..."}</div>
-              <div className={cn("mt-1 text-sm", dark ? "text-white/55" : "text-gray-500")}>{planLabel} plan with {extensionStatus?.status === "active" ? "an active extension session." : "website-first access."}</div>
+      <div className={cn("mt-5 grid gap-3.5", compact ? "xl:grid-cols-[1.05fr_0.95fr]" : "xl:grid-cols-[1.05fr_0.95fr] 2xl:gap-4")}>
+        <div className="space-y-3.5">
+          <Card compact={compact} dark={dark} title="Account profile" description="Identity, session, and extension access stay visible together in one place.">
+            <div className="flex items-center gap-4">
+              <div className={cn("flex h-16 w-16 items-center justify-center rounded-full text-xl font-semibold", dark ? "bg-white/8 text-white" : "bg-gray-100 text-black")}>{initials}</div>
+              <div>
+                <div className={cn("text-lg font-semibold tracking-[-0.04em] break-words sm:text-xl", dark ? "text-white" : "text-black")}>{overview?.currentAccount.value ?? user?.email ?? "Loading..."}</div>
+                <div className={cn("mt-1 text-sm", dark ? "text-white/55" : "text-gray-500")}>{planLabel} plan with {extensionStatus?.status === "active" ? "an active extension session." : "website-first access."}</div>
+              </div>
             </div>
-          </div>
-          <div className={cn(compact ? "mt-4 grid gap-3 sm:grid-cols-3" : "mt-6 grid gap-3 sm:grid-cols-3")}>
-            {[
-              { label: "Plan", value: planLabel, copy: billing?.trialActive ? `${billing.trialDaysRemaining} days left in trial.` : "Upgrade when you want recurring research usage." },
-              { label: "Website session", value: accessToken ? "Active" : "Inactive", copy: "The website remains the primary sign-in surface." },
-              { label: "Extension access", value: extensionStatus?.status === "active" ? "Connected" : "Approval based", copy: "Each browser session is approved from this workspace." }
-            ].map((item) => <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")} key={item.label}><div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>{item.label}</div><div className={cn("mt-2 text-base font-semibold sm:text-lg", dark ? "text-white" : "text-black")}>{item.value}</div><div className={cn("mt-1 text-sm leading-6", dark ? "text-white/55" : "text-neutral-500")}>{item.copy}</div></div>)}
-          </div>
-        </Card>
-        <Card compact={compact} dark={dark} title="Workspace controls" description="Keep the important account actions close without repeating full navigation cards.">
-          <div className="flex flex-wrap gap-3">
-            <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-white/8 text-white hover:bg-white/12" : "bg-gray-100 text-gray-900 hover:bg-gray-200")} onClick={() => setSection("subscription")} type="button">Open subscription</button>
-            <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-white/8 text-white hover:bg-white/12" : "bg-gray-100 text-gray-900 hover:bg-gray-200")} onClick={() => setSection("connect")} type="button">Connect extension</button>
-            <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-white/8 text-white hover:bg-white/12" : "bg-gray-100 text-gray-900 hover:bg-gray-200")} onClick={() => setSection("support")} type="button">Open support</button>
-            <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-red-500/15 text-red-200 hover:bg-red-500/20" : "bg-red-50 text-red-700 hover:bg-red-100")} onClick={handleSignOut} type="button">Log out</button>
-          </div>
-        </Card>
+            <div className={cn(compact ? "mt-4 grid gap-3 sm:grid-cols-3" : "mt-6 grid gap-3 sm:grid-cols-3")}>
+              {[
+                { label: "Plan", value: planLabel, copy: billing?.trialActive ? `${billing.trialDaysRemaining} days left in trial.` : "Upgrade when you want recurring research usage." },
+                { label: "Website session", value: accessToken ? "Active" : "Inactive", copy: "The website remains the primary sign-in surface." },
+                { label: "Extension access", value: extensionStatus?.status === "active" ? "Connected" : "Approval based", copy: "Each browser session is approved from this workspace." }
+              ].map((item) => <div className={cn("rounded-[20px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")} key={item.label}><div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", dark ? "text-white/35" : "text-neutral-400")}>{item.label}</div><div className={cn("mt-2 text-base font-semibold sm:text-lg", dark ? "text-white" : "text-black")}>{item.value}</div><div className={cn("mt-1 text-sm leading-6", dark ? "text-white/55" : "text-neutral-500")}>{item.copy}</div></div>)}
+            </div>
+          </Card>
+          <Card compact={compact} dark={dark} title="Workspace controls" description="Keep the important account actions close without repeating full navigation cards.">
+            <div className="flex flex-wrap gap-3">
+              <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-white/8 text-white hover:bg-white/12" : "bg-gray-100 text-gray-900 hover:bg-gray-200")} onClick={() => setSection("subscription")} type="button">Open subscription</button>
+              <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-white/8 text-white hover:bg-white/12" : "bg-gray-100 text-gray-900 hover:bg-gray-200")} onClick={() => setSection("support")} type="button">Open support</button>
+              <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-medium transition", dark ? "bg-red-500/15 text-red-200 hover:bg-red-500/20" : "bg-red-50 text-red-700 hover:bg-red-100")} onClick={handleSignOut} type="button">Log out</button>
+            </div>
+          </Card>
+        </div>
+        {connectedBrowsersCard()}
       </div>
     );
   }
@@ -707,48 +788,6 @@ function DashboardContent() {
     );
   }
 
-  function connectView() {
-    return (
-      <div className="mt-5">
-        <Card compact={compact} dark={dark} title="Connected browsers">
-          <div className="space-y-3 text-sm leading-6">
-            {!devicesLoading && extensionDevices.some((device) => device.status === "active") ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className={cn("text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>Keep the most recent browser</div>
-                  <div className="mt-1 text-xs">Revoke every other active browser session and leave the latest active device connected.</div>
-                </div>
-                <button className={cn("inline-flex h-9 items-center rounded-full border px-3 text-xs font-semibold transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} disabled={bulkRevokeBusy} onClick={() => void handleRevokeOtherExtensionDevices()} type="button">{bulkRevokeBusy ? "Revoking..." : "Revoke all other browsers"}</button>
-              </div>
-            </div> : null}
-            {devicesLoading ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>Loading connected browsers...</div> : null}
-            {!devicesLoading && extensionDevices.length === 0 ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>No browser sessions have been approved yet. Open the popup and approve a request here to create the first device.</div> : null}
-            {!devicesLoading ? extensionDevices.map((device) => <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={device.id}>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className={cn("text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>{device.label}</div>
-                  <div className="mt-1 text-xs">
-                    Last seen: {formatDeviceTime(device.lastSeenAt)}
-                  </div>
-                  <div className="mt-1 text-xs">
-                    Created: {formatDeviceTime(device.createdAt)}
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={cn("inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]", device.status === "active" ? dark ? "bg-emerald-400/15 text-emerald-200" : "bg-emerald-100 text-emerald-700" : device.status === "revoked" ? dark ? "bg-white/10 text-white/70" : "bg-gray-200 text-gray-700" : dark ? "bg-amber-400/15 text-amber-200" : "bg-amber-100 text-amber-700")}>{device.status}</span>
-                  {device.status === "active" ? <button className={cn("inline-flex h-9 items-center rounded-full border px-3 text-xs font-semibold transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} disabled={deviceActionId === device.id} onClick={() => void handleRevokeExtensionDevice(device.id)} type="button">{deviceActionId === device.id ? "Revoking..." : "Revoke"}</button> : null}
-                </div>
-              </div>
-            </div>) : null}
-            <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>
-              Disconnecting from the popup now revokes the current browser token on the server, not just the local extension copy.
-            </div>
-          </div>
-        </Card>
-      </div>
-    );
-  }
-
   function textPanel(items: string[]) {
     return <div className="mt-5"><Card compact={compact} dark={dark} title="Summary"><div className="space-y-3 text-sm leading-6">{items.map((item) => <div className={cn("rounded-[18px] border p-3.5", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>{item}</div>)}</div></Card></div>;
   }
@@ -765,7 +804,7 @@ function DashboardContent() {
               <BrandLockup compact href="/" subtitle="Seller insight layer for TPT" />
             </div>
           </div>
-          <div className="mt-5 pt-4 2xl:mt-6 2xl:pt-5"><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>Workspace</p><nav className="mt-3 space-y-1"><SidebarItem active={section === "overview"} dark={dark} icon={<LayoutGrid size={16} />} iconOnly={sidebarCollapsed} label="Dashboard" onClick={() => setSection("overview")} /><SidebarItem active={section === "rankings"} dark={dark} icon={<Sparkles size={16} />} iconOnly={sidebarCollapsed} label="Keyword Rankings" onClick={() => setSection("rankings")} /><SidebarItem active={section === "account"} dark={dark} icon={<UserRound size={16} />} iconOnly={sidebarCollapsed} label="Account" onClick={() => setSection("account")} /><SidebarItem active={section === "subscription"} dark={dark} icon={<CreditCard size={16} />} iconOnly={sidebarCollapsed} label="Subscription" onClick={() => setSection("subscription")} /><SidebarItem active={section === "connect"} dark={dark} icon={<PlugZap size={16} />} iconOnly={sidebarCollapsed} label="Connect" onClick={() => setSection("connect")} /></nav></div>
+          <div className="mt-5 pt-4 2xl:mt-6 2xl:pt-5"><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>Workspace</p><nav className="mt-3 space-y-1"><SidebarItem active={section === "overview"} dark={dark} icon={<LayoutGrid size={16} />} iconOnly={sidebarCollapsed} label="Dashboard" onClick={() => setSection("overview")} /><SidebarItem active={section === "rankings"} dark={dark} icon={<Sparkles size={16} />} iconOnly={sidebarCollapsed} label="Keyword Rankings" onClick={() => setSection("rankings")} /><SidebarItem active={section === "account"} dark={dark} icon={<UserRound size={16} />} iconOnly={sidebarCollapsed} label="Account" onClick={() => setSection("account")} /><SidebarItem active={section === "subscription"} dark={dark} icon={<CreditCard size={16} />} iconOnly={sidebarCollapsed} label="Subscription" onClick={() => setSection("subscription")} /></nav></div>
           <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>More</p><div className="mt-3 space-y-1"><SidebarItem active={section === "support"} dark={dark} icon={<LifeBuoy size={16} />} iconOnly={sidebarCollapsed} label="Support" onClick={() => setSection("support")} /><SidebarItem active={section === "privacy"} dark={dark} icon={<Shield size={16} />} iconOnly={sidebarCollapsed} label="Privacy" onClick={() => setSection("privacy")} /><button className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition", sidebarCollapsed ? "justify-center 2xl:justify-start" : "", dark ? "text-white/55 hover:bg-white/6 hover:text-white" : "text-gray-500 hover:bg-[#f3eee3] hover:text-gray-900")} onClick={handleSignOut} title={sidebarCollapsed ? "Log out" : undefined} type="button"><span className={cn("grid h-8 w-8 place-items-center rounded-lg border", dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white")}><RefreshCw size={16} /></span><span className={cn(sidebarCollapsed ? "hidden 2xl:inline font-medium" : "font-medium")}>Log out</span></button></div></div>
         </aside>
 
@@ -789,10 +828,9 @@ function DashboardContent() {
             {section === "rankings" ? rankingsView() : null}
             {section === "account" ? accountView() : null}
             {section === "subscription" ? subscriptionView() : null}
-            {section === "connect" ? connectView() : null}
             {section === "support" ? textPanel([
               "Auth issues: if sign-in loops or callback problems happen, clear the current session and sign in again from the website.",
-              "Extension issues: open the popup, choose Connect via website, then approve the request in the Connect extension section.",
+              "Extension issues: open the popup, choose Connect account, then approve the request from the account popup on the website.",
               "Billing issues: if plan state looks wrong, refresh the workspace and retry the Premium upgrade flow.",
               "Quota issues: if keyword runs hit the limit, the workspace should steer the user toward Premium."
             ]) : null}
