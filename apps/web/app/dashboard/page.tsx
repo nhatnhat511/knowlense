@@ -348,6 +348,9 @@ function DashboardContent() {
   const [nextPassword, setNextPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordNonce, setPasswordNonce] = useState("");
+  const [linkedAccounts, setLinkedAccounts] = useState<Array<{ identityId: string; provider: "email" | "google" | "github" | "unknown"; email: string | null }>>([]);
+  const [linkedAccountsLoading, setLinkedAccountsLoading] = useState(false);
+  const [linkedAccountAction, setLinkedAccountAction] = useState("");
 
   const requestId = searchParams.get("request");
   const requestedSection = searchParams.get("section");
@@ -460,6 +463,16 @@ function DashboardContent() {
     };
   }, [accessToken, showToast]);
 
+  useEffect(() => {
+    if (!accessToken || !supabase) {
+      setLinkedAccounts([]);
+      setLinkedAccountsLoading(false);
+      return;
+    }
+
+    void refreshLinkedAccounts();
+  }, [accessToken, supabase]);
+
   function setSection(next: Section) {
     const params = new URLSearchParams(searchParams.toString());
     if (next === "overview") params.delete("section");
@@ -542,6 +555,41 @@ function DashboardContent() {
       avatarUrl: profile.avatarUrl,
       signInMethod: profile.signInMethod
     });
+  }
+
+  async function refreshLinkedAccounts() {
+    if (!supabase || !accessToken) {
+      setLinkedAccounts([]);
+      return;
+    }
+
+    setLinkedAccountsLoading(true);
+    try {
+      const { data, error } = await supabase.auth.getUserIdentities();
+
+      if (error) {
+        throw error;
+      }
+
+      const identities = (data?.identities ?? []).map((identity) => ({
+        identityId: identity.identity_id,
+        provider: (identity.provider === "email" || identity.provider === "google" || identity.provider === "github"
+          ? identity.provider
+          : "unknown") as "email" | "google" | "github" | "unknown",
+        email:
+          identity.identity_data && typeof identity.identity_data === "object" && "email" in identity.identity_data
+            ? typeof identity.identity_data.email === "string"
+              ? identity.identity_data.email
+              : null
+            : null
+      }));
+
+      setLinkedAccounts(identities);
+    } catch {
+      setLinkedAccounts([]);
+    } finally {
+      setLinkedAccountsLoading(false);
+    }
   }
 
   async function updateAvatar(nextAvatarUrl: string | null) {
@@ -672,6 +720,67 @@ function DashboardContent() {
       }
       return next;
     });
+  }
+
+  async function handleLinkIdentity(provider: "google" | "github") {
+    if (!supabase) {
+      showToast("Your website session is required to link an account.");
+      return;
+    }
+
+    setLinkedAccountAction(`link:${provider}`);
+    try {
+      const { error } = await supabase.auth.linkIdentity({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/dashboard?section=account`
+        }
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to start account linking.");
+      setLinkedAccountAction("");
+    }
+  }
+
+  async function handleUnlinkIdentity(identityId: string) {
+    if (!supabase) {
+      showToast("Your website session is required to unlink an account.");
+      return;
+    }
+
+    const identity = linkedAccounts.find((item) => item.identityId === identityId);
+    if (!identity) {
+      return;
+    }
+
+    setLinkedAccountAction(`unlink:${identityId}`);
+    try {
+      const { error } = await supabase.auth.unlinkIdentity({
+        identity_id: identity.identityId,
+        id: "",
+        user_id: user?.id ?? "",
+        identity_data: {},
+        provider: identity.provider,
+        last_sign_in_at: undefined,
+        created_at: "",
+        updated_at: ""
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      await refreshLinkedAccounts();
+      showToast("Account unlinked.");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to unlink this account.");
+    } finally {
+      setLinkedAccountAction("");
+    }
   }
 
   async function handleRevokeExtensionDevice(sessionId: string) {
@@ -917,6 +1026,8 @@ function DashboardContent() {
 
   function accountView() {
     const accountValue = overview?.currentAccount.value ?? user?.email ?? "Loading...";
+    const linkedProviderSet = new Set(linkedAccounts.map((item) => item.provider));
+    const canUnlinkProvider = linkedAccounts.length > 1;
 
     return (
       <div className={cn("mt-5 grid gap-3.5", compact ? "xl:grid-cols-[1.05fr_0.95fr]" : "xl:grid-cols-[1.05fr_0.95fr] 2xl:gap-4")}>
@@ -957,6 +1068,60 @@ function DashboardContent() {
               </div>
             </div>
             <div className={cn("mt-3 rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+              <div>
+                <div className={cn("text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>Linked accounts</div>
+                <div className={cn("mt-1 text-sm leading-6", dark ? "text-white/55" : "text-neutral-500")}>Connect or remove sign-in providers for this account.</div>
+              </div>
+              <div className="mt-3 space-y-3">
+                {[
+                  { provider: "email" as const, label: "Email", icon: <UserRound size={16} /> },
+                  { provider: "google" as const, label: "Google", icon: <SiGoogle size={16} /> },
+                  { provider: "github" as const, label: "GitHub", icon: <SiGithub size={16} /> }
+                ].map((item) => {
+                  const linkedIdentity = linkedAccounts.find((identity) => identity.provider === item.provider);
+                  const isLinked = linkedProviderSet.has(item.provider);
+                  const isWorking = linkedAccountAction === `link:${item.provider}` || (linkedIdentity ? linkedAccountAction === `unlink:${linkedIdentity.identityId}` : false);
+                  const canUnlink = item.provider !== "email" && Boolean(linkedIdentity) && canUnlinkProvider;
+
+                  return (
+                    <div className={cn("flex items-center justify-between gap-3 rounded-2xl border px-4 py-3", dark ? "border-white/10 bg-[#111318]" : "border-black/8 bg-white")} key={item.provider}>
+                      <div className="flex items-center gap-3">
+                        <div className={cn("flex h-9 w-9 items-center justify-center rounded-full", dark ? "bg-white/8 text-white" : "bg-gray-100 text-gray-700")}>
+                          {item.icon}
+                        </div>
+                        <div className={cn("text-sm font-medium", dark ? "text-white" : "text-gray-900")}>{item.label}</div>
+                      </div>
+                      {item.provider === "email" ? (
+                        <span className={cn("text-sm", dark ? "text-white/55" : "text-neutral-500")}>Primary</span>
+                      ) : isLinked ? (
+                        <button
+                          className={cn(
+                            "text-sm font-medium transition",
+                            canUnlink ? (dark ? "text-white/75 hover:text-white" : "text-neutral-500 hover:text-neutral-700") : (dark ? "text-white/25" : "text-neutral-300")
+                          )}
+                          disabled={!canUnlink || isWorking}
+                          onClick={() => linkedIdentity ? void handleUnlinkIdentity(linkedIdentity.identityId) : undefined}
+                          type="button"
+                        >
+                          {isWorking ? "Working..." : "Unlink"}
+                        </button>
+                      ) : (
+                        <button
+                          className={cn("text-sm font-medium transition", dark ? "text-white/75 hover:text-white" : "text-neutral-500 hover:text-neutral-700")}
+                          disabled={isWorking}
+                          onClick={() => void handleLinkIdentity(item.provider)}
+                          type="button"
+                        >
+                          {isWorking ? "Working..." : "Link"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {linkedAccountsLoading ? <div className={cn("mt-3 text-sm", dark ? "text-white/45" : "text-neutral-400")}>Loading linked accounts...</div> : null}
+            </div>
+            <div className={cn("mt-3 rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className={cn("flex items-center gap-2 text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>
@@ -977,7 +1142,7 @@ function DashboardContent() {
               </div>
                 {signInMethod === "email" ? <>
                 <div className={cn("mt-3 flex items-center justify-between gap-4 rounded-2xl border px-4 py-3", dark ? "border-white/10 bg-[#111318]" : "border-black/8 bg-white")}>
-                  <div className={cn("text-lg tracking-[0.16em]", dark ? "text-white" : "text-gray-900")}>••••••••••</div>
+                  <div className={cn("text-lg tracking-[0.12em]", dark ? "text-white" : "text-gray-900")}>{"•".repeat(10)}</div>
                 </div>
                 {passwordEditorOpen ? <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                   <input className={cn("h-11 rounded-2xl border px-4 text-sm outline-none transition", dark ? "border-white/10 bg-[#111318] text-white placeholder:text-white/30 focus:border-white/20" : "border-black/10 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-300")} onChange={(event) => setNextPassword(event.target.value)} placeholder="New password" type="password" value={nextPassword} />
