@@ -67,7 +67,7 @@ function SidebarItem({
 }) {
   return (
     <button
-      className={cn("flex w-full rounded-xl px-3 py-2.5 text-left text-sm transition", iconOnly ? "justify-center 2xl:justify-start" : "items-center gap-3", dark ? active ? "bg-white/8 text-white" : "text-white/55 hover:bg-white/6 hover:text-white" : active ? "bg-gray-50 text-gray-900" : "text-gray-500 hover:bg-gray-50 hover:text-gray-900")}
+      className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition", iconOnly ? "justify-center 2xl:justify-start" : "", dark ? active ? "bg-white/8 text-white" : "text-white/55 hover:bg-white/6 hover:text-white" : active ? "bg-gray-50 text-gray-900" : "text-gray-500 hover:bg-gray-50 hover:text-gray-900")}
       onClick={onClick}
       title={iconOnly ? label : undefined}
       type="button"
@@ -757,20 +757,22 @@ function DashboardContent() {
   return (
     <main className={cn("min-h-screen transition-colors", dark ? "bg-[#0e1014] text-white" : "app-shell text-gray-900")}>
       <div className={cn("grid min-h-screen lg:grid-cols-[92px_minmax(0,1fr)] 2xl:grid-cols-[248px_minmax(0,1fr)]", dark ? "bg-[#0e1014]" : "bg-transparent")}>
-        <aside className={cn("px-4 py-4 2xl:px-5 2xl:py-5", dark ? "border-r border-white/10 bg-[#0f1116]" : "border-r border-[#e7e1d5] bg-[#fbf7ef]/88")}>
-          <div className="flex justify-center 2xl:hidden">
-            <BrandLockup compact href="/" iconOnly subtitle="" />
-          </div>
-          <div className="hidden 2xl:flex">
-            <BrandLockup compact href="/" subtitle="Seller insight layer for TPT" />
+        <aside className={cn("px-4 pt-0 2xl:px-5", dark ? "border-r border-white/10 bg-[#0f1116]" : "border-r border-[#e7e1d5] bg-[#fbf7ef]/88")}>
+          <div className={cn("flex min-h-[88px] items-center border-b", dark ? "border-white/10" : "border-[#e7e1d5]")}>
+            <div className="flex w-full justify-center 2xl:hidden">
+              <BrandLockup compact href="/" iconOnly subtitle="" />
+            </div>
+            <div className="hidden 2xl:flex">
+              <BrandLockup compact href="/" subtitle="Seller insight layer for TPT" />
+            </div>
           </div>
           <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>Workspace</p><nav className="mt-3 space-y-1"><SidebarItem active={section === "overview"} dark={dark} icon={<LayoutGrid size={16} />} iconOnly={sidebarCollapsed} label="Dashboard" onClick={() => setSection("overview")} /><SidebarItem active={section === "rankings"} dark={dark} icon={<Sparkles size={16} />} iconOnly={sidebarCollapsed} label="Keyword Rankings" onClick={() => setSection("rankings")} /><SidebarItem active={section === "account"} dark={dark} icon={<UserRound size={16} />} iconOnly={sidebarCollapsed} label="Account" onClick={() => setSection("account")} /><SidebarItem active={section === "subscription"} dark={dark} icon={<CreditCard size={16} />} iconOnly={sidebarCollapsed} label="Subscription" onClick={() => setSection("subscription")} /><SidebarItem active={section === "connect"} dark={dark} icon={<PlugZap size={16} />} iconOnly={sidebarCollapsed} label="Connect" onClick={() => setSection("connect")} /></nav></div>
-          <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>More</p><div className="mt-3 space-y-1"><SidebarItem active={section === "support"} dark={dark} icon={<LifeBuoy size={16} />} iconOnly={sidebarCollapsed} label="Support" onClick={() => setSection("support")} /><SidebarItem active={section === "privacy"} dark={dark} icon={<Shield size={16} />} iconOnly={sidebarCollapsed} label="Privacy" onClick={() => setSection("privacy")} /><button className={cn("flex w-full rounded-xl px-3 py-2.5 text-left text-sm transition", sidebarCollapsed ? "justify-center 2xl:justify-start" : "items-center gap-3", dark ? "text-white/55 hover:bg-white/6 hover:text-white" : "text-gray-500 hover:bg-[#f3eee3] hover:text-gray-900")} onClick={handleSignOut} title={sidebarCollapsed ? "Log out" : undefined} type="button"><span className={cn("grid h-8 w-8 place-items-center rounded-lg border", dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white")}><RefreshCw size={16} /></span><span className={cn(sidebarCollapsed ? "hidden 2xl:inline font-medium" : "font-medium")}>Log out</span></button></div></div>
+          <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>More</p><div className="mt-3 space-y-1"><SidebarItem active={section === "support"} dark={dark} icon={<LifeBuoy size={16} />} iconOnly={sidebarCollapsed} label="Support" onClick={() => setSection("support")} /><SidebarItem active={section === "privacy"} dark={dark} icon={<Shield size={16} />} iconOnly={sidebarCollapsed} label="Privacy" onClick={() => setSection("privacy")} /><button className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition", sidebarCollapsed ? "justify-center 2xl:justify-start" : "", dark ? "text-white/55 hover:bg-white/6 hover:text-white" : "text-gray-500 hover:bg-[#f3eee3] hover:text-gray-900")} onClick={handleSignOut} title={sidebarCollapsed ? "Log out" : undefined} type="button"><span className={cn("grid h-8 w-8 place-items-center rounded-lg border", dark ? "border-white/10 bg-white/5" : "border-gray-200 bg-white")}><RefreshCw size={16} /></span><span className={cn(sidebarCollapsed ? "hidden 2xl:inline font-medium" : "font-medium")}>Log out</span></button></div></div>
         </aside>
 
         <section className="min-w-0">
-          <header className={cn("border-b px-5 py-3 sm:px-6", dark ? "border-white/10 bg-[#0f1116]" : "border-[#e7e1d5] bg-[#fbf7ef]/72")}>
-            <div className="flex items-center justify-between gap-4">
+          <header className={cn("flex min-h-[88px] items-center border-b px-5 py-3 sm:px-6", dark ? "border-white/10 bg-[#0f1116]" : "border-[#e7e1d5] bg-[#fbf7ef]/72")}>
+            <div className="flex w-full items-center justify-between gap-4">
               <div><h1 className={cn("text-[1.65rem] font-extrabold tracking-[-0.08em]", dark ? "text-white" : "text-gray-900")}>{sectionMeta.title}</h1><p className={cn("mt-0.5 text-[13px]", dark ? "text-white/55" : "text-gray-500")}>{section === "overview" ? `Welcome back, ${authLoading ? "..." : firstName}.` : sectionMeta.description}</p></div>
               <div className="flex items-center gap-2">
                 <ThemeButton active={!dark} dark={dark} label="Light mode" onClick={() => setTheme("light")}><Sun size={17} /></ThemeButton>

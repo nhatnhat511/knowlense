@@ -12,17 +12,22 @@ export function useDashboardData(accessToken: string, enabled: boolean) {
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const lastToastMessageRef = useRef("");
+  const hasLoadedRef = useRef(false);
 
   useEffect(() => {
     if (!enabled || !accessToken) {
       setLoading(false);
+      hasLoadedRef.current = false;
       return;
     }
 
     let active = true;
 
     async function load() {
-      setLoading(true);
+      const initialLoad = !hasLoadedRef.current;
+      if (initialLoad) {
+        setLoading(true);
+      }
       setError("");
 
       try {
@@ -37,6 +42,7 @@ export function useDashboardData(accessToken: string, enabled: boolean) {
 
         setMetrics(metricsResult);
         setOverview(overviewResult);
+        hasLoadedRef.current = true;
         lastToastMessageRef.current = "";
       } catch (error) {
         if (!active) {
@@ -50,7 +56,7 @@ export function useDashboardData(accessToken: string, enabled: boolean) {
           lastToastMessageRef.current = message;
         }
       } finally {
-        if (active) {
+        if (active && initialLoad) {
           setLoading(false);
         }
       }
