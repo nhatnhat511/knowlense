@@ -93,7 +93,8 @@ async function fetchApiProfile(token) {
 
 async function startConnectFlow() {
   const response = await fetch(`${apiUrl()}/v1/extension/session/start`, {
-    method: "POST"
+    method: "POST",
+    cache: "no-store"
   });
 
   const payload = await response.json().catch(() => null);
@@ -126,7 +127,9 @@ async function pollConnectFlow() {
     let payload;
 
     try {
-      response = await fetch(`${apiUrl()}/v1/extension/session/poll?requestId=${encodeURIComponent(state.connectRequest.requestId)}`);
+      response = await fetch(`${apiUrl()}/v1/extension/session/poll?requestId=${encodeURIComponent(state.connectRequest.requestId)}&t=${Date.now()}`, {
+        cache: "no-store"
+      });
       payload = await response.json().catch(() => null);
     } catch {
       transientFailures += 1;

@@ -953,6 +953,8 @@ app.post("/v1/extension/session/start", async (c) => {
     return c.json({ error: "Unable to start extension connection flow." }, 500);
   }
 
+  c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  c.header("Pragma", "no-cache");
   return c.json({
     requestId,
     expiresAt
@@ -960,6 +962,8 @@ app.post("/v1/extension/session/start", async (c) => {
 });
 
 app.get("/v1/extension/session/poll", async (c) => {
+  c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  c.header("Pragma", "no-cache");
   const requestId = c.req.query("requestId");
 
   if (!requestId) {
