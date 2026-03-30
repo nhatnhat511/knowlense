@@ -15,6 +15,9 @@ const PANEL_STATE = {
   healthAction: null,
   healthStatus: null,
   healthResults: null,
+  indexingAction: null,
+  indexingStatus: null,
+  indexingResults: null,
   productMetaValue: null
 };
 
@@ -1551,6 +1554,12 @@ function setKeywordStatus(message) {
   }
 }
 
+function setIndexingStatus(message) {
+  if (PANEL_STATE.indexingStatus) {
+    PANEL_STATE.indexingStatus.textContent = message;
+  }
+}
+
 function parseKeywordInput(rawValue, productTitle) {
   const normalizedTitle = normalizeText(productTitle);
   const keywords = rawValue
@@ -1645,6 +1654,54 @@ function buildKeywordCheck(message, passed) {
       <span class="knowlense-check-copy">${message}</span>
     </div>
   `;
+}
+
+function renderSearchIndexingResult(result) {
+  if (!PANEL_STATE.indexingResults) {
+    return;
+  }
+
+  if (!result?.checks?.length) {
+    PANEL_STATE.indexingResults.innerHTML = "";
+    return;
+  }
+
+  const passedCount = result.checks.filter((item) => item.passed).length;
+  const checks = result.checks.map((item) => buildKeywordCheck(item.message, item.passed)).join("");
+
+  PANEL_STATE.indexingResults.innerHTML = `
+    <div class="knowlense-keyword-card">
+      <div class="knowlense-keyword-card-head">
+        <div class="knowlense-keyword-name">Search Indexing</div>
+        <div class="knowlense-keyword-score">${passedCount}/${result.checks.length}</div>
+      </div>
+      <div class="knowlense-check-group">
+        <div class="knowlense-check-group-head">
+          <div class="knowlense-check-group-title">Search Engine Coverage</div>
+          <div class="knowlense-check-group-summary">${passedCount} of ${result.checks.length} checks passed</div>
+        </div>
+        <div class="knowlense-check-list">${checks}</div>
+      </div>
+    </div>
+  `;
+}
+
+async function runSearchIndexingAudit() {
+  const extracted = extractProductSnapshot();
+  if (!extracted.ok) {
+    throw new Error(extracted.error);
+  }
+
+  const response = await chrome.runtime.sendMessage({
+    type: "knowlense.searchIndexing.check",
+    productUrl: extracted.snapshot.productUrl
+  }).catch(() => null);
+
+  if (!response?.ok || !response.result?.checks?.length) {
+    throw new Error(response?.error || "Knowlense could not run the search indexing check.");
+  }
+
+  return response.result;
 }
 
 function countPhraseOccurrences(text, phrase) {
@@ -1786,6 +1843,10 @@ function bindKeywordTrackingToggles(items, snapshot) {
           }
 
           checkbox.setAttribute("data-target-id", payload.target.id);
+          await chrome.runtime.sendMessage({
+            type: "knowlense.rankTracking.upsertTarget",
+            target: payload.target
+          }).catch(() => null);
           if (metaNode) {
             metaNode.textContent = `Tracking active since ${new Date(payload.target.startedAt).toLocaleDateString()}.`;
           }
@@ -1802,6 +1863,12 @@ function bindKeywordTrackingToggles(items, snapshot) {
               const payload = await response.json().catch(() => null);
               throw new Error(payload?.error || `Knowlense could not stop tracking "${item.keyword}".`);
             }
+          }
+          if (targetId) {
+            await chrome.runtime.sendMessage({
+              type: "knowlense.rankTracking.removeTarget",
+              targetId
+            }).catch(() => null);
           }
           checkbox.removeAttribute("data-target-id");
           if (metaNode) {
@@ -2162,7 +2229,7 @@ function createPanelShell() {
         <div class="knowlense-tabs" role="tablist" aria-label="Knowlense product tabs">
           <button class="knowlense-tab is-active" type="button" data-tab="keyword-seo" role="tab" aria-selected="true">Keyword SEO</button>
             <button class="knowlense-tab" type="button" data-tab="criteria-seo" role="tab" aria-selected="false">SEO Health</button>
-          <button class="knowlense-tab" type="button" data-tab="opportunity-finder" role="tab" aria-selected="false">Opportunity Finder</button>
+          <button class="knowlense-tab" type="button" data-tab="opportunity-finder" role="tab" aria-selected="false">Search Indexing</button>
         </div>
         <div class="knowlense-tab-panel is-active" data-panel="keyword-seo">
           <h4 class="knowlense-panel-heading">Keyword SEO Audit</h4>
@@ -2187,8 +2254,11 @@ function createPanelShell() {
           <div class="knowlense-health-results"></div>
         </div>
         <div class="knowlense-tab-panel" data-panel="opportunity-finder">
-          <h4 class="knowlense-panel-heading">Opportunity Finder</h4>
-          <p class="knowlense-panel-copy">Opportunity Finder is reserved for a future workflow and is not active yet.</p>
+          <h4 class="knowlense-panel-heading">Search Indexing</h4>
+          <p class="knowlense-panel-copy">Check whether this product currently appears on major search engines using URL-based indexing checks.</p>
+          <button class="knowlense-keyword-action knowlense-indexing-action" type="button">Check search indexing</button>
+          <div class="knowlense-keyword-status knowlense-indexing-status">Review current indexing visibility across major search engines.</div>
+          <div class="knowlense-indexing-results"></div>
         </div>
       </div>
     </div>
@@ -2217,6 +2287,9 @@ function createPanelShell() {
   PANEL_STATE.healthAction = panel.querySelector(".knowlense-health-action");
   PANEL_STATE.healthStatus = panel.querySelector(".knowlense-health-status");
   PANEL_STATE.healthResults = panel.querySelector(".knowlense-health-results");
+  PANEL_STATE.indexingAction = panel.querySelector(".knowlense-indexing-action");
+  PANEL_STATE.indexingStatus = panel.querySelector(".knowlense-indexing-status");
+  PANEL_STATE.indexingResults = panel.querySelector(".knowlense-indexing-results");
   PANEL_STATE.productMetaValue = panel.querySelector(".knowlense-meta-value");
   setActiveTab(PANEL_STATE.activeTab);
   refreshMountedProductMeta();
@@ -2267,6 +2340,24 @@ function createPanelShell() {
     }
   });
 
+  PANEL_STATE.indexingAction?.addEventListener("click", async () => {
+    renderSearchIndexingResult(null);
+    PANEL_STATE.indexingAction.disabled = true;
+    PANEL_STATE.indexingAction.textContent = "Checking...";
+    setIndexingStatus("Checking this product across major search engines...");
+
+    try {
+      const result = await runSearchIndexingAudit();
+      renderSearchIndexingResult(result);
+      setIndexingStatus(`Search indexing check completed for ${result.checks.length} search engine${result.checks.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setIndexingStatus(error instanceof Error ? error.message : "Knowlense could not run the search indexing check.");
+    } finally {
+      PANEL_STATE.indexingAction.disabled = false;
+      PANEL_STATE.indexingAction.textContent = "Check search indexing";
+    }
+  });
+
 }
 
 function unmountPanelShell() {
@@ -2288,6 +2379,9 @@ function unmountPanelShell() {
   PANEL_STATE.healthAction = null;
   PANEL_STATE.healthStatus = null;
   PANEL_STATE.healthResults = null;
+  PANEL_STATE.indexingAction = null;
+  PANEL_STATE.indexingStatus = null;
+  PANEL_STATE.indexingResults = null;
   PANEL_STATE.productMetaValue = null;
 
   PANEL_STATE.mountedUrl = null;
@@ -2322,4 +2416,5 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 mountProductPanel();
+void chrome.runtime.sendMessage({ type: "knowlense.rankTracking.wakeup" }).catch(() => null);
 setInterval(mountProductPanel, 1500);

@@ -675,11 +675,15 @@ app.use("/v1/me", async (c, next) => {
   await next();
 });
 
-app.get("/v1/me", (c) =>
-  c.json({
-    user: c.get("user")
-  })
-);
+app.get("/v1/me", async (c) => {
+  const user = c.get("user");
+  const billing = await readBillingProfile(c.env.DB, user.id);
+
+  return c.json({
+    user,
+    billing
+  });
+});
 
 app.use("/v1/auth/change-password", async (c, next) => {
   const authResult = await authenticateRequest(c);

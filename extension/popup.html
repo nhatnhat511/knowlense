@@ -13,23 +13,7 @@
           <div class="brand">Knowlense</div>
           <p class="subtle">Seller insight layer for TPT</p>
         </div>
-        <button id="settings-toggle" class="icon-button" type="button" aria-label="Open settings">&#9881;</button>
       </header>
-
-      <section id="settings-panel" class="panel hidden">
-        <div class="panel-title-row">
-          <h2>Settings</h2>
-          <span class="badge">Local</span>
-        </div>
-        <label class="field">
-          <span>API origin</span>
-          <input id="api-origin" type="url" placeholder="https://api.knowlense.com" />
-        </label>
-        <div class="settings-actions">
-          <button id="save-settings" class="secondary-button" type="button">Save</button>
-          <button id="open-dashboard" class="ghost-button" type="button">Dashboard</button>
-        </div>
-      </section>
 
       <section class="panel">
         <div class="panel-title-row">
@@ -40,6 +24,10 @@
         <div id="account-view" class="hidden">
           <p class="subtle">Connected website session</p>
           <p id="account-email" class="account-email"></p>
+          <div class="account-meta">
+            <span class="subtle">Plan</span>
+            <span id="account-plan" class="plan-badge">Free</span>
+          </div>
           <div class="settings-actions">
             <button id="disconnect-session" class="secondary-button" type="button">Disconnect</button>
             <button id="open-site" class="ghost-button" type="button">Website</button>
@@ -56,33 +44,6 @@
         </div>
       </section>
 
-      <section class="panel">
-        <div class="panel-title-row">
-          <h2>Keyword Finder</h2>
-          <span class="badge">MVP</span>
-        </div>
-        <p class="subtle">Open a TPT search results page, then analyze the current page to extract live keyword signals.</p>
-        <div class="settings-actions">
-          <button id="analyze-page" class="primary-button" type="button">Analyze current page</button>
-          <button id="refresh-analysis" class="ghost-button" type="button">Refresh summary</button>
-        </div>
-        <div id="analysis-empty" class="analysis-empty">No Keyword Finder run yet.</div>
-        <div id="analysis-card" class="analysis-card hidden">
-          <div class="analysis-row">
-            <span>Query</span>
-            <strong id="analysis-query"></strong>
-          </div>
-          <div class="analysis-row">
-            <span>Observed results</span>
-            <strong id="analysis-count"></strong>
-          </div>
-          <div class="analysis-row">
-            <span>Top opportunity</span>
-            <strong id="analysis-top-opportunity"></strong>
-          </div>
-          <div id="analysis-keywords" class="analysis-tags"></div>
-        </div>
-      </section>
     </main>
 
     <script type="module" src="popup.js"></script>

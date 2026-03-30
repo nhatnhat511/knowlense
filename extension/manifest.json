@@ -3,11 +3,19 @@
   "name": "Knowlense",
   "description": "Keyword research extension for TPT sellers with website-managed authentication.",
   "version": "0.1.0",
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage", "tabs", "scripting"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "host_permissions": [
     "https://*.workers.dev/*",
     "https://api.knowlense.com/*",
-    "https://www.teacherspayteachers.com/*"
+    "https://www.teacherspayteachers.com/*",
+    "https://www.google.com/*",
+    "https://www.bing.com/*",
+    "https://search.yahoo.com/*",
+    "https://search.brave.com/*"
   ],
   "content_scripts": [
     {
