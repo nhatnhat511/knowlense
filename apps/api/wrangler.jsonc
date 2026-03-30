@@ -12,9 +12,6 @@
 			"remote": true
 		}
 	],
-	"triggers": {
-		"crons": ["17 * * * *"]
-	},
 	"observability": {
 		"enabled": true
 	}

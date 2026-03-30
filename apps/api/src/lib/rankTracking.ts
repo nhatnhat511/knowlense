@@ -1,8 +1,6 @@
 const TPT_BASE_URL = "https://www.teacherspayteachers.com";
-const MAX_SEARCH_PAGES = 3;
 const DEFAULT_FALLBACK_POSITION = 74;
 const SEARCH_RESULTS_PER_PAGE = 18;
-const TARGET_BATCH_LIMIT = 48;
 
 export type RankTrackingStatus = "ranked" | "beyond_page_3";
 
@@ -23,6 +21,12 @@ export type CreateRankTrackingTargetInput = {
   sellerName?: string | null;
   keyword: string;
   initialCheck: RankTrackingCheckInput;
+};
+
+export type RecordRankTrackingCheckInput = {
+  userId: string;
+  targetId: string;
+  check: RankTrackingCheckInput;
 };
 
 type RankTrackingTargetRow = {
@@ -136,36 +140,6 @@ function normalizeProductUrl(value: string) {
 
 function extractProductId(value: string) {
   return value.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
-}
-
-function decodeHtmlEntities(value: string) {
-  return value
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
-}
-
-function extractProductUrlsFromSearchHtml(html: string) {
-  const matches = [...html.matchAll(/href="([^"]*\/Product\/[^"]+)"/g)];
-  const seen = new Set<string>();
-  const urls: string[] = [];
-
-  matches.forEach((match) => {
-    const decoded = decodeHtmlEntities(match[1] ?? "");
-    if (!decoded) {
-      return;
-    }
-
-    const href = new URL(decoded, TPT_BASE_URL).toString();
-    if (!seen.has(href)) {
-      seen.add(href);
-      urls.push(href);
-    }
-  });
-
-  return urls;
 }
 
 function toAbsolutePosition(resultPage: number | null, pagePosition: number | null, status: RankTrackingStatus) {
@@ -334,6 +308,19 @@ async function findTarget(db: D1Database, userId: string, productUrl: string, ke
     .first<RankTrackingTargetRow>();
 }
 
+async function findTargetById(db: D1Database, userId: string, targetId: string) {
+  return db
+    .prepare(
+      `SELECT *
+       FROM rank_tracking_targets
+       WHERE user_id = ?1
+         AND id = ?2
+       LIMIT 1`
+    )
+    .bind(userId, targetId)
+    .first<RankTrackingTargetRow>();
+}
+
 export async function createOrUpdateRankTrackingTarget(db: D1Database, input: CreateRankTrackingTargetInput) {
   const normalizedProductUrl = normalizeProductUrl(input.productUrl);
   const normalized = normalizeKeyword(input.keyword);
@@ -419,6 +406,23 @@ export async function deactivateRankTrackingTarget(db: D1Database, userId: strin
     .run();
 }
 
+export async function recordRankTrackingCheck(db: D1Database, input: RecordRankTrackingCheckInput) {
+  const target = await findTargetById(db, input.userId, input.targetId);
+
+  if (!target) {
+    throw new Error("Rank tracking target not found.");
+  }
+
+  await insertCheck(db, target, input.check);
+
+  const refreshed = await db
+    .prepare(`SELECT * FROM rank_tracking_targets WHERE id = ?1 LIMIT 1`)
+    .bind(target.id)
+    .first<RankTrackingTargetRow>();
+
+  return refreshed ? mapTarget(refreshed) : mapTarget(target);
+}
+
 export async function listRankTrackingTargets(
   db: D1Database,
   userId: string,
@@ -448,106 +452,16 @@ export async function listRankTrackingTargets(
   return (result.results ?? []).map(mapTarget);
 }
 
-async function fetchDailyRank(productUrl: string, keyword: string) {
-  const normalizedProductUrl = normalizeProductUrl(productUrl);
-  const searchUrl = `${TPT_BASE_URL}/browse?search=${encodeURIComponent(keyword)}`;
-  const productId = extractProductId(normalizedProductUrl);
-
-  for (let page = 1; page <= MAX_SEARCH_PAGES; page += 1) {
-    const pageUrl = page === 1 ? searchUrl : `${searchUrl}&page=${page}`;
-    const response = await fetch(pageUrl, {
-      headers: {
-        "User-Agent": "KnowlenseBot/0.1"
-      }
-    });
-
-    if (!response.ok) {
-      continue;
-    }
-
-    const html = await response.text();
-    const urls = extractProductUrlsFromSearchHtml(html);
-
-    for (let index = 0; index < urls.length; index += 1) {
-      const candidateUrl = normalizeProductUrl(urls[index]);
-      const candidateId = extractProductId(candidateUrl);
-      if (candidateUrl === normalizedProductUrl || (productId && candidateId && candidateId === productId)) {
-        return {
-          status: "ranked" as const,
-          resultPage: page,
-          pagePosition: index + 1,
-          searchUrl
-        };
-      }
-    }
-  }
+export async function runScheduledRankTracking(db: D1Database) {
+  const activeTargets = await db
+    .prepare(`SELECT COUNT(*) as total FROM rank_tracking_targets WHERE is_active = 1`)
+    .first<{ total: number | string }>();
 
   return {
-    status: "beyond_page_3" as const,
-    resultPage: null,
-    pagePosition: null,
-    searchUrl
+    processed: 0,
+    queued: Number(activeTargets?.total ?? 0),
+    disabled: true
   };
-}
-
-export async function runScheduledRankTracking(db: D1Database) {
-  const due = await db
-    .prepare(
-      `SELECT *
-       FROM rank_tracking_targets
-       WHERE is_active = 1
-         AND next_check_after IS NOT NULL
-         AND datetime(next_check_after) <= datetime('now')
-       ORDER BY datetime(next_check_after) ASC
-       LIMIT ?1`
-    )
-    .bind(TARGET_BATCH_LIMIT)
-    .all<RankTrackingTargetRow>();
-
-  const targets = due.results ?? [];
-  let processed = 0;
-
-  for (const target of targets) {
-    const today = new Date().toISOString().slice(0, 10);
-    const alreadyChecked = await db
-      .prepare(
-        `SELECT id
-         FROM rank_tracking_checks
-         WHERE target_id = ?1
-           AND substr(checked_at, 1, 10) = ?2
-         LIMIT 1`
-      )
-      .bind(target.id, today)
-      .first<{ id: string }>();
-
-    if (alreadyChecked) {
-      await db
-        .prepare(`UPDATE rank_tracking_targets SET next_check_after = ?2 WHERE id = ?1`)
-        .bind(target.id, buildNextCheckAfter(target.id))
-        .run();
-      continue;
-    }
-
-    try {
-      const fetched = await fetchDailyRank(target.product_url, target.keyword_text);
-      await insertCheck(db, target, {
-        checkedAt: new Date().toISOString(),
-        source: "scheduled",
-        status: fetched.status,
-        resultPage: fetched.resultPage,
-        pagePosition: fetched.pagePosition,
-        searchUrl: fetched.searchUrl
-      });
-      processed += 1;
-    } catch {
-      await db
-        .prepare(`UPDATE rank_tracking_targets SET next_check_after = ?2 WHERE id = ?1`)
-        .bind(target.id, buildNextCheckAfter(target.id))
-        .run();
-    }
-  }
-
-  return { processed, queued: targets.length };
 }
 
 function classifyTrend(points: RankTrackingCheckRow[]) {

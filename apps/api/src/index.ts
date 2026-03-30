@@ -7,6 +7,7 @@ import {
   createOrUpdateRankTrackingTarget,
   deactivateRankTrackingTarget,
   listRankTrackingTargets,
+  recordRankTrackingCheck,
   readRankTrackingDashboard,
   runScheduledRankTracking,
   type RankTrackingStatus
@@ -858,7 +859,7 @@ app.post("/v1/extension/session/authorize", async (c) => {
   const sessionId = crypto.randomUUID();
   const sessionToken = createExtensionToken();
   const tokenHash = await hashToken(sessionToken);
-  const sessionExpiresAt = isoFromNow(60 * 24 * 30);
+  const sessionExpiresAt = isoFromNow(60 * 24 * 365);
 
   try {
     await c.env.DB.batch([
@@ -1315,6 +1316,46 @@ app.delete("/v1/rank-tracking/targets/:targetId", async (c) => {
 
   await deactivateRankTrackingTarget(c.env.DB, user.id, targetId);
   return c.json({ success: true });
+});
+
+app.post("/v1/rank-tracking/checks", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as
+    | {
+        targetId?: string;
+        check?: {
+          checkedAt?: string;
+          status?: RankTrackingStatus;
+          resultPage?: number | null;
+          pagePosition?: number | null;
+          searchUrl?: string | null;
+        };
+      }
+    | null;
+
+  if (!body?.targetId || !body.check?.status) {
+    return c.json({ error: "Invalid rank tracking check payload." }, 400);
+  }
+
+  const user = c.get("user");
+
+  try {
+    const target = await recordRankTrackingCheck(c.env.DB, {
+      userId: user.id,
+      targetId: body.targetId,
+      check: {
+        checkedAt: body.check.checkedAt,
+        source: "scheduled",
+        status: body.check.status,
+        resultPage: body.check.resultPage ?? null,
+        pagePosition: body.check.pagePosition ?? null,
+        searchUrl: body.check.searchUrl ?? null
+      }
+    });
+
+    return c.json({ target });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unable to store rank tracking check." }, 404);
+  }
 });
 
 app.use("/v1/dashboard/*", async (c, next) => {
