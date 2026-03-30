@@ -55,6 +55,14 @@ export function startOAuth(provider: "google" | "github", redirectTo: string) {
   return postAuthResource<{ url: string }>("/v1/auth/oauth/start", { provider, redirectTo });
 }
 
+export function validateAuthProvider(accessToken: string) {
+  return postAuthResource<{
+    allowed: boolean;
+    method?: "email" | "google" | "github";
+    existingMethod?: "email" | "google" | "github";
+  }>("/v1/auth/validate-provider", {}, accessToken);
+}
+
 export function exchangeOAuthCode(code: string) {
   return postAuthResource<{ session: AuthApiSession; user: AuthApiUser }>("/v1/auth/exchange-code", { code });
 }

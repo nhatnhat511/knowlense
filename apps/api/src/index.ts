@@ -285,6 +285,146 @@ function isoFromNow(minutes: number) {
   return new Date(Date.now() + minutes * 60 * 1000).toISOString();
 }
 
+type AuthMethod = "email" | "google" | "github";
+
+function normalizePolicyEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function getCurrentAuthMethod(user: {
+  app_metadata?: Record<string, unknown> | null;
+  identities?: Array<{
+    provider?: string | null;
+  }> | null;
+}): AuthMethod | null {
+  const appMetadata = user.app_metadata ?? {};
+  const appProvider = typeof appMetadata.provider === "string" ? appMetadata.provider.toLowerCase() : null;
+
+  if (appProvider === "google" || appProvider === "github" || appProvider === "email") {
+    return appProvider as AuthMethod;
+  }
+
+  const identityProviders = Array.isArray(user.identities)
+    ? user.identities
+        .map((identity) => typeof identity?.provider === "string" ? identity.provider.toLowerCase() : null)
+        .filter((provider): provider is string => Boolean(provider))
+    : [];
+
+  if (identityProviders.includes("google")) {
+    return "google";
+  }
+
+  if (identityProviders.includes("github")) {
+    return "github";
+  }
+
+  if (identityProviders.includes("email")) {
+    return "email";
+  }
+
+  return null;
+}
+
+async function ensureAuthMethodPolicySupport(db: D1Database) {
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS auth_email_methods (
+      email TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      user_id TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  ).run();
+}
+
+async function readStoredAuthMethod(db: D1Database, email: string) {
+  const normalizedEmail = normalizePolicyEmail(email);
+  return db.prepare(
+    `SELECT email, provider, user_id
+     FROM auth_email_methods
+     WHERE email = ?1
+     LIMIT 1`
+  )
+    .bind(normalizedEmail)
+    .first<{ email: string; provider: AuthMethod; user_id: string | null }>();
+}
+
+async function writeStoredAuthMethod(db: D1Database, email: string, provider: AuthMethod, userId?: string | null) {
+  const normalizedEmail = normalizePolicyEmail(email);
+  await db.prepare(
+    `INSERT INTO auth_email_methods (email, provider, user_id)
+     VALUES (?1, ?2, ?3)
+     ON CONFLICT(email) DO UPDATE SET
+       provider = excluded.provider,
+       user_id = COALESCE(excluded.user_id, auth_email_methods.user_id),
+       updated_at = CURRENT_TIMESTAMP`
+  )
+    .bind(normalizedEmail, provider, userId ?? null)
+    .run();
+}
+
+async function findSupabaseUserByEmail(env: Bindings, email: string) {
+  const supabase = createAdminClient(env);
+  const normalizedEmail = normalizePolicyEmail(email);
+
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      page,
+      perPage: 200
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    const users = data?.users ?? [];
+    const matched = users.find((user) => normalizePolicyEmail(user.email ?? "") === normalizedEmail);
+    if (matched) {
+      return matched;
+    }
+
+    if (users.length < 200) {
+      break;
+    }
+  }
+
+  return null;
+}
+
+async function resolveExistingAuthMethod(env: Bindings, db: D1Database, email: string) {
+  await ensureAuthMethodPolicySupport(db);
+
+  const stored = await readStoredAuthMethod(db, email);
+  if (stored?.provider) {
+    return stored.provider;
+  }
+
+  const existingUser = await findSupabaseUserByEmail(env, email).catch(() => null);
+  const existingProvider = existingUser ? getCurrentAuthMethod(existingUser as {
+    app_metadata?: Record<string, unknown> | null;
+    identities?: Array<{ provider?: string | null }> | null;
+  }) : null;
+
+  if (existingUser?.email && existingProvider) {
+    await writeStoredAuthMethod(db, existingUser.email, existingProvider, existingUser.id);
+    return existingProvider;
+  }
+
+  return null;
+}
+
+function buildProviderConflictMessage(existingMethod: AuthMethod) {
+  if (existingMethod === "email") {
+    return "This email is already registered with email and password. Sign in with your email and password to access this account.";
+  }
+
+  if (existingMethod === "google") {
+    return "This email is already registered with Google. Continue with Google to access this account.";
+  }
+
+  return "This email is already registered with GitHub. Continue with GitHub to access this account.";
+}
+
 function normalizeSupabaseUser(user: {
   id: string;
   email?: string | null;
@@ -296,34 +436,18 @@ function normalizeSupabaseUser(user: {
     last_sign_in_at?: string | null;
     created_at?: string | null;
   }> | null;
-}) {
+}): Variables["user"] {
   const metadata = user.user_metadata ?? {};
-  const appMetadata = user.app_metadata ?? {};
   const displayName =
     typeof metadata.display_name === "string"
       ? metadata.display_name
       : typeof metadata.full_name === "string"
         ? metadata.full_name
-        : typeof user.email === "string"
+          : typeof user.email === "string"
           ? user.email.split("@")[0]
           : null;
   const avatarUrl = typeof metadata.avatar_url === "string" ? metadata.avatar_url : null;
-  const identityProviders = Array.isArray(user.identities)
-    ? user.identities
-        .map((identity) => typeof identity?.provider === "string" ? identity.provider.toLowerCase() : null)
-        .filter((provider): provider is string => Boolean(provider))
-    : [];
-  const appProviders = Array.isArray(appMetadata.providers)
-    ? appMetadata.providers
-        .map((provider) => typeof provider === "string" ? provider.toLowerCase() : null)
-        .filter((provider): provider is string => Boolean(provider))
-    : [];
-  const providerCandidates = [...identityProviders, ...appProviders];
-  const providerValue =
-    providerCandidates.find((provider) => provider === "google" || provider === "github" || provider === "email")
-    ?? (typeof appMetadata.provider === "string" ? appMetadata.provider.toLowerCase() : "unknown");
-  const signInMethod: "email" | "google" | "github" | "unknown" =
-    providerValue === "google" || providerValue === "github" || providerValue === "email" ? providerValue : "unknown";
+  const signInMethod = getCurrentAuthMethod(user) ?? "unknown";
 
   return {
     id: user.id,
@@ -626,6 +750,11 @@ app.post("/v1/auth/sign-in", async (c) => {
       return c.json({ error: "Email and password are required." }, 400);
     }
 
+    const existingMethod = await resolveExistingAuthMethod(c.env, c.env.DB, email);
+    if (existingMethod && existingMethod !== "email") {
+      return c.json({ error: buildProviderConflictMessage(existingMethod) }, 409);
+    }
+
     const supabase = createAuthClient(c.env);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
@@ -635,6 +764,10 @@ app.post("/v1/auth/sign-in", async (c) => {
 
     if (!data.session || !data.user) {
       return c.json({ error: "Supabase did not return a session." }, 500);
+    }
+
+    if (data.user.email) {
+      await writeStoredAuthMethod(c.env.DB, data.user.email, "email", data.user.id).catch(() => null);
     }
 
     return c.json({
@@ -666,6 +799,11 @@ app.post("/v1/auth/sign-up", async (c) => {
       return c.json({ error: "Password must be at least 8 characters long." }, 400);
     }
 
+    const existingMethod = await resolveExistingAuthMethod(c.env, c.env.DB, email);
+    if (existingMethod) {
+      return c.json({ error: buildProviderConflictMessage(existingMethod) }, 409);
+    }
+
     const supabase = createAuthClient(c.env);
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -681,6 +819,8 @@ app.post("/v1/auth/sign-up", async (c) => {
     if (error) {
       return c.json({ error: error.message }, 400);
     }
+
+    await writeStoredAuthMethod(c.env.DB, email, "email", data.user?.id ?? null).catch(() => null);
 
     return c.json({
       session: data.session
@@ -730,6 +870,42 @@ app.post("/v1/auth/oauth/start", async (c) => {
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Unable to start OAuth flow." }, 500);
   }
+});
+
+app.post("/v1/auth/validate-provider", async (c) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  const user = c.get("user");
+  if (user.authType !== "supabase" || !user.email) {
+    return c.json({ allowed: true });
+  }
+
+  const existingMethod = await resolveExistingAuthMethod(c.env, c.env.DB, user.email);
+  const currentMethod = user.signInMethod === "google" || user.signInMethod === "github" || user.signInMethod === "email"
+    ? user.signInMethod
+    : null;
+
+  if (!currentMethod) {
+    return c.json({ allowed: true });
+  }
+
+  if (existingMethod && existingMethod !== currentMethod) {
+    return c.json({
+      allowed: false,
+      error: buildProviderConflictMessage(existingMethod),
+      existingMethod
+    }, 409);
+  }
+
+  await writeStoredAuthMethod(c.env.DB, user.email, currentMethod, user.id).catch(() => null);
+
+  return c.json({
+    allowed: true,
+    method: currentMethod
+  });
 });
 
 app.post("/v1/auth/exchange-code", async (c) => {

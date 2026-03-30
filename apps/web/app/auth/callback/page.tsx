@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { validateAuthProvider } from "@/lib/api/auth";
 import { fetchApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
@@ -58,6 +59,16 @@ function AuthCallbackContent() {
       }
 
       if (session?.access_token) {
+        try {
+          await validateAuthProvider(session.access_token);
+        } catch (error) {
+          await client.auth.signOut();
+          if (active) {
+            setStatus(error instanceof Error ? error.message : "This sign-in method is not available for this email.");
+          }
+          return false;
+        }
+
         let profileValidated = false;
 
         for (let attempt = 0; attempt < 5; attempt += 1) {
