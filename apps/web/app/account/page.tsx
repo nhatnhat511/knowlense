@@ -67,7 +67,7 @@ export default function AccountPage() {
   }, [accessToken, authLoading]);
 
   async function handleSignOut() {
-    await signOutFromApi().catch(() => null);
+    await signOutFromApi(accessToken || undefined).catch(() => null);
     const supabase = getSupabaseBrowserClient();
     await supabase?.auth.signOut();
     router.push("/auth/sign-in");

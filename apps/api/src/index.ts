@@ -828,7 +828,34 @@ app.post("/v1/auth/change-password", async (c) => {
   return c.json({ ok: true });
 });
 
-app.post("/v1/auth/sign-out", async (c) => c.json({ ok: true }));
+app.post("/v1/auth/sign-out", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+
+  if (!token) {
+    return c.json({ ok: true });
+  }
+
+  const user = await (token.startsWith("knlx_")
+    ? authenticateExtensionToken(c.env, token)
+    : authenticateSupabaseToken(c.env, token));
+
+  if (!user || user.authType !== "supabase") {
+    return c.json({ ok: true });
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE extension_sessions
+     SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+     WHERE user_id = ?1
+       AND revoked_at IS NULL`
+  )
+    .bind(user.id)
+    .run()
+    .catch(() => null);
+
+  return c.json({ ok: true });
+});
 
 app.post("/v1/extension/session/start", async (c) => {
   await ensureExtensionSessionSupport(c.env.DB);

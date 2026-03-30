@@ -73,11 +73,20 @@ async function fetchApiProfile(token) {
 
   const payload = await response.json().catch(() => null);
 
+  if (response.status === 401) {
+    return {
+      invalid: true,
+      user: null,
+      billing: null
+    };
+  }
+
   if (!response.ok || !payload?.user) {
     throw new Error(payload?.error || "Unable to validate the current session.");
   }
 
   return {
+    invalid: false,
     user: payload.user,
     billing: payload.billing ?? null
   };
@@ -209,6 +218,13 @@ async function boot() {
   if (state.session?.sessionToken) {
     try {
       const user = await fetchApiProfile(state.session.sessionToken);
+      if (user.invalid) {
+        await persistSession(null);
+        setStatus("Your website session signed out or changed. Reconnect the extension from the website.", "error");
+        attachEvents();
+        render();
+        return;
+      }
       state.session = { ...state.session, user: user.user, billing: user.billing };
       await storage.set({ knowlense_extension_session: state.session });
       setStatus("Extension session is active.", "success");

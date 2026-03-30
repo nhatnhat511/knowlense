@@ -1617,7 +1617,7 @@ async function loadExtensionSession() {
   const apiUrl = stored.knowlense_settings?.apiUrl || "https://api.knowlense.com";
   let session = stored.knowlense_extension_session ?? null;
 
-  if (session?.sessionToken && !session?.billing) {
+  if (session?.sessionToken) {
     try {
       const response = await fetch(`${apiUrl.replace(/\/$/, "")}/v1/me`, {
         headers: {
@@ -1625,7 +1625,10 @@ async function loadExtensionSession() {
         }
       });
       const payload = await response.json().catch(() => null);
-      if (response.ok && payload?.user) {
+      if (response.status === 401) {
+        session = null;
+        await chrome.storage.local.remove("knowlense_extension_session");
+      } else if (response.ok && payload?.user) {
         session = {
           ...session,
           user: payload.user,

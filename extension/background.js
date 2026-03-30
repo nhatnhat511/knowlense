@@ -363,6 +363,11 @@ async function refreshTargetsFromBackend(state) {
     });
     const payload = await response.json().catch(() => null);
 
+    if (response.status === 401) {
+      await chrome.storage.local.remove(STORAGE_KEYS.session);
+      return state.targets;
+    }
+
     if (!response.ok || !Array.isArray(payload?.targets)) {
       return state.targets;
     }
@@ -407,6 +412,12 @@ async function flushPendingChecks(state) {
         })
       });
       const payload = await response.json().catch(() => null);
+
+      if (response.status === 401) {
+        await chrome.storage.local.remove(STORAGE_KEYS.session);
+        remaining.push(pending);
+        break;
+      }
 
       if (!response.ok || !payload?.target) {
         remaining.push(pending);
