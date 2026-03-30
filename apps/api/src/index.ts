@@ -195,6 +195,43 @@ function createExtensionToken() {
   return `knlx_${tokenBody}`;
 }
 
+function deriveExtensionDeviceLabel(userAgent: string | null) {
+  const ua = (userAgent ?? "").toLowerCase();
+  const browser =
+    ua.includes("edg/") ? "Edge" :
+    ua.includes("chrome/") && !ua.includes("edg/") ? "Chrome" :
+    ua.includes("firefox/") ? "Firefox" :
+    ua.includes("safari/") && !ua.includes("chrome/") ? "Safari" :
+    "Browser";
+  const os =
+    ua.includes("windows") ? "Windows" :
+    ua.includes("mac os x") ? "macOS" :
+    ua.includes("android") ? "Android" :
+    ua.includes("iphone") || ua.includes("ipad") || ua.includes("ios") ? "iOS" :
+    ua.includes("linux") ? "Linux" :
+    "Unknown OS";
+
+  return `${browser} on ${os}`;
+}
+
+async function ensureExtensionSessionSupport(db: D1Database) {
+  await db.prepare("ALTER TABLE extension_sessions ADD COLUMN device_label TEXT").run().catch(() => null);
+  await db.prepare("ALTER TABLE extension_sessions ADD COLUMN user_agent TEXT").run().catch(() => null);
+  await db.prepare("ALTER TABLE extension_sessions ADD COLUMN last_seen_at TEXT").run().catch(() => null);
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS extension_connection_attempts (
+      id TEXT PRIMARY KEY,
+      fingerprint_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expires_at TEXT NOT NULL
+    )`
+  ).run();
+  await db.prepare(
+    `CREATE INDEX IF NOT EXISTS idx_extension_connection_attempts_fingerprint_expires
+     ON extension_connection_attempts(fingerprint_hash, expires_at DESC)`
+  ).run();
+}
+
 function isoFromNow(minutes: number) {
   return new Date(Date.now() + minutes * 60 * 1000).toISOString();
 }
@@ -418,7 +455,7 @@ async function authenticateSupabaseToken(env: Bindings, token: string) {
 async function authenticateExtensionToken(env: Bindings, token: string) {
   const tokenHash = await hashToken(token);
   const session = await env.DB.prepare(
-    `SELECT user_id, user_email
+    `SELECT id, user_id, user_email
      FROM extension_sessions
      WHERE token_hash = ?1
        AND revoked_at IS NULL
@@ -426,11 +463,20 @@ async function authenticateExtensionToken(env: Bindings, token: string) {
      LIMIT 1`
   )
     .bind(tokenHash)
-    .first<{ user_id: string; user_email: string | null }>();
+    .first<{ id: string; user_id: string; user_email: string | null }>();
 
   if (!session) {
     return null;
   }
+
+  await env.DB.prepare(
+    `UPDATE extension_sessions
+     SET last_seen_at = CURRENT_TIMESTAMP
+     WHERE id = ?1`
+  )
+    .bind(session.id)
+    .run()
+    .catch(() => null);
 
   return {
     id: session.user_id,
@@ -766,16 +812,42 @@ app.post("/v1/auth/change-password", async (c) => {
 app.post("/v1/auth/sign-out", async (c) => c.json({ ok: true }));
 
 app.post("/v1/extension/session/start", async (c) => {
+  await ensureExtensionSessionSupport(c.env.DB);
+
+  const userAgent = c.req.header("User-Agent") ?? "";
+  const connectingIp =
+    c.req.header("CF-Connecting-IP")
+    ?? c.req.header("X-Forwarded-For")?.split(",")[0]?.trim()
+    ?? "unknown";
+  const fingerprintHash = await hashToken(`${connectingIp}|${userAgent}`);
+  const recentAttemptCount = await c.env.DB.prepare(
+    `SELECT COUNT(*) as total
+     FROM extension_connection_attempts
+     WHERE fingerprint_hash = ?1
+       AND datetime(expires_at) > datetime('now')`
+  )
+    .bind(fingerprintHash)
+    .first<{ total: number | string }>();
+
+  if (Number(recentAttemptCount?.total ?? 0) >= 5) {
+    return c.json({ error: "Too many extension connection attempts were started from this browser. Wait a few minutes and try again." }, 429);
+  }
+
   const requestId = crypto.randomUUID();
   const expiresAt = isoFromNow(10);
+  const attemptId = crypto.randomUUID();
 
   try {
-    await c.env.DB.prepare(
-      `INSERT INTO extension_connection_requests (id, status, expires_at)
-       VALUES (?1, 'pending', ?2)`
-    )
-      .bind(requestId, expiresAt)
-      .run();
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO extension_connection_requests (id, status, expires_at)
+         VALUES (?1, 'pending', ?2)`
+      ).bind(requestId, expiresAt),
+      c.env.DB.prepare(
+        `INSERT INTO extension_connection_attempts (id, fingerprint_hash, expires_at)
+         VALUES (?1, ?2, ?3)`
+      ).bind(attemptId, fingerprintHash, expiresAt)
+    ]);
   } catch {
     return c.json({ error: "Unable to start extension connection flow." }, 500);
   }
@@ -886,6 +958,8 @@ app.use("/v1/extension/session/authorize", async (c, next) => {
 });
 
 app.post("/v1/extension/session/authorize", async (c) => {
+  await ensureExtensionSessionSupport(c.env.DB);
+
   const body = await c.req.json().catch(() => null);
   const requestId = body?.requestId as string | undefined;
 
@@ -915,13 +989,15 @@ app.post("/v1/extension/session/authorize", async (c) => {
   const sessionToken = createExtensionToken();
   const tokenHash = await hashToken(sessionToken);
   const sessionExpiresAt = isoFromNow(60 * 24 * 365);
+  const userAgent = c.req.header("User-Agent") ?? null;
+  const deviceLabel = deriveExtensionDeviceLabel(userAgent);
 
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO extension_sessions (id, user_id, user_email, token_hash, expires_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)`
-      ).bind(sessionId, user.id, user.email, tokenHash, sessionExpiresAt),
+        `INSERT INTO extension_sessions (id, user_id, user_email, token_hash, expires_at, device_label, user_agent, last_seen_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP)`
+      ).bind(sessionId, user.id, user.email, tokenHash, sessionExpiresAt, deviceLabel, userAgent),
       c.env.DB.prepare(
         `UPDATE extension_connection_requests
          SET status = 'authorized',
@@ -942,6 +1018,38 @@ app.post("/v1/extension/session/authorize", async (c) => {
       id: user.id,
       email: user.email
     }
+  });
+});
+
+app.post("/v1/extension/session/revoke", async (c) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  const user = c.get("user");
+  if (user.authType !== "extension") {
+    return c.json({ error: "Extension revoke requires an active extension session." }, 403);
+  }
+
+  const authHeader = c.req.header("Authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token?.startsWith("knlx_")) {
+    return c.json({ error: "Missing extension session token." }, 401);
+  }
+
+  const tokenHash = await hashToken(token);
+  const result = await c.env.DB.prepare(
+    `UPDATE extension_sessions
+     SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+     WHERE token_hash = ?1
+       AND revoked_at IS NULL`
+  )
+    .bind(tokenHash)
+    .run();
+
+  return c.json({
+    revoked: Number(result.meta.changes ?? 0) > 0
   });
 });
 
@@ -1561,6 +1669,81 @@ app.get("/v1/dashboard/extension-status", async (c) => {
       connected: false,
       warning: "Extension status is temporarily unavailable."
     });
+  }
+});
+
+app.get("/v1/dashboard/extension-devices", async (c) => {
+  const user = c.get("user");
+  if (user.authType !== "supabase") {
+    return c.json({ error: "Extension device management requires a website session." }, 403);
+  }
+
+  await ensureExtensionSessionSupport(c.env.DB);
+
+  try {
+    const rows = await c.env.DB.prepare(
+      `SELECT id, created_at, expires_at, revoked_at, device_label, user_agent, COALESCE(last_seen_at, created_at) as last_seen_at
+       FROM extension_sessions
+       WHERE user_id = ?1
+       ORDER BY datetime(created_at) DESC`
+    )
+      .bind(user.id)
+      .all<{
+        id: string;
+        created_at: string;
+        expires_at: string;
+        revoked_at: string | null;
+        device_label: string | null;
+        user_agent: string | null;
+        last_seen_at: string | null;
+      }>();
+
+    const devices = (rows.results ?? []).map((row) => {
+      const revoked = Boolean(row.revoked_at);
+      const expired = !revoked && new Date(row.expires_at).getTime() <= Date.now();
+      return {
+        id: row.id,
+        label: row.device_label ?? deriveExtensionDeviceLabel(row.user_agent),
+        createdAt: row.created_at,
+        lastSeenAt: row.last_seen_at ?? row.created_at,
+        expiresAt: row.expires_at,
+        status: revoked ? "revoked" : expired ? "expired" : "active"
+      };
+    });
+
+    return c.json({ devices });
+  } catch {
+    return c.json({ error: "Unable to load extension devices." }, 500);
+  }
+});
+
+app.post("/v1/dashboard/extension-devices/:sessionId/revoke", async (c) => {
+  const user = c.get("user");
+  if (user.authType !== "supabase") {
+    return c.json({ error: "Extension device management requires a website session." }, 403);
+  }
+
+  const sessionId = c.req.param("sessionId");
+  if (!sessionId) {
+    return c.json({ error: "Missing sessionId." }, 400);
+  }
+
+  try {
+    const result = await c.env.DB.prepare(
+      `UPDATE extension_sessions
+       SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+       WHERE id = ?1
+         AND user_id = ?2
+         AND revoked_at IS NULL`
+    )
+      .bind(sessionId, user.id)
+      .run();
+
+    return c.json({
+      revoked: Number(result.meta.changes ?? 0) > 0
+    });
+  } catch {
+    return c.json({ error: "Unable to revoke the selected extension device." }, 500);
   }
 });
 

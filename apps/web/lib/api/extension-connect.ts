@@ -26,3 +26,43 @@ export async function authorizeExtensionConnection(accessToken: string, requestI
     };
   };
 }
+
+export async function fetchExtensionDevices(accessToken: string) {
+  const response = await fetch(`${getApiBaseUrl()}/v1/dashboard/extension-devices`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok || !Array.isArray(payload?.devices)) {
+    throw new Error(payload?.error ?? "Unable to load extension devices.");
+  }
+
+  return payload.devices as Array<{
+    id: string;
+    label: string;
+    createdAt: string;
+    lastSeenAt: string;
+    expiresAt: string;
+    status: "active" | "revoked" | "expired";
+  }>;
+}
+
+export async function revokeExtensionDevice(accessToken: string, sessionId: string) {
+  const response = await fetch(`${getApiBaseUrl()}/v1/dashboard/extension-devices/${encodeURIComponent(sessionId)}/revoke`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok || typeof payload?.revoked !== "boolean") {
+    throw new Error(payload?.error ?? "Unable to revoke the selected extension device.");
+  }
+
+  return payload as { revoked: boolean };
+}

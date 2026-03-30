@@ -11,7 +11,7 @@ import { useExtensionStatus } from "@/hooks/use-extension-status";
 import { signOutFromApi } from "@/lib/api/auth";
 import { createCheckout } from "@/lib/api/billing";
 import { fetchRankTrackingDashboard, startDashboardTrial, type RankTrackingDashboard } from "@/lib/api/dashboard";
-import { authorizeExtensionConnection } from "@/lib/api/extension-connect";
+import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice } from "@/lib/api/extension-connect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type ThemeMode = "light" | "dark";
@@ -29,6 +29,21 @@ const SECTION_META: Record<Section, { title: string; description: string }> = {
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
+}
+
+function formatDeviceTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
 }
 
 function Skeleton({ className }: { className: string }) {
@@ -260,6 +275,16 @@ function DashboardContent() {
   const [rankTracking, setRankTracking] = useState<RankTrackingDashboard | null>(null);
   const [rankLoading, setRankLoading] = useState(false);
   const [rankError, setRankError] = useState("");
+  const [extensionDevices, setExtensionDevices] = useState<Array<{
+    id: string;
+    label: string;
+    createdAt: string;
+    lastSeenAt: string;
+    expiresAt: string;
+    status: "active" | "revoked" | "expired";
+  }>>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [deviceActionId, setDeviceActionId] = useState("");
 
   const section = (searchParams.get("section") as Section) || "overview";
   const requestId = searchParams.get("request");
@@ -340,6 +365,43 @@ function DashboardContent() {
     };
   }, [accessToken, rankRange, selectedTargetId]);
 
+  useEffect(() => {
+    if (!accessToken) {
+      setExtensionDevices([]);
+      setDevicesLoading(false);
+      return;
+    }
+
+    let active = true;
+
+    async function loadExtensionDevices() {
+      setDevicesLoading(true);
+
+      try {
+        const devices = await fetchExtensionDevices(accessToken);
+        if (!active) {
+          return;
+        }
+        setExtensionDevices(devices);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+        showToast(error instanceof Error ? error.message : "Unable to load extension devices.");
+      } finally {
+        if (active) {
+          setDevicesLoading(false);
+        }
+      }
+    }
+
+    void loadExtensionDevices();
+
+    return () => {
+      active = false;
+    };
+  }, [accessToken, showToast]);
+
   function setSection(next: Section) {
     const params = new URLSearchParams(searchParams.toString());
     if (next === "overview") params.delete("section");
@@ -393,10 +455,29 @@ function DashboardContent() {
       await authorizeExtensionConnection(accessToken, requestId);
       showToast("Extension connected. Return to the popup.");
       refresh();
+      setExtensionDevices(await fetchExtensionDevices(accessToken));
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Unable to connect the extension.");
     } finally {
       setConnectBusy(false);
+    }
+  }
+
+  async function handleRevokeExtensionDevice(sessionId: string) {
+    if (!accessToken) {
+      return;
+    }
+
+    setDeviceActionId(sessionId);
+    try {
+      await revokeExtensionDevice(accessToken, sessionId);
+      setExtensionDevices(await fetchExtensionDevices(accessToken));
+      showToast("Extension device revoked.");
+      refresh();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to revoke the selected extension device.");
+    } finally {
+      setDeviceActionId("");
     }
   }
 
@@ -648,14 +729,30 @@ function DashboardContent() {
             </div>
           </div>
         </Card>
-        <Card compact={compact} dark={dark} title="Connection notes" description="The browser session is approved from the website and then handed back to the popup as a separate Worker-managed token.">
+        <Card compact={compact} dark={dark} title="Connected browsers" description="Each extension browser session is managed like a separate device and can be revoked here.">
           <div className="space-y-3 text-sm leading-6">
-            {[
-              "The popup creates a connection request through knowlense-api.",
-              "The website approves the request and never exposes the account password to the extension.",
-              "After approval, the popup receives a separate extension token handled by the Worker.",
-              extensionStatus?.status === "active" ? "This account currently has an active extension session." : "No active extension session is currently visible for this account."
-            ].map((item) => <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>{item}</div>)}
+            {devicesLoading ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>Loading connected browsers...</div> : null}
+            {!devicesLoading && extensionDevices.length === 0 ? <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>No browser sessions have been approved yet. Open the popup and approve a request here to create the first device.</div> : null}
+            {!devicesLoading ? extensionDevices.map((device) => <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={device.id}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className={cn("text-sm font-semibold", dark ? "text-white" : "text-gray-900")}>{device.label}</div>
+                  <div className="mt-1 text-xs">
+                    Last seen: {formatDeviceTime(device.lastSeenAt)}
+                  </div>
+                  <div className="mt-1 text-xs">
+                    Created: {formatDeviceTime(device.createdAt)}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={cn("inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]", device.status === "active" ? dark ? "bg-emerald-400/15 text-emerald-200" : "bg-emerald-100 text-emerald-700" : device.status === "revoked" ? dark ? "bg-white/10 text-white/70" : "bg-gray-200 text-gray-700" : dark ? "bg-amber-400/15 text-amber-200" : "bg-amber-100 text-amber-700")}>{device.status}</span>
+                  {device.status === "active" ? <button className={cn("inline-flex h-9 items-center rounded-full border px-3 text-xs font-semibold transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} disabled={deviceActionId === device.id} onClick={() => void handleRevokeExtensionDevice(device.id)} type="button">{deviceActionId === device.id ? "Revoking..." : "Revoke"}</button> : null}
+                </div>
+              </div>
+            </div>) : null}
+            <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")}>
+              Disconnecting from the popup now revokes the current browser token on the server, not just the local extension copy.
+            </div>
           </div>
         </Card>
       </div>

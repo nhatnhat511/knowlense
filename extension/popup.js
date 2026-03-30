@@ -144,9 +144,43 @@ async function pollConnectFlow() {
   setStatus("Still waiting for approval. You can keep the popup open or start again.", "idle");
 }
 
+async function revokeExtensionSession(sessionToken) {
+  const response = await fetch(`${apiUrl()}/v1/extension/session/revoke`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${sessionToken}`
+    }
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (response.status === 401) {
+    return { revoked: true, stale: true };
+  }
+
+  if (!response.ok) {
+    throw new Error(payload?.error || "Unable to revoke this browser session from the server.");
+  }
+
+  return {
+    revoked: Boolean(payload?.revoked),
+    stale: false
+  };
+}
+
 async function handleDisconnect() {
-  await persistSession(null);
-  setStatus("Extension session removed from this browser.");
+  if (!state.session?.sessionToken) {
+    await persistSession(null);
+    setStatus("Extension session removed from this browser.");
+    return;
+  }
+
+  try {
+    await revokeExtensionSession(state.session.sessionToken);
+    await persistSession(null);
+    setStatus("Extension disconnected from this browser and revoked on the server.", "success");
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "Unable to disconnect this browser session.", "error");
+  }
 }
 
 function attachEvents() {
