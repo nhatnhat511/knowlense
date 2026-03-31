@@ -27,6 +27,16 @@ export const DEFAULT_PUBLIC_NAV_ITEMS: NavItem[] = [
 ];
 export const DEFAULT_PUBLIC_PRIMARY_CTA: NavItem = { href: "/auth/sign-up", label: "Sign Up" };
 
+export function PublicSiteHeader() {
+  return (
+    <SiteHeader
+      tag={DEFAULT_PUBLIC_HEADER_TAG}
+      navItems={DEFAULT_PUBLIC_NAV_ITEMS}
+      primaryCta={DEFAULT_PUBLIC_PRIMARY_CTA}
+    />
+  );
+}
+
 export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) {
   const pathname = usePathname();
   const menuId = useId();

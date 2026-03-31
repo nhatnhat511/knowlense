@@ -1,9 +1,6 @@
 import {
-  DEFAULT_PUBLIC_HEADER_TAG,
-  DEFAULT_PUBLIC_NAV_ITEMS,
-  DEFAULT_PUBLIC_PRIMARY_CTA,
+  PublicSiteHeader,
   SiteFooter,
-  SiteHeader
 } from "@/components/site/chrome";
 
 const lastUpdated = "March 31, 2026";
@@ -11,11 +8,7 @@ const lastUpdated = "March 31, 2026";
 export default function RefundPolicyPage() {
   return (
     <main className="app-shell">
-      <SiteHeader
-        tag={DEFAULT_PUBLIC_HEADER_TAG}
-        navItems={DEFAULT_PUBLIC_NAV_ITEMS}
-        primaryCta={DEFAULT_PUBLIC_PRIMARY_CTA}
-      />
+      <PublicSiteHeader />
 
       <section className="shell legal-surface">
         <div className="legal-intro">

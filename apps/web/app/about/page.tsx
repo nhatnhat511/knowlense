@@ -1,19 +1,12 @@
 import {
-  DEFAULT_PUBLIC_HEADER_TAG,
-  DEFAULT_PUBLIC_NAV_ITEMS,
-  DEFAULT_PUBLIC_PRIMARY_CTA,
-  SiteFooter,
-  SiteHeader
+  PublicSiteHeader,
+  SiteFooter
 } from "@/components/site/chrome";
 
 export default function AboutPage() {
   return (
     <main className="app-shell">
-      <SiteHeader
-        tag={DEFAULT_PUBLIC_HEADER_TAG}
-        navItems={DEFAULT_PUBLIC_NAV_ITEMS}
-        primaryCta={DEFAULT_PUBLIC_PRIMARY_CTA}
-      />
+      <PublicSiteHeader />
 
       <section className="shell marketing-surface">
         <div className="section-heading">

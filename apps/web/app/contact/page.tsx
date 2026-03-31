@@ -3,11 +3,8 @@
 import { useState } from "react";
 import { HiOutlineMail } from "react-icons/hi";
 import {
-  DEFAULT_PUBLIC_HEADER_TAG,
-  DEFAULT_PUBLIC_NAV_ITEMS,
-  DEFAULT_PUBLIC_PRIMARY_CTA,
+  PublicSiteHeader,
   SiteFooter,
-  SiteHeader
 } from "@/components/site/chrome";
 import { sendContactMessage } from "@/lib/api/contact";
 
@@ -92,11 +89,7 @@ export default function ContactPage() {
 
   return (
     <main className="app-shell">
-      <SiteHeader
-        tag={DEFAULT_PUBLIC_HEADER_TAG}
-        navItems={DEFAULT_PUBLIC_NAV_ITEMS}
-        primaryCta={DEFAULT_PUBLIC_PRIMARY_CTA}
-      />
+      <PublicSiteHeader />
 
       <section className="shell marketing-surface">
         <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[0.9fr_1.8fr]">

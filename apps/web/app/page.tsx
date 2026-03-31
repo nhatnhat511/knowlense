@@ -1,10 +1,7 @@
 import Link from "next/link";
 import {
-  DEFAULT_PUBLIC_HEADER_TAG,
-  DEFAULT_PUBLIC_NAV_ITEMS,
-  DEFAULT_PUBLIC_PRIMARY_CTA,
+  PublicSiteHeader,
   SiteFooter,
-  SiteHeader
 } from "@/components/site/chrome";
 
 const proofPoints = [
@@ -52,11 +49,7 @@ const checklist = [
 export default function HomePage() {
   return (
     <main className="app-shell">
-      <SiteHeader
-        tag={DEFAULT_PUBLIC_HEADER_TAG}
-        navItems={DEFAULT_PUBLIC_NAV_ITEMS}
-        primaryCta={DEFAULT_PUBLIC_PRIMARY_CTA}
-      />
+      <PublicSiteHeader />
 
       <section className="shell hero-home">
         <div className="hero-copy-block hero-copy-clean">

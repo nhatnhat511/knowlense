@@ -1,22 +1,15 @@
 "use client";
 
 import {
-  DEFAULT_PUBLIC_HEADER_TAG,
-  DEFAULT_PUBLIC_NAV_ITEMS,
-  DEFAULT_PUBLIC_PRIMARY_CTA,
+  PublicSiteHeader,
   SiteFooter,
-  SiteHeader
 } from "@/components/site/chrome";
 import { PricingSection } from "@/components/site/pricing-section";
 
 export default function PricingPage() {
   return (
     <main className="app-shell">
-      <SiteHeader
-        tag={DEFAULT_PUBLIC_HEADER_TAG}
-        navItems={DEFAULT_PUBLIC_NAV_ITEMS}
-        primaryCta={DEFAULT_PUBLIC_PRIMARY_CTA}
-      />
+      <PublicSiteHeader />
 
       <section className="shell marketing-surface">
         <PricingSection />
