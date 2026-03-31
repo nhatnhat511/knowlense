@@ -25,6 +25,14 @@ type PlanCard = {
   popular?: boolean;
 };
 
+type CompareRow = {
+  feature: string;
+  description: string;
+  free: string;
+  monthly: string;
+  yearly: string;
+};
+
 const planCards: PlanCard[] = [
   {
     key: "free",
@@ -70,33 +78,38 @@ const planCards: PlanCard[] = [
   }
 ];
 
-const compareRows = [
+const compareRows: CompareRow[] = [
   {
     feature: "Keyword SEO audit",
+    description: "Checks how your product aligns with a target keyword and highlights the key ranking signals.",
     free: "1 keyword at a time",
     monthly: "Up to 3 keywords",
     yearly: "Up to 3 keywords"
   },
   {
     feature: "SEO Health",
+    description: "Reviews the product page against Knowlense SEO checks so issues are easier to fix.",
     free: "10 runs in 24 hours",
     monthly: "Unlimited",
     yearly: "Unlimited"
   },
   {
     feature: "Search Indexing",
+    description: "Checks whether the product appears across the supported search engines in the extension.",
     free: "Included",
     monthly: "Included",
     yearly: "Included"
   },
   {
     feature: "Track this keyword",
+    description: "Saves a keyword for ongoing rank tracking so you can monitor movement over time.",
     free: "—",
     monthly: "Included",
     yearly: "Included"
   },
   {
     feature: "Keyword rankings dashboard",
+    description: "Shows ranking history and trend data for the keywords you choose to track.",
     free: "—",
     monthly: "Included",
     yearly: "Included"
@@ -114,6 +127,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
   const [billing, setBilling] = useState<DashboardMetrics["billing"] | null>(null);
   const [loadingPlan, setLoadingPlan] = useState<BillingInterval | "">("");
   const [status, setStatus] = useState("");
+  const [openCompareHint, setOpenCompareHint] = useState<string | null>(null);
 
   const activePremiumPlanKey =
     billing?.status === "active"
@@ -266,6 +280,19 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
     );
   }
 
+  function renderCompareValue(value: string) {
+    if (value === "—") {
+      return <span className={dark ? "text-white/40" : "text-neutral-400"}>—</span>;
+    }
+
+    return (
+      <span className="inline-flex items-center gap-2">
+        <CheckCircle2 className={cn("h-4 w-4 shrink-0", dark ? "text-emerald-300" : "text-emerald-600")} />
+        <span>{value}</span>
+      </span>
+    );
+  }
+
   return (
     <section className={cn("space-y-8", embedded ? "" : "py-2")}>
       <div className="mx-auto max-w-3xl text-center">
@@ -349,12 +376,35 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
                 key={row.feature}
               >
                 <div className={cn("flex items-center gap-2 px-4 py-3 font-medium", dark ? "text-white" : "text-gray-900")}>
-                  <CheckCircle2 className={cn("h-4 w-4 shrink-0", dark ? "text-emerald-300" : "text-emerald-600")} />
-                  {row.feature}
+                  <span>{row.feature}</span>
+                  <div className="relative">
+                    <button
+                      aria-expanded={openCompareHint === row.feature}
+                      aria-label={`Learn more about ${row.feature}`}
+                      className={cn(
+                        "inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-semibold leading-none",
+                        dark ? "border-white/15 bg-white/5 text-white/75 hover:bg-white/10" : "border-black/10 bg-white text-neutral-500 hover:bg-neutral-50"
+                      )}
+                      onClick={() => setOpenCompareHint((current) => current === row.feature ? null : row.feature)}
+                      type="button"
+                    >
+                      !
+                    </button>
+                    {openCompareHint === row.feature ? (
+                      <div
+                        className={cn(
+                          "absolute left-0 top-[calc(100%+10px)] z-10 w-64 rounded-2xl border px-3 py-2 text-xs font-normal leading-5 shadow-[0_18px_40px_rgba(15,23,42,0.12)]",
+                          dark ? "border-white/10 bg-[#161a22] text-white/72" : "border-[#ebe3d6] bg-white text-neutral-600"
+                        )}
+                      >
+                        {row.description}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="px-4 py-3">{row.free}</div>
-                <div className="px-4 py-3">{row.monthly}</div>
-                <div className="px-4 py-3">{row.yearly}</div>
+                <div className="px-4 py-3">{renderCompareValue(row.free)}</div>
+                <div className="px-4 py-3">{renderCompareValue(row.monthly)}</div>
+                <div className="px-4 py-3">{renderCompareValue(row.yearly)}</div>
               </div>
             ))}
           </div>
