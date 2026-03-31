@@ -372,6 +372,8 @@ function DashboardContent() {
   const signInMethod = user?.signInMethod ?? "unknown";
   const signInMethodMeta = getSignInMethodMeta(signInMethod);
   const supabase = getSupabaseBrowserClient();
+  const chromeStoreUrl = "https://chromewebstore.google.com/";
+  const edgeStoreUrl = "https://microsoftedge.microsoft.com/addons/";
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("knowlense-dashboard-theme");
@@ -1199,6 +1201,30 @@ function DashboardContent() {
             <div className="flex w-full items-center justify-between gap-4">
               <div><h1 className={cn("text-[1.65rem] font-extrabold tracking-[-0.08em]", dark ? "text-white" : "text-gray-900")}>{sectionMeta.title}</h1><p className={cn("mt-0.5 text-[13px]", dark ? "text-white/55" : "text-gray-500")}>{section === "overview" ? `Welcome back, ${authLoading ? "..." : firstName}.` : sectionMeta.description}</p></div>
               <div className="flex items-center gap-2">
+                <a
+                  className={cn(
+                    "inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-medium transition",
+                    dark ? "border-white/10 bg-[#111318] text-white hover:bg-white/6" : "border-gray-200 bg-white text-gray-900 hover:bg-gray-50"
+                  )}
+                  href={chromeStoreUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <FaChrome size={16} />
+                  <span>Add to Chrome</span>
+                </a>
+                <a
+                  className={cn(
+                    "inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-medium transition",
+                    dark ? "border-white/10 bg-[#111318] text-white hover:bg-white/6" : "border-gray-200 bg-white text-gray-900 hover:bg-gray-50"
+                  )}
+                  href={edgeStoreUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <FaEdge size={16} />
+                  <span>Add to Edge</span>
+                </a>
                 <ThemeButton active={theme === "light"} dark={dark} label="Light mode" onClick={() => setTheme("light")}><Sun size={17} /></ThemeButton>
                 <ThemeButton active={theme === "dark"} dark={dark} label="Dark mode" onClick={() => setTheme("dark")}><Moon size={17} /></ThemeButton>
                 <TopButton dark={dark} label="Notifications" onClick={() => showToast(overview?.recentRuns[0] ? `Latest run: ${overview.recentRuns[0].query}` : "No new dashboard notifications.")}><Bell size={17} /></TopButton>
