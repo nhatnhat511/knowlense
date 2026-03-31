@@ -358,6 +358,7 @@ function DashboardContent() {
   const [linkedAccountAction, setLinkedAccountAction] = useState("");
   const [showSubscriptionPricing, setShowSubscriptionPricing] = useState(false);
   const [billingSyncError, setBillingSyncError] = useState("");
+  const processedBillingTransactionRef = useRef("");
 
   const requestId = searchParams.get("request");
   const requestedSection = searchParams.get("section");
@@ -395,6 +396,14 @@ function DashboardContent() {
       return;
     }
 
+    if (billingTransactionId && processedBillingTransactionRef.current === billingTransactionId) {
+      return;
+    }
+
+    if (billingTransactionId) {
+      processedBillingTransactionRef.current = billingTransactionId;
+    }
+
     setBillingSyncError("");
     let active = true;
     let attempts = 0;
@@ -424,8 +433,10 @@ function DashboardContent() {
             lastError = "Payment received, but the checkout reference is missing from the return URL.";
           }
         } catch (error) {
-          refresh();
           lastError = error instanceof Error ? error.message : "Unable to confirm the Paddle checkout yet.";
+          if (lastError && !/temporarily busy|syncing|wait/i.test(lastError)) {
+            break;
+          }
         }
 
         await new Promise((resolve) => window.setTimeout(resolve, 2500));

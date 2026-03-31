@@ -55,6 +55,14 @@ type Variables = {
   };
 };
 
+type CachedAuthUser = {
+  user: Variables["user"];
+  expiresAt: number;
+};
+
+const AUTH_CACHE_TTL_MS = 5 * 60 * 1000;
+const authUserCache = new Map<string, CachedAuthUser>();
+
 type StoredKeywordRun = {
   id: string;
   query_text: string;
@@ -207,6 +215,65 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function parseJwtExpiry(token: string) {
+  const parts = token.split(".");
+  if (parts.length < 2) {
+    return null;
+  }
+
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const payload = JSON.parse(atob(padded)) as { exp?: number };
+    return typeof payload.exp === "number" ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+function readCachedAuthUser(token: string) {
+  const cached = authUserCache.get(token);
+  if (!cached) {
+    return null;
+  }
+
+  if (cached.expiresAt <= Date.now()) {
+    authUserCache.delete(token);
+    return null;
+  }
+
+  return cached.user;
+}
+
+function persistCachedAuthUser(token: string, user: Variables["user"]) {
+  const jwtExpiry = parseJwtExpiry(token);
+  const expiresAt = Math.min(jwtExpiry ?? (Date.now() + AUTH_CACHE_TTL_MS), Date.now() + AUTH_CACHE_TTL_MS);
+
+  if (expiresAt <= Date.now()) {
+    return;
+  }
+
+  if (authUserCache.size >= 500) {
+    for (const [cachedToken, cachedEntry] of authUserCache.entries()) {
+      if (cachedEntry.expiresAt <= Date.now()) {
+        authUserCache.delete(cachedToken);
+      }
+    }
+
+    if (authUserCache.size >= 500) {
+      const oldestKey = authUserCache.keys().next().value;
+      if (oldestKey) {
+        authUserCache.delete(oldestKey);
+      }
+    }
+  }
+
+  authUserCache.set(token, {
+    user,
+    expiresAt
+  });
 }
 
 function readPaddleEnvironment(env: Bindings) {
@@ -499,6 +566,44 @@ function normalizeSupabaseUser(user: {
     avatarUrl,
     emailConfirmed: Boolean(user.email_confirmed_at),
     authType: "supabase" as const,
+    signInMethod
+  };
+}
+
+function normalizeSupabaseClaims(claims: Record<string, unknown>): Variables["user"] | null {
+  const userId = typeof claims.sub === "string" ? claims.sub : null;
+  if (!userId) {
+    return null;
+  }
+
+  const email = typeof claims.email === "string" ? claims.email : null;
+  const appMetadata =
+    claims.app_metadata && typeof claims.app_metadata === "object" && !Array.isArray(claims.app_metadata)
+      ? (claims.app_metadata as Record<string, unknown>)
+      : null;
+  const userMetadata =
+    claims.user_metadata && typeof claims.user_metadata === "object" && !Array.isArray(claims.user_metadata)
+      ? (claims.user_metadata as Record<string, unknown>)
+      : null;
+
+  const displayName =
+    typeof userMetadata?.display_name === "string"
+      ? userMetadata.display_name
+      : typeof userMetadata?.full_name === "string"
+        ? userMetadata.full_name
+        : email?.split("@")[0] ?? null;
+  const avatarUrl = typeof userMetadata?.avatar_url === "string" ? userMetadata.avatar_url : null;
+  const provider = typeof appMetadata?.provider === "string" ? appMetadata.provider.toLowerCase() : null;
+  const signInMethod =
+    provider === "google" || provider === "github" || provider === "email" ? provider : "unknown";
+
+  return {
+    id: userId,
+    email,
+    name: displayName,
+    avatarUrl,
+    emailConfirmed: Boolean(email),
+    authType: "supabase",
     signInMethod
   };
 }
@@ -847,14 +952,38 @@ function getDefaultDashboardOverview(user: Variables["user"]) {
 }
 
 async function authenticateSupabaseToken(env: Bindings, token: string) {
+  const cached = readCachedAuthUser(token);
+  if (cached) {
+    return cached;
+  }
+
+  try {
+    const authClient = createAuthClient(env);
+    const claimsResult = await authClient.auth.getClaims(token);
+    if (claimsResult.error) {
+      authUserCache.delete(token);
+    } else if (claimsResult.data?.claims && typeof claimsResult.data.claims === "object") {
+      const userFromClaims = normalizeSupabaseClaims(claimsResult.data.claims as Record<string, unknown>);
+      if (userFromClaims) {
+        persistCachedAuthUser(token, userFromClaims);
+        return userFromClaims;
+      }
+    }
+  } catch {
+    // Fall back to getUser() below if local/JWKS-based verification is unavailable.
+  }
+
   const supabase = createAdminClient(env);
   const { data, error } = await supabase.auth.getUser(token);
 
   if (error || !data.user) {
+    authUserCache.delete(token);
     return null;
   }
 
-  return normalizeSupabaseUser(data.user);
+  const user = normalizeSupabaseUser(data.user);
+  persistCachedAuthUser(token, user);
+  return user;
 }
 
 async function authenticateExtensionToken(env: Bindings, token: string) {
@@ -2586,95 +2715,105 @@ app.post("/v1/billing/checkout", async (c) => {
 app.post("/v1/billing/confirm", async (c) => {
   c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   c.header("Pragma", "no-cache");
-  const authResult = await authenticateRequest(c);
-  if (authResult) {
-    return c.json({ error: authResult.error }, authResult.status);
-  }
 
-  const body = await c.req.json().catch(() => null);
-  const transactionId = getPaddleString(body?.transactionId);
-  const user = c.get("user");
-
-  if (!transactionId) {
-    return c.json({ error: "Missing Paddle transaction reference." }, 400);
-  }
-
-  if (!c.env.PADDLE_API_KEY) {
-    return c.json({ error: "Paddle checkout is not configured." }, 500);
-  }
-
-  const response = await fetch(`${paddleBaseUrl(readPaddleEnvironment(c.env))}/transactions/${transactionId}`, {
-    headers: {
-      Authorization: `Bearer ${c.env.PADDLE_API_KEY}`,
-      Accept: "application/json"
+  try {
+    const authResult = await authenticateRequest(c);
+    if (authResult) {
+      return c.json({ error: authResult.error }, authResult.status);
     }
-  });
 
-  const payload = (await response.json().catch(() => null)) as
-    | {
-        data?: Record<string, unknown>;
-        error?: { detail?: string; message?: string };
-        errors?: Array<{ detail?: string; message?: string }>;
+    const body = await c.req.json().catch(() => null);
+    const transactionId = getPaddleString(body?.transactionId);
+    const user = c.get("user");
+
+    if (!transactionId) {
+      return c.json({ error: "Missing Paddle transaction reference." }, 400);
+    }
+
+    if (!c.env.PADDLE_API_KEY) {
+      return c.json({ error: "Paddle checkout is not configured." }, 500);
+    }
+
+    const response = await fetch(`${paddleBaseUrl(readPaddleEnvironment(c.env))}/transactions/${transactionId}`, {
+      headers: {
+        Authorization: `Bearer ${c.env.PADDLE_API_KEY}`,
+        Accept: "application/json"
       }
-    | null;
+    });
 
-  if (!response.ok || !payload?.data) {
-    const retryAfter = response.headers.get("Retry-After");
-    const retryAfterSeconds = retryAfter ? Number.parseInt(retryAfter, 10) : Number.NaN;
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          data?: Record<string, unknown>;
+          error?: { detail?: string; message?: string };
+          errors?: Array<{ detail?: string; message?: string }>;
+        }
+      | null;
+
+    if (!response.ok || !payload?.data) {
+      const retryAfter = response.headers.get("Retry-After");
+      const retryAfterSeconds = retryAfter ? Number.parseInt(retryAfter, 10) : Number.NaN;
+      return c.json(
+        {
+          error:
+            response.status === 429
+              ? Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+                ? `Paddle confirmation is temporarily busy. Please wait ${retryAfterSeconds} seconds and try again.`
+                : "Paddle confirmation is temporarily busy. Please wait a moment and try again."
+              : payload?.errors?.[0]?.detail
+                ?? payload?.errors?.[0]?.message
+                ?? payload?.error?.detail
+                ?? payload?.error?.message
+                ?? "Unable to confirm the Paddle transaction."
+        },
+        502
+      );
+    }
+
+    const transaction = payload.data;
+    const customData = getPaddleCustomData(transaction);
+    const ownerUserId = getPaddleString(customData?.user_id);
+    const transactionStatus = getPaddleString(transaction.status)?.toLowerCase();
+    const interval = resolveBillingIntervalFromPaddle(transaction, c.env);
+    const subscriptionId = getPaddleString(transaction.subscription_id);
+    const customerId = getPaddleString(transaction.customer_id);
+    const priceId = readPaddlePriceId(transaction);
+
+    if (ownerUserId && ownerUserId !== user.id) {
+      return c.json({ error: "This Paddle transaction belongs to a different account." }, 403);
+    }
+
+    if (transactionStatus !== "completed" && transactionStatus !== "paid") {
+      return c.json({
+        confirmed: false,
+        ready: false,
+        status: transactionStatus ?? "unknown"
+      });
+    }
+
+    await upsertPremiumBillingProfile(c.env.DB, user.id, {
+      interval,
+      customerId,
+      subscriptionId,
+      transactionId,
+      priceId,
+      occurredAt: new Date().toISOString()
+    });
+
+    const billing = await readBillingProfile(c.env.DB, user.id);
+
+    return c.json({
+      confirmed: true,
+      ready: true,
+      billing
+    });
+  } catch (error) {
     return c.json(
       {
-        error:
-          response.status === 429
-            ? Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
-              ? `Paddle confirmation is temporarily busy. Please wait ${retryAfterSeconds} seconds and try again.`
-              : "Paddle confirmation is temporarily busy. Please wait a moment and try again."
-            : payload?.errors?.[0]?.detail
-              ?? payload?.errors?.[0]?.message
-              ?? payload?.error?.detail
-              ?? payload?.error?.message
-              ?? "Unable to confirm the Paddle transaction."
+        error: error instanceof Error ? error.message : "Unable to confirm the Paddle transaction."
       },
-      502
+      500
     );
   }
-
-  const transaction = payload.data;
-  const customData = getPaddleCustomData(transaction);
-  const ownerUserId = getPaddleString(customData?.user_id);
-  const transactionStatus = getPaddleString(transaction.status)?.toLowerCase();
-  const interval = resolveBillingIntervalFromPaddle(transaction, c.env);
-  const subscriptionId = getPaddleString(transaction.subscription_id);
-  const customerId = getPaddleString(transaction.customer_id);
-  const priceId = readPaddlePriceId(transaction);
-
-  if (ownerUserId && ownerUserId !== user.id) {
-    return c.json({ error: "This Paddle transaction belongs to a different account." }, 403);
-  }
-
-  if (transactionStatus !== "completed" && transactionStatus !== "paid") {
-    return c.json({
-      confirmed: false,
-      ready: false,
-      status: transactionStatus ?? "unknown"
-    });
-  }
-
-  await upsertPremiumBillingProfile(c.env.DB, user.id, {
-    interval,
-    customerId,
-    subscriptionId,
-    transactionId,
-    priceId,
-    occurredAt: new Date().toISOString()
-  });
-
-  const billing = await readBillingProfile(c.env.DB, user.id);
-
-  return c.json({
-    confirmed: true,
-    ready: true,
-    billing
-  });
 });
 
 app.post("/v1/webhooks/paddle", async (c) => {

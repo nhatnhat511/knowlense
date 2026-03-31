@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchDashboardMetrics, fetchDashboardOverview, type DashboardMetrics, type DashboardOverview } from "@/lib/api/dashboard";
 import { useToast } from "@/components/providers/app-providers";
 
@@ -78,20 +78,29 @@ export function useDashboardData(accessToken: string, enabled: boolean) {
       return;
     }
 
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      return;
+    }
+
     const interval = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
       setRefreshKey((value) => value + 1);
-    }, 10000);
+    }, 30000);
 
     return () => window.clearInterval(interval);
   }, [accessToken, enabled, overview]);
+
+  const refresh = useCallback(() => {
+    setRefreshKey((value) => value + 1);
+  }, []);
 
   return {
     metrics,
     overview,
     loading,
     error,
-    refresh() {
-      setRefreshKey((value) => value + 1);
-    }
+    refresh
   };
 }

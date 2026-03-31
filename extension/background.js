@@ -650,12 +650,10 @@ async function removeTrackedTarget(targetId) {
 }
 
 chrome.runtime.onStartup.addListener(() => {
-  void pollExtensionConnection("startup");
   void processDueTargets("startup");
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  void pollExtensionConnection("installed");
   void processDueTargets("installed");
 });
 

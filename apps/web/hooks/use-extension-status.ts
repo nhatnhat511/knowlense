@@ -50,8 +50,11 @@ export function useExtensionStatus(accessToken: string, enabled: boolean) {
 
     void loadStatus();
     const interval = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
       void loadStatus();
-    }, 30000);
+    }, 120000);
 
     return () => {
       active = false;

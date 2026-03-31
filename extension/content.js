@@ -2503,4 +2503,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 mountProductPanel();
 void chrome.runtime.sendMessage({ type: "knowlense.rankTracking.wakeup" }).catch(() => null);
-setInterval(mountProductPanel, 1500);
+setInterval(() => {
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+  mountProductPanel();
+}, 5000);
