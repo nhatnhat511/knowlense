@@ -2564,6 +2564,92 @@ app.post("/v1/billing/checkout", async (c) => {
   );
 });
 
+app.post("/v1/billing/confirm", async (c) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const transactionId = getPaddleString(body?.transactionId);
+  const user = c.get("user");
+
+  if (!transactionId) {
+    return c.json({ error: "Missing Paddle transaction reference." }, 400);
+  }
+
+  if (!c.env.PADDLE_API_KEY) {
+    return c.json({ error: "Paddle checkout is not configured." }, 500);
+  }
+
+  const response = await fetch(`${paddleBaseUrl(readPaddleEnvironment(c.env))}/transactions/${transactionId}`, {
+    headers: {
+      Authorization: `Bearer ${c.env.PADDLE_API_KEY}`,
+      Accept: "application/json"
+    }
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        data?: Record<string, unknown>;
+        error?: { detail?: string; message?: string };
+        errors?: Array<{ detail?: string; message?: string }>;
+      }
+    | null;
+
+  if (!response.ok || !payload?.data) {
+    return c.json(
+      {
+        error:
+          payload?.errors?.[0]?.detail
+          ?? payload?.errors?.[0]?.message
+          ?? payload?.error?.detail
+          ?? payload?.error?.message
+          ?? "Unable to confirm the Paddle transaction."
+      },
+      502
+    );
+  }
+
+  const transaction = payload.data;
+  const customData = getPaddleCustomData(transaction);
+  const ownerUserId = getPaddleString(customData?.user_id);
+  const transactionStatus = getPaddleString(transaction.status)?.toLowerCase();
+  const interval = resolveBillingIntervalFromPaddle(transaction, c.env);
+  const subscriptionId = getPaddleString(transaction.subscription_id);
+  const customerId = getPaddleString(transaction.customer_id);
+  const priceId = readPaddlePriceId(transaction);
+
+  if (ownerUserId && ownerUserId !== user.id) {
+    return c.json({ error: "This Paddle transaction belongs to a different account." }, 403);
+  }
+
+  if (transactionStatus !== "completed" && transactionStatus !== "paid") {
+    return c.json({
+      confirmed: false,
+      ready: false,
+      status: transactionStatus ?? "unknown"
+    });
+  }
+
+  await upsertPremiumBillingProfile(c.env.DB, user.id, {
+    interval,
+    customerId,
+    subscriptionId,
+    transactionId,
+    priceId,
+    occurredAt: new Date().toISOString()
+  });
+
+  const billing = await readBillingProfile(c.env.DB, user.id);
+
+  return c.json({
+    confirmed: true,
+    ready: true,
+    billing
+  });
+});
+
 app.post("/v1/webhooks/paddle", async (c) => {
   const secretKey = readPaddleEndpointSecretKey(c.env);
   const signature = c.req.header("Paddle-Signature");

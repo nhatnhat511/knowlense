@@ -13,7 +13,7 @@ declare global {
       };
       Initialize: (options: {
         token: string;
-        eventCallback?: (event: { name?: string }) => void;
+        eventCallback?: (event: { name?: string; data?: { transaction_id?: string } }) => void;
       }) => void;
       Checkout: {
         open: (options: {
@@ -83,7 +83,7 @@ function PaddlePaymentLinkContent() {
           throw new Error("Paddle.js did not load correctly.");
         }
 
-        const successUrl = `${window.location.origin}/dashboard?section=account&billing=success`;
+        const successUrl = `${window.location.origin}/dashboard?section=subscription&billing=success`;
 
         window.Paddle.Environment.set(config.paddleEnvironment);
         window.Paddle.Initialize({
@@ -94,7 +94,8 @@ function PaddlePaymentLinkContent() {
             }
 
             if (event.name === "checkout.completed") {
-              window.location.replace(successUrl);
+              const completedTransactionId = event.data?.transaction_id ?? currentTransactionId ?? "";
+              window.location.replace(`${successUrl}&txn=${encodeURIComponent(completedTransactionId)}`);
             }
           }
         });

@@ -13,6 +13,7 @@ import { useAuthGuard } from "@/hooks/use-auth";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useExtensionStatus } from "@/hooks/use-extension-status";
 import { signOutFromApi } from "@/lib/api/auth";
+import { confirmCheckout } from "@/lib/api/billing";
 import { fetchRankTrackingDashboard, type RankTrackingDashboard } from "@/lib/api/dashboard";
 import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice, revokeOtherExtensionDevices } from "@/lib/api/extension-connect";
 import { getAuthCallbackUrl } from "@/lib/auth/redirects";
@@ -360,6 +361,7 @@ function DashboardContent() {
   const requestId = searchParams.get("request");
   const requestedSection = searchParams.get("section");
   const billingResult = searchParams.get("billing");
+  const billingTransactionId = searchParams.get("txn");
   const section: Section = requestedSection === "rankings" || requestedSection === "account" || requestedSection === "subscription" || requestedSection === "support" || requestedSection === "privacy" ? requestedSection : requestId ? "account" : "overview";
   const dark = theme === "dark";
   const compact = true;
@@ -392,22 +394,39 @@ function DashboardContent() {
       return;
     }
 
-    let refreshAttempts = 0;
-    const limit = 12;
-    const interval = window.setInterval(() => {
-      refreshAttempts += 1;
-      refresh();
+    let active = true;
+    let attempts = 0;
+    const maxAttempts = 8;
 
-      if (refreshAttempts >= limit) {
-        window.clearInterval(interval);
-        startTransition(() => {
-          router.replace("/dashboard?section=account");
-        });
+    async function syncCheckout() {
+      while (active && attempts < maxAttempts) {
+        attempts += 1;
+
+        try {
+          if (billingTransactionId) {
+            const result = await confirmCheckout(accessToken, billingTransactionId);
+            refresh();
+
+            if (result.confirmed && result.ready) {
+              return;
+            }
+          } else {
+            refresh();
+          }
+        } catch {
+          refresh();
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 2500));
       }
-    }, 2500);
+    }
 
-    return () => window.clearInterval(interval);
-  }, [accessToken, billingResult, refresh, router]);
+    void syncCheckout();
+
+    return () => {
+      active = false;
+    };
+  }, [accessToken, billingResult, billingTransactionId, refresh]);
 
   useEffect(() => {
     if (billingResult !== "success") {
@@ -421,7 +440,7 @@ function DashboardContent() {
     showToast("Premium access is now active on this account.");
     setShowSubscriptionPricing(false);
     startTransition(() => {
-      router.replace("/dashboard?section=account");
+      router.replace("/dashboard?section=subscription");
     });
   }, [billing?.status, billingResult, router, showToast]);
 
