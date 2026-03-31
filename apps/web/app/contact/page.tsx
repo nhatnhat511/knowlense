@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import { sendContactMessage } from "@/lib/api/contact";
 
 type FormErrors = {
   email?: string;
@@ -50,7 +51,6 @@ export default function ContactPage() {
     event.preventDefault();
     setStatus("");
 
-    // Validate field-by-field so each input can render its own inline feedback.
     const nextErrors = validateForm();
     setErrors(nextErrors);
 
@@ -61,15 +61,19 @@ export default function ContactPage() {
     setIsSubmitting(true);
 
     try {
-      // Placeholder submit flow until a backend endpoint is connected.
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      setStatus("Thanks. Your enquiry has been captured and the team can review it.");
+      await sendContactMessage({
+        name: name.trim(),
+        email: email.trim(),
+        message: message.trim()
+      });
+
+      setStatus("Thanks. Your message has been sent to the Knowlense team.");
       setName("");
       setEmail("");
       setMessage("");
       setErrors({});
-    } catch {
-      setStatus("Something went wrong while sending your enquiry. Please try again.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to send your message right now.");
     } finally {
       setIsSubmitting(false);
     }
@@ -82,100 +86,89 @@ export default function ContactPage() {
         navItems={[
           { href: "/pricing", label: "Pricing" },
           { href: "/about", label: "About" },
-          { href: "/account", label: "Account" }
+          { href: "/faq", label: "FAQ" }
         ]}
       />
 
       <section className="shell marketing-surface">
-        <div className="section-heading">
-          <span className="section-label">Contact</span>
-          <h1 className="page-title">Reach Knowlense support with the details needed to actually resolve the issue.</h1>
-          <p className="page-copy">
-            For product questions, account issues, privacy requests, or billing follow-up, contact the team at
-            support@knowlense.com and include the account email tied to the issue.
-          </p>
-        </div>
+        <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[0.9fr_1.8fr]">
+          <article className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
+            <h1 className="text-3xl font-semibold tracking-[-0.02em] text-slate-950">Contact</h1>
+            <p className="mt-4 text-base leading-7 text-slate-600">Questions about your account, billing, or extension setup? Send a message and we&apos;ll help you move forward.</p>
+            <div className="mt-8 space-y-4 text-sm leading-7 text-slate-700">
+              <p>
+                Email:{" "}
+                <a className="font-medium text-slate-950 underline-offset-4 hover:underline" href="mailto:phamnhat5111997@gmail.com">
+                  phamnhat5111997@gmail.com
+                </a>
+              </p>
+              <p>We usually respond within 24 hours.</p>
+              <p>Use this form for product questions, account access issues, billing follow-up, or extension connection support.</p>
+            </div>
+            <a
+              className="mt-8 inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-50"
+              href="mailto:phamnhat5111997@gmail.com?subject=Knowlense%20Website%20Contact"
+            >
+              Email Support
+            </a>
+          </article>
 
-        <div className="contact-grid">
-          <article className="contact-card">
-            <h2>Get in touch</h2>
-            <p className="page-copy">
-              Share your enquiry with enough context and we can route it faster to the right part of the product or support flow.
-            </p>
-
-            <form className="mt-2 space-y-5" onSubmit={handleSubmit}>
+          <article className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
+            <form className="space-y-5" onSubmit={handleSubmit}>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700" htmlFor="contact-name">
-                  Your name
+                <label className="text-sm font-medium text-slate-800" htmlFor="contact-name">
+                  Name
                 </label>
                 <input
                   id="contact-name"
-                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-slate-950 transition-all outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                  className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-slate-950 outline-none transition-all focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="Jane Doe"
                   type="text"
                   value={name}
                 />
-                {errors.name ? <p className="text-sm text-red-500">{errors.name}</p> : null}
+                {errors.name ? <p className="text-sm text-red-600">{errors.name}</p> : null}
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700" htmlFor="contact-email">
+                <label className="text-sm font-medium text-slate-800" htmlFor="contact-email">
                   Email
                 </label>
                 <input
                   id="contact-email"
-                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-slate-950 transition-all outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                  className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-slate-950 outline-none transition-all focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder="you@example.com"
                   type="email"
                   value={email}
                 />
-                {errors.email ? <p className="text-sm text-red-500">{errors.email}</p> : null}
+                {errors.email ? <p className="text-sm text-red-600">{errors.email}</p> : null}
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700" htmlFor="contact-message">
-                  Enquiry
+                <label className="text-sm font-medium text-slate-800" htmlFor="contact-message">
+                  Message
                 </label>
                 <textarea
                   id="contact-message"
-                  className="min-h-36 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 transition-all outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                  className="min-h-44 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition-all focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
                   onChange={(event) => setMessage(event.target.value)}
-                  placeholder="Tell us what happened, where it happened, and what outcome you need."
+                  placeholder="Tell us how we can help..."
                   value={message}
                 />
-                {errors.message ? <p className="text-sm text-red-500">{errors.message}</p> : null}
+                {errors.message ? <p className="text-sm text-red-600">{errors.message}</p> : null}
               </div>
 
-              {status ? <p className="text-sm text-slate-600">{status}</p> : null}
+              {status ? (
+                <p className={`text-sm ${status.startsWith("Thanks") ? "text-emerald-700" : "text-red-600"}`}>{status}</p>
+              ) : null}
 
               <button
-                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
                 disabled={isSubmitting}
                 type="submit"
               >
-                {isSubmitting ? <LoadingSpinner /> : "Gửi"}
+                {isSubmitting ? <LoadingSpinner /> : "Send Message"}
               </button>
             </form>
-          </article>
-
-          <article className="contact-card">
-            <h2>What to include</h2>
-            <ul className="contact-list">
-              <li>
-                <strong>Account email</strong>
-                <span>The email used on the website helps us trace authentication, billing, and extension records.</span>
-              </li>
-              <li>
-                <strong>Relevant flow</strong>
-                <span>Tell us whether the issue happened during sign in, verify email, connect extension, checkout, or a dashboard action.</span>
-              </li>
-              <li>
-                <strong>Useful context</strong>
-                <span>Include screenshots, timestamps, and the page you were on so the report is actionable.</span>
-              </li>
-            </ul>
           </article>
         </div>
       </section>

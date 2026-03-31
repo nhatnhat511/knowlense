@@ -17,6 +17,8 @@ import { analyzeProductSeoAudit, analyzeProductSeoHealth, type ProductSeoAuditSn
 type Bindings = {
   CORS_ORIGIN?: string;
   DB: D1Database;
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
   PADDLE_ENVIRONMENT?: "sandbox" | "production";
   PADDLE_API_KEY?: string;
   PADDLE_CLIENT_SIDE_TOKEN?: string;
@@ -185,6 +187,15 @@ function jsonHeaders() {
   return {
     "Content-Type": "application/json"
   };
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function readPaddleEnvironment(env: Bindings) {
@@ -649,6 +660,72 @@ app.get("/v1/public/config", (c) =>
     paddleClientSideTokenConfigured: Boolean(readPaddleClientSideToken(c.env))
   })
 );
+
+app.post("/v1/contact", async (c) => {
+  try {
+    const body = await c.req.json().catch(() => null);
+    const name = typeof body?.name === "string" ? body.name.trim() : "";
+    const email = typeof body?.email === "string" ? body.email.trim() : "";
+    const message = typeof body?.message === "string" ? body.message.trim() : "";
+
+    if (!name) {
+      return c.json({ error: "Please enter your name." }, 400);
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return c.json({ error: "Please enter a valid email address." }, 400);
+    }
+
+    if (message.length < 20) {
+      return c.json({ error: "Please share at least 20 characters so we have enough context." }, 400);
+    }
+
+    if (!c.env.RESEND_API_KEY || !c.env.RESEND_FROM_EMAIL) {
+      return c.json({ error: "Contact email is not configured yet." }, 503);
+    }
+
+    const escapedName = escapeHtml(name);
+    const escapedEmail = escapeHtml(email);
+    const escapedMessage = escapeHtml(message).replace(/\r?\n/g, "<br />");
+    const textMessage = `Knowlense Website Contact\n\nName: ${name}\nEmail: ${email}\n\nMessage:\n${message}`;
+
+    const resendResponse = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${c.env.RESEND_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from: c.env.RESEND_FROM_EMAIL,
+        to: ["phamnhat5111997@gmail.com"],
+        reply_to: email,
+        subject: `[Knowlense Website] New contact message from ${name}`,
+        text: textMessage,
+        html: `
+          <div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.6; color: #0f172a;">
+            <p style="margin: 0 0 16px;"><strong>Source:</strong> Knowlense website contact form</p>
+            <p style="margin: 0 0 8px;"><strong>Name:</strong> ${escapedName}</p>
+            <p style="margin: 0 0 20px;"><strong>Email:</strong> ${escapedEmail}</p>
+            <div style="padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc;">
+              ${escapedMessage}
+            </div>
+          </div>
+        `
+      })
+    });
+
+    if (!resendResponse.ok) {
+      const resendPayload = (await resendResponse.json().catch(() => null)) as { message?: string } | null;
+      const fallbackText = resendPayload ? null : await resendResponse.text().catch(() => "");
+      return c.json({ error: resendPayload?.message ?? fallbackText ?? "Unable to send your message right now." }, 502);
+    }
+
+    return c.json({ ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to send your message right now.";
+    return c.json({ error: message }, 500);
+  }
+});
 
 app.post("/v1/auth/sign-in", async (c) => {
   try {
