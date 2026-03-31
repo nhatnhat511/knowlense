@@ -2464,104 +2464,113 @@ app.post("/v1/dashboard/trial/start", async (c) => {
 });
 
 app.post("/v1/billing/checkout", async (c) => {
-  const authResult = await authenticateRequest(c);
-  if (authResult) {
-    return c.json({ error: authResult.error }, authResult.status);
-  }
+  try {
+    const authResult = await authenticateRequest(c);
+    if (authResult) {
+      return c.json({ error: authResult.error }, authResult.status);
+    }
 
-  const body = await c.req.json().catch(() => null);
-  const interval = body?.interval as "monthly" | "yearly" | undefined;
-  const user = c.get("user");
+    const body = await c.req.json().catch(() => null);
+    const interval = body?.interval as "monthly" | "yearly" | undefined;
+    const user = c.get("user");
 
-  if (!interval || !["monthly", "yearly"].includes(interval)) {
-    return c.json({ error: "Invalid billing interval." }, 400);
-  }
+    if (!interval || !["monthly", "yearly"].includes(interval)) {
+      return c.json({ error: "Invalid billing interval." }, 400);
+    }
 
-  const priceId = interval === "monthly" ? c.env.PADDLE_PRICE_ID_MONTHLY : c.env.PADDLE_PRICE_ID_YEARLY;
-  const apiKey = c.env.PADDLE_API_KEY;
-  const checkoutOrigin =
-    c.env.CORS_ORIGIN && c.env.CORS_ORIGIN !== "*"
-      ? c.env.CORS_ORIGIN.replace(/\/$/, "")
-      : "https://knowlense.com";
-  const checkoutOverrideUrl = `${checkoutOrigin}/pay`;
+    const priceId = interval === "monthly" ? c.env.PADDLE_PRICE_ID_MONTHLY : c.env.PADDLE_PRICE_ID_YEARLY;
+    const apiKey = c.env.PADDLE_API_KEY;
+    const checkoutOrigin =
+      c.env.CORS_ORIGIN && c.env.CORS_ORIGIN !== "*"
+        ? c.env.CORS_ORIGIN.replace(/\/$/, "")
+        : "https://knowlense.com";
+    const checkoutOverrideUrl = `${checkoutOrigin}/pay`;
 
-  if (!priceId || !apiKey) {
-    return c.json({ error: "Paddle checkout is not configured." }, 500);
-  }
+    if (!priceId || !apiKey) {
+      return c.json({ error: "Paddle checkout is not configured." }, 500);
+    }
 
-  const baseUrl = paddleBaseUrl(readPaddleEnvironment(c.env));
+    const baseUrl = paddleBaseUrl(readPaddleEnvironment(c.env));
 
-  const response = await fetch(`${baseUrl}/transactions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      ...jsonHeaders()
-    },
-    body: JSON.stringify({
-      items: [{ price_id: priceId, quantity: 1 }],
-      collection_mode: "automatic",
-      enable_checkout: true,
-      checkout: {
-        url: checkoutOverrideUrl
+    const response = await fetch(`${baseUrl}/transactions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        ...jsonHeaders()
       },
-      currency_code: "USD",
-      custom_data: {
-        app: "Knowlense",
-        plan: interval,
-        user_id: user.id,
-        user_email: user.email
-      }
-    })
-  });
+      body: JSON.stringify({
+        items: [{ price_id: priceId, quantity: 1 }],
+        collection_mode: "automatic",
+        enable_checkout: true,
+        checkout: {
+          url: checkoutOverrideUrl
+        },
+        currency_code: "USD",
+        custom_data: {
+          app: "Knowlense",
+          plan: interval,
+          user_id: user.id,
+          user_email: user.email
+        }
+      })
+    });
 
-  const payload = (await response.json().catch(() => null)) as
-    | {
-        data?: {
-          checkout?: {
-            url?: string;
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          data?: {
+            checkout?: {
+              url?: string;
+            };
           };
-        };
-        errors?: Array<{
-          code?: string;
-          detail?: string;
-          message?: string;
-        }>;
-        error?: {
-          detail?: string;
-          message?: string;
-        };
-      }
-    | null;
-  const checkoutUrl = payload?.data?.checkout?.url;
-  const paddleError =
-    payload?.errors?.[0]?.detail
-    ?? payload?.errors?.[0]?.message
-    ?? payload?.error?.detail
-    ?? payload?.error?.message
-    ?? null;
+          errors?: Array<{
+            code?: string;
+            detail?: string;
+            message?: string;
+          }>;
+          error?: {
+            detail?: string;
+            message?: string;
+          };
+        }
+      | null;
+    const checkoutUrl = payload?.data?.checkout?.url;
+    const paddleError =
+      payload?.errors?.[0]?.detail
+      ?? payload?.errors?.[0]?.message
+      ?? payload?.error?.detail
+      ?? payload?.error?.message
+      ?? null;
 
-  if (!response.ok || !checkoutUrl) {
-    const normalizedError =
-      paddleError === "Cannot create a transaction or open a checkout as no default payment link has been set for this account. Set in the Paddle dashboard, then try again."
-        ? "Paddle sandbox checkout is not ready yet. Set a default payment link in your Paddle dashboard and try again."
-        : paddleError ?? "Unable to create Paddle checkout.";
+    if (!response.ok || !checkoutUrl) {
+      const normalizedError =
+        paddleError === "Cannot create a transaction or open a checkout as no default payment link has been set for this account. Set in the Paddle dashboard, then try again."
+          ? "Paddle sandbox checkout is not ready yet. Set a default payment link in your Paddle dashboard and try again."
+          : paddleError ?? "Unable to create Paddle checkout.";
+
+      return c.json(
+        {
+          error: normalizedError
+        },
+        502
+      );
+    }
 
     return c.json(
       {
-        error: normalizedError
+        checkoutUrl,
+        interval,
+        environment: readPaddleEnvironment(c.env)
       },
-      502
+      200
+    );
+  } catch (error) {
+    return c.json(
+      {
+        error: error instanceof Error ? error.message : "Unable to create Paddle checkout."
+      },
+      500
     );
   }
-
-  return c.json(
-    {
-      checkoutUrl,
-      interval,
-      environment: readPaddleEnvironment(c.env)
-    },
-    200
-  );
 });
 
 app.post("/v1/billing/confirm", async (c) => {

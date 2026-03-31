@@ -83,7 +83,7 @@ function PaddlePaymentLinkContent() {
           throw new Error("Paddle.js did not load correctly.");
         }
 
-        const successUrl = `${window.location.origin}/dashboard?section=subscription&billing=success`;
+        const successUrl = `${window.location.origin}/dashboard?section=subscription&billing=success&txn=${encodeURIComponent(currentTransactionId!)}`;
 
         window.Paddle.Environment.set(config.paddleEnvironment);
         window.Paddle.Initialize({
@@ -95,7 +95,7 @@ function PaddlePaymentLinkContent() {
 
             if (event.name === "checkout.completed") {
               const completedTransactionId = event.data?.transaction_id ?? currentTransactionId ?? "";
-              window.location.replace(`${successUrl}&txn=${encodeURIComponent(completedTransactionId)}`);
+              window.location.replace(`${window.location.origin}/dashboard?section=subscription&billing=success&txn=${encodeURIComponent(completedTransactionId)}`);
             }
           }
         });
