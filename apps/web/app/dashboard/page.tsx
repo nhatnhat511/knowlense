@@ -1156,7 +1156,7 @@ function DashboardContent() {
               Back
             </button>
           </div>
-          <PricingSection embedded dark={dark} hideCompare />
+          <PricingSection embedded dark={dark} />
         </div>
       );
     }

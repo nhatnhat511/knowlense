@@ -269,7 +269,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
   return (
     <section className={cn("space-y-8", embedded ? "" : "py-2")}>
       <div className="mx-auto max-w-3xl text-center">
-        <h2 className={cn(embedded ? "text-[1.8rem] sm:text-[2rem]" : "text-[2rem] sm:text-[2.3rem]", "font-semibold tracking-[-0.06em]", dark ? "text-white" : "text-black")}>
+        <h2 className={cn(embedded ? "text-[1.55rem] sm:text-[1.75rem]" : "text-[2rem] sm:text-[2.3rem]", "font-semibold tracking-[-0.06em]", dark ? "text-white" : "text-black")}>
           Simple pricing for a focused TPT SEO workflow.
         </h2>
         <p className={cn("mx-auto mt-3 max-w-2xl text-[15px] leading-7", dark ? "text-white/60" : "text-neutral-600")}>
