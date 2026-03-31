@@ -109,39 +109,6 @@ function getSignInMethodMeta(method: "email" | "google" | "github" | "unknown") 
   }
 }
 
-function ChromeBrandIcon({ size = 16 }: { size?: number }) {
-  return (
-    <svg aria-hidden="true" height={size} viewBox="0 0 64 64" width={size}>
-      <circle cx="32" cy="32" fill="#ffffff" r="30" />
-      <path d="M32 32 18.3 8.2A28 28 0 0 1 56 19.1H32Z" fill="#ea4335" />
-      <path d="M32 32h24a28 28 0 0 1-42.5 24.1L25.4 35.5Z" fill="#34a853" />
-      <path d="M32 32 13.5 56.1A28 28 0 0 1 18.3 8.2L30.2 28.8Z" fill="#fbbc05" />
-      <circle cx="32" cy="32" fill="#4285f4" r="11.5" />
-      <circle cx="32" cy="32" fill="#ffffff" r="5.3" />
-    </svg>
-  );
-}
-
-function EdgeBrandIcon({ size = 16 }: { size?: number }) {
-  return (
-    <svg aria-hidden="true" height={size} viewBox="0 0 64 64" width={size}>
-      <defs>
-        <linearGradient id="edge-green" x1="10%" x2="85%" y1="18%" y2="88%">
-          <stop offset="0%" stopColor="#0db9d7" />
-          <stop offset="55%" stopColor="#0f9cf0" />
-          <stop offset="100%" stopColor="#0a7bdc" />
-        </linearGradient>
-        <linearGradient id="edge-blue" x1="18%" x2="82%" y1="20%" y2="90%">
-          <stop offset="0%" stopColor="#36c1a5" />
-          <stop offset="100%" stopColor="#0c59cf" />
-        </linearGradient>
-      </defs>
-      <path d="M53.6 45.5c-2.6 10.4-12 18.1-23.2 18.1C16.5 63.6 5.4 52.5 5.4 38.8c0-11.9 8.3-21.8 19.5-24.5a21.7 21.7 0 0 1 26.4 20.3c-4.5-4.5-11.3-6.9-18.9-5.6-8.2 1.4-14.8 7.6-16.4 15.8-.3 1.3-.4 2.7-.3 4 2.8-8.6 14.9-12.5 23.1-7.2 3.4 2.2 7.7 3.3 14.8 3.9Z" fill="url(#edge-green)" />
-      <path d="M58.6 37.1c0 14.8-11.7 26.5-28.2 26.5-8.8 0-16.7-3.5-22.1-9.1 3.6 2.6 8.2 4 13.2 4 12.2 0 22.1-8.4 22.1-18.8 0-8.9-7.4-16.2-17-16.2-8 0-14.8 4.9-16.8 11.8.8-13.1 11.6-23.5 24.8-23.5 13.2 0 24 10.6 24 25.3Z" fill="url(#edge-blue)" />
-    </svg>
-  );
-}
-
 function Skeleton({ className }: { className: string }) {
   return <div className={cn("animate-pulse rounded-xl bg-gray-200/80", className)} />;
 }
@@ -1243,7 +1210,11 @@ function DashboardContent() {
                   rel="noreferrer"
                   target="_blank"
                 >
-                  <ChromeBrandIcon size={16} />
+                  <img
+                    alt="Chrome"
+                    className="h-4 w-4"
+                    src="/browser-logos/chrome.svg"
+                  />
                   <span>Add to Chrome</span>
                 </a>
                 <a
@@ -1255,7 +1226,11 @@ function DashboardContent() {
                   rel="noreferrer"
                   target="_blank"
                 >
-                  <EdgeBrandIcon size={16} />
+                  <img
+                    alt="Edge"
+                    className="h-4 w-4"
+                    src="/browser-logos/edge.svg"
+                  />
                   <span>Add to Edge</span>
                 </a>
                 <ThemeButton active={theme === "light"} dark={dark} label="Light mode" onClick={() => setTheme("light")}><Sun size={17} /></ThemeButton>
