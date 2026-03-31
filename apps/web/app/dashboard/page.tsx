@@ -7,13 +7,13 @@ import { Bell, CreditCard, Globe2, KeyRound, LayoutGrid, LifeBuoy, Moon, PlugZap
 import { FaBrave, FaChrome, FaEdge, FaFirefoxBrowser, FaSafari } from "react-icons/fa6";
 import { SiGithub, SiGoogle } from "react-icons/si";
 import { BrandLockup } from "@/components/brand/brand";
+import { PricingSection } from "@/components/site/pricing-section";
 import { useSessionStore, useToast } from "@/components/providers/app-providers";
 import { useAuthGuard } from "@/hooks/use-auth";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useExtensionStatus } from "@/hooks/use-extension-status";
 import { signOutFromApi } from "@/lib/api/auth";
-import { createCheckout } from "@/lib/api/billing";
-import { fetchRankTrackingDashboard, startDashboardTrial, type RankTrackingDashboard } from "@/lib/api/dashboard";
+import { fetchRankTrackingDashboard, type RankTrackingDashboard } from "@/lib/api/dashboard";
 import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice, revokeOtherExtensionDevices } from "@/lib/api/extension-connect";
 import { getAuthCallbackUrl } from "@/lib/auth/redirects";
 import { fetchApiProfile } from "@/lib/api/profile";
@@ -26,7 +26,7 @@ const SECTION_META: Record<Section, { title: string; description: string }> = {
   overview: { title: "Dashboard", description: "A tighter overview of your account, subscription state, extension access, and latest workspace signals." },
   rankings: { title: "Keyword Rankings", description: "Track keyword movement over time for the exact product + keyword pairs started from the extension." },
   account: { title: "Account", description: "Manage your website identity, connected browsers, and account shortcuts without leaving the dashboard." },
-  subscription: { title: "Subscription", description: "Review free, trial, and premium states, start a trial, and upgrade to Premium from this workspace." },
+  subscription: { title: "Subscription", description: "Review your current plan and upgrade to Premium from inside the workspace." },
   support: { title: "Support", description: "Troubleshooting guidance and support escalation live directly in the dashboard." },
   privacy: { title: "Privacy", description: "The key privacy and data-handling commitments are embedded directly into the app workspace." }
 };
@@ -324,8 +324,6 @@ function DashboardContent() {
   const extensionStatus = useExtensionStatus(accessToken, Boolean(accessToken));
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [theme, setTheme] = useState<ThemeMode>("light");
-  const [checkoutLoading, setCheckoutLoading] = useState<"" | "monthly" | "yearly">("");
-  const [trialLoading, setTrialLoading] = useState(false);
   const [connectBusy, setConnectBusy] = useState(false);
   const [rankRange, setRankRange] = useState<"7d" | "30d" | "90d" | "all">("30d");
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
@@ -499,34 +497,6 @@ function DashboardContent() {
     const supabase = getSupabaseBrowserClient();
     await supabase?.auth.signOut();
     router.push("/auth/sign-in");
-  }
-
-  async function handleUpgrade(interval: "monthly" | "yearly") {
-    if (!accessToken) return;
-    setCheckoutLoading(interval);
-    try {
-      const result = await createCheckout(accessToken, interval);
-      window.location.assign(result.checkoutUrl);
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Unable to start Paddle checkout.");
-    } finally {
-      setCheckoutLoading("");
-    }
-  }
-
-  async function handleTrial() {
-    if (!accessToken) return;
-    setTrialLoading(true);
-    try {
-      const result = await startDashboardTrial(accessToken);
-      showToast(`Trial started. ${result.trialDaysRemaining} days remaining.`);
-      refresh();
-      setSection("subscription");
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Unable to start your trial.");
-    } finally {
-      setTrialLoading(false);
-    }
   }
 
   async function handleConnect() {
@@ -884,7 +854,7 @@ function DashboardContent() {
             value={billing?.readiness ?? "..."}
             delta={billing?.delta ?? "--"}
             icon={<CreditCard size={18} />}
-            action={billing?.status !== "active" ? <button className={cn("inline-flex h-9 items-center rounded-full px-4 text-xs font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} onClick={() => setSection("subscription")} type="button">{billing?.trialEligible ? "Start trial" : "Upgrade"}</button> : null}
+            action={billing?.status !== "active" ? <button className={cn("inline-flex h-9 items-center rounded-full px-4 text-xs font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} onClick={() => setSection("subscription")} type="button">Upgrade to Premium</button> : null}
           />
           <Metric
             compact={compact}
@@ -1171,28 +1141,14 @@ function DashboardContent() {
 
   function subscriptionView() {
     return (
-      <div className={cn("mt-5 grid gap-3.5", compact ? "xl:grid-cols-[1.15fr_0.85fr]" : "xl:grid-cols-[1.1fr_0.9fr] 2xl:gap-4")}>
-        <Card compact={compact} dark={dark} title="Current subscription state" description="Free, trial, and Premium are surfaced directly by the workspace.">
+      <div className="mt-5 space-y-4">
+        <Card compact={compact} dark={dark} title="Subscription" description={billing?.status === "active" ? "Premium is active for this account. Review plans and billing options here." : "Choose a Premium billing cycle without leaving your workspace."}>
           <div className="grid gap-3 md:grid-cols-2">
-            <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Current plan</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{planLabel}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{billing?.status === "trial" ? `Your trial is active with ${billing.trialDaysRemaining} days remaining.` : billing?.status === "active" ? "Premium is active for this account." : "Your account is on the free plan. Start a 7-day trial with no card required or upgrade directly to Premium."}</p></div>
-            <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Keyword usage</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{metrics ? `${metrics.keywordRuns.used}/${metrics.keywordRuns.limit}` : "..."}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{quotaAtLimit ? "You have reached the current usage limit. Upgrade to continue." : `${metrics?.keywordRuns.remaining ?? 0} runs are still available on this account.`}</p></div>
-          </div>
-          <div className={cn(compact ? "mt-3 flex flex-wrap gap-2.5" : "mt-4 flex flex-wrap gap-3")}>
-            {billing?.status !== "active" && billing?.trialEligible ? <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} disabled={trialLoading} onClick={() => void handleTrial()} type="button">{trialLoading ? "Starting trial..." : "Start 7-day trial"}</button> : null}
-            {billing?.status !== "active" ? <button className="inline-flex h-11 items-center rounded-full bg-[#7c68ff] px-4 text-sm font-semibold text-white transition hover:bg-[#6b57f5]" disabled={checkoutLoading !== ""} onClick={() => void handleUpgrade("monthly")} type="button">{checkoutLoading === "monthly" ? "Preparing..." : "Upgrade to Premium"}</button> : null}
-            {billing?.status !== "active" ? <button className={cn("inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")} disabled={checkoutLoading !== ""} onClick={() => void handleUpgrade("yearly")} type="button">{checkoutLoading === "yearly" ? "Preparing..." : "Choose yearly"}</button> : null}
+            <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Current plan</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{planLabel}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{billing?.status === "active" ? "Premium access is already active on this account." : "Your account is currently on the free plan."}</p></div>
+            <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Keyword usage</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{metrics ? `${metrics.keywordRuns.used}/${metrics.keywordRuns.limit}` : "..."}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{quotaAtLimit ? "You have reached the current free usage limit." : `${metrics?.keywordRuns.remaining ?? 0} runs are still available on this account.`}</p></div>
           </div>
         </Card>
-        <Card compact={compact} dark={dark} title="Plan logic" description="The dashboard keeps subscription states legible and actionable.">
-          <div className="space-y-3 text-sm leading-6">
-            {[
-              "Free: website access, extension connection, and initial workspace validation.",
-              "Trial: 7 days, no card required, started once from inside the dashboard.",
-              "Premium: checkout is created by knowlense-api through Paddle.",
-              "At limit: keyword analysis should direct the user to Premium rather than fail silently."
-            ].map((item) => <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>{item}</div>)}
-          </div>
-        </Card>
+        <PricingSection embedded dark={dark} />
       </div>
     );
   }
