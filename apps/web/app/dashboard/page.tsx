@@ -355,6 +355,7 @@ function DashboardContent() {
   }>>([]);
   const [linkedAccountsLoading, setLinkedAccountsLoading] = useState(false);
   const [linkedAccountAction, setLinkedAccountAction] = useState("");
+  const [showSubscriptionPricing, setShowSubscriptionPricing] = useState(false);
 
   const requestId = searchParams.get("request");
   const requestedSection = searchParams.get("section");
@@ -1147,8 +1148,9 @@ function DashboardContent() {
             <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Current plan</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{planLabel}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{billing?.status === "active" ? "Premium access is already active on this account." : "Your account is currently on the free plan."}</p></div>
             <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Keyword usage</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{metrics ? `${metrics.keywordRuns.used}/${metrics.keywordRuns.limit}` : "..."}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{quotaAtLimit ? "You have reached the current free usage limit." : `${metrics?.keywordRuns.remaining ?? 0} runs are still available on this account.`}</p></div>
           </div>
+          {billing?.status !== "active" ? <div className="mt-4"><button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} onClick={() => setShowSubscriptionPricing((value) => !value)} type="button">{showSubscriptionPricing ? "Hide pricing" : "Upgrade to Premium"}</button></div> : null}
         </Card>
-        <PricingSection embedded dark={dark} />
+        {showSubscriptionPricing ? <PricingSection embedded dark={dark} hideCompare /> : null}
       </div>
     );
   }

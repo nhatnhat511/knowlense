@@ -11,6 +11,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 type PricingSectionProps = {
   embedded?: boolean;
   dark?: boolean;
+  hideCompare?: boolean;
 };
 
 type PlanCard = {
@@ -35,8 +36,7 @@ const planCards: PlanCard[] = [
     features: [
       "Keyword SEO audit for 1 keyword at a time",
       "Full Search Indexing checks",
-      "SEO Health access with 10 runs in 24 hours",
-      "Website account and extension connection"
+      "SEO Health access with 10 runs in 24 hours"
     ]
   },
   {
@@ -78,12 +78,6 @@ const compareRows = [
     yearly: "Up to 3 keywords"
   },
   {
-    feature: "Track this keyword",
-    free: "Unavailable",
-    monthly: "Included",
-    yearly: "Included"
-  },
-  {
     feature: "SEO Health",
     free: "10 runs in 24 hours",
     monthly: "Unlimited",
@@ -96,8 +90,14 @@ const compareRows = [
     yearly: "Included"
   },
   {
+    feature: "Track this keyword",
+    free: "—",
+    monthly: "Included",
+    yearly: "Included"
+  },
+  {
     feature: "Keyword rankings dashboard",
-    free: "Unavailable",
+    free: "—",
     monthly: "Included",
     yearly: "Included"
   }
@@ -107,7 +107,7 @@ function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
-export function PricingSection({ embedded = false, dark = false }: PricingSectionProps) {
+export function PricingSection({ embedded = false, dark = false, hideCompare = false }: PricingSectionProps) {
   const router = useRouter();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [accessToken, setAccessToken] = useState("");
@@ -320,7 +320,7 @@ export function PricingSection({ embedded = false, dark = false }: PricingSectio
         ))}
       </div>
 
-      <div className={cn("rounded-[28px] border p-5 sm:p-6", dark ? "border-white/10 bg-[#111318]" : "border-[#ebe3d6] bg-white")}>
+      {hideCompare ? null : <div className={cn("rounded-[28px] border p-5 sm:p-6", dark ? "border-white/10 bg-[#111318]" : "border-[#ebe3d6] bg-white")}>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className={cn("text-xs font-semibold uppercase tracking-[0.18em]", dark ? "text-white/40" : "text-[#8b7f70]")}>Compare plans</div>
@@ -344,14 +344,14 @@ export function PricingSection({ embedded = false, dark = false }: PricingSectio
               )}
               key={row.feature}
             >
-              <div className={cn("px-4 py-3 font-medium", dark ? "text-white" : "text-gray-900")}>{row.feature}</div>
+              <div className={cn("flex items-center gap-2 px-4 py-3 font-medium", dark ? "text-white" : "text-gray-900")}><CheckCircle2 className={cn("h-4 w-4 shrink-0", dark ? "text-emerald-300" : "text-emerald-600")} />{row.feature}</div>
               <div className="px-4 py-3">{row.free}</div>
               <div className="px-4 py-3">{row.monthly}</div>
               <div className="px-4 py-3">{row.yearly}</div>
             </div>
           ))}
         </div>
-      </div>
+      </div>}
     </section>
   );
 }
