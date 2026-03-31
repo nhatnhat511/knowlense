@@ -359,6 +359,7 @@ function DashboardContent() {
 
   const requestId = searchParams.get("request");
   const requestedSection = searchParams.get("section");
+  const billingResult = searchParams.get("billing");
   const section: Section = requestedSection === "rankings" || requestedSection === "account" || requestedSection === "subscription" || requestedSection === "support" || requestedSection === "privacy" ? requestedSection : requestId ? "account" : "overview";
   const dark = theme === "dark";
   const compact = true;
@@ -385,6 +386,44 @@ function DashboardContent() {
   useEffect(() => {
     window.localStorage.setItem("knowlense-dashboard-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (billingResult !== "success" || !accessToken) {
+      return;
+    }
+
+    let refreshAttempts = 0;
+    const limit = 12;
+    const interval = window.setInterval(() => {
+      refreshAttempts += 1;
+      refresh();
+
+      if (refreshAttempts >= limit) {
+        window.clearInterval(interval);
+        startTransition(() => {
+          router.replace("/dashboard?section=account");
+        });
+      }
+    }, 2500);
+
+    return () => window.clearInterval(interval);
+  }, [accessToken, billingResult, refresh, router]);
+
+  useEffect(() => {
+    if (billingResult !== "success") {
+      return;
+    }
+
+    if (billing?.status !== "active") {
+      return;
+    }
+
+    showToast("Premium access is now active on this account.");
+    setShowSubscriptionPricing(false);
+    startTransition(() => {
+      router.replace("/dashboard?section=account");
+    });
+  }, [billing?.status, billingResult, router, showToast]);
 
   useEffect(() => {
     if (!accessToken) {

@@ -32,6 +32,17 @@ type Bindings = {
   SUPABASE_SERVICE_ROLE_KEY: string;
 };
 
+type PaddleBillingInterval = "monthly" | "yearly";
+
+type PaddleWebhookEvent = {
+  event_id?: string;
+  notification_id?: string;
+  id?: string;
+  event_type?: string;
+  occurred_at?: string;
+  data?: Record<string, unknown> | null;
+};
+
 type Variables = {
   user: {
     email: string | null;
@@ -208,6 +219,118 @@ function readPaddleClientSideToken(env: Bindings) {
 
 function readPaddleEndpointSecretKey(env: Bindings) {
   return env.PADDLE_ENDPOINT_SECRET_KEY ?? env.PADDLE_WEBHOOK_SECRET ?? null;
+}
+
+function paddleBaseUrl(environment: Bindings["PADDLE_ENVIRONMENT"]) {
+  return environment === "production" ? "https://api.paddle.com" : "https://sandbox-api.paddle.com";
+}
+
+function parsePaddleSignature(header: string | undefined) {
+  if (!header) {
+    return null;
+  }
+
+  const entries = header.split(";").map((segment) => segment.trim()).filter(Boolean);
+  const timestamp = entries.find((entry) => entry.startsWith("ts="))?.slice(3) ?? "";
+  const signatures = entries.filter((entry) => entry.startsWith("h1=")).map((entry) => entry.slice(3));
+
+  if (!timestamp || signatures.length === 0) {
+    return null;
+  }
+
+  return {
+    timestamp,
+    signatures
+  };
+}
+
+function hexEncode(input: ArrayBuffer) {
+  return [...new Uint8Array(input)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+async function verifyPaddleWebhookSignature(secretKey: string, signatureHeader: string | undefined, rawBody: string) {
+  const parsed = parsePaddleSignature(signatureHeader);
+
+  if (!parsed) {
+    return false;
+  }
+
+  const timestampSeconds = Number(parsed.timestamp);
+  if (!Number.isFinite(timestampSeconds)) {
+    return false;
+  }
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (Math.abs(nowSeconds - timestampSeconds) > 300) {
+    return false;
+  }
+
+  const signedPayload = `${parsed.timestamp}:${rawBody}`;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secretKey), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(signedPayload));
+  const digest = hexEncode(signature);
+
+  return parsed.signatures.some((candidate) => candidate.toLowerCase() === digest.toLowerCase());
+}
+
+function getPaddleEventId(payload: PaddleWebhookEvent) {
+  return payload.event_id ?? payload.notification_id ?? payload.id ?? null;
+}
+
+function getPaddleString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function getPaddleCustomData(data: Record<string, unknown> | null | undefined) {
+  const customData = data?.custom_data;
+  return customData && typeof customData === "object" && !Array.isArray(customData) ? (customData as Record<string, unknown>) : null;
+}
+
+function readPaddlePriceId(data: Record<string, unknown> | null | undefined) {
+  const items = Array.isArray(data?.items) ? data.items : [];
+
+  for (const item of items) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const row = item as Record<string, unknown>;
+    const directPriceId = getPaddleString(row.price_id);
+    if (directPriceId) {
+      return directPriceId;
+    }
+
+    const price = row.price;
+    if (price && typeof price === "object") {
+      const nestedPriceId = getPaddleString((price as Record<string, unknown>).id);
+      if (nestedPriceId) {
+        return nestedPriceId;
+      }
+    }
+  }
+
+  return null;
+}
+
+function resolveBillingIntervalFromPaddle(data: Record<string, unknown> | null | undefined, env: Bindings) {
+  const customPlan = getPaddleString(getPaddleCustomData(data)?.plan)?.toLowerCase();
+  if (customPlan === "monthly" || customPlan === "yearly") {
+    return customPlan as PaddleBillingInterval;
+  }
+
+  const priceId = readPaddlePriceId(data);
+  if (priceId && env.PADDLE_PRICE_ID_YEARLY && priceId === env.PADDLE_PRICE_ID_YEARLY) {
+    return "yearly";
+  }
+  if (priceId && env.PADDLE_PRICE_ID_MONTHLY && priceId === env.PADDLE_PRICE_ID_MONTHLY) {
+    return "monthly";
+  }
+
+  return null;
+}
+
+function getPremiumPlanName(interval: PaddleBillingInterval | null) {
+  return interval === "yearly" ? "Premium Yearly" : "Premium Monthly";
 }
 
 async function hashToken(token: string) {
@@ -421,9 +544,174 @@ async function ensureBillingTables(db: D1Database) {
       plan_name TEXT NOT NULL DEFAULT 'Free',
       trial_started_at TEXT,
       trial_ends_at TEXT,
+      billing_interval TEXT,
+      paddle_customer_id TEXT,
+      paddle_subscription_id TEXT,
+      paddle_transaction_id TEXT,
+      paddle_price_id TEXT,
+      last_event_at TEXT,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS paddle_webhook_events (
+      event_id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      processed_at TEXT NOT NULL
+    );
   `);
+
+  await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN billing_interval TEXT`).run().catch(() => null);
+  await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN paddle_customer_id TEXT`).run().catch(() => null);
+  await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN paddle_subscription_id TEXT`).run().catch(() => null);
+  await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN paddle_transaction_id TEXT`).run().catch(() => null);
+  await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN paddle_price_id TEXT`).run().catch(() => null);
+  await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN last_event_at TEXT`).run().catch(() => null);
+}
+
+async function upsertPremiumBillingProfile(
+  db: D1Database,
+  userId: string,
+  options: {
+    interval: PaddleBillingInterval | null;
+    customerId?: string | null;
+    subscriptionId?: string | null;
+    transactionId?: string | null;
+    priceId?: string | null;
+    occurredAt?: string | null;
+  }
+) {
+  await ensureBillingTables(db);
+
+  await db.prepare(
+    `INSERT INTO billing_profiles (
+       user_id,
+       status,
+       plan_name,
+       trial_started_at,
+       trial_ends_at,
+       billing_interval,
+       paddle_customer_id,
+       paddle_subscription_id,
+       paddle_transaction_id,
+       paddle_price_id,
+       last_event_at,
+       updated_at
+     )
+     VALUES (?1, 'active', ?2, NULL, NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+     ON CONFLICT(user_id) DO UPDATE SET
+       status = 'active',
+       plan_name = excluded.plan_name,
+       trial_started_at = NULL,
+       trial_ends_at = NULL,
+       billing_interval = excluded.billing_interval,
+       paddle_customer_id = COALESCE(excluded.paddle_customer_id, billing_profiles.paddle_customer_id),
+       paddle_subscription_id = COALESCE(excluded.paddle_subscription_id, billing_profiles.paddle_subscription_id),
+       paddle_transaction_id = COALESCE(excluded.paddle_transaction_id, billing_profiles.paddle_transaction_id),
+       paddle_price_id = COALESCE(excluded.paddle_price_id, billing_profiles.paddle_price_id),
+       last_event_at = COALESCE(excluded.last_event_at, billing_profiles.last_event_at),
+       updated_at = excluded.updated_at`
+  )
+    .bind(
+      userId,
+      getPremiumPlanName(options.interval),
+      options.interval,
+      options.customerId ?? null,
+      options.subscriptionId ?? null,
+      options.transactionId ?? null,
+      options.priceId ?? null,
+      options.occurredAt ?? null,
+      new Date().toISOString()
+    )
+    .run();
+}
+
+async function markBillingProfileFree(
+  db: D1Database,
+  userId: string,
+  options: {
+    customerId?: string | null;
+    subscriptionId?: string | null;
+    occurredAt?: string | null;
+  }
+) {
+  await ensureBillingTables(db);
+
+  await db.prepare(
+    `INSERT INTO billing_profiles (
+       user_id,
+       status,
+       plan_name,
+       trial_started_at,
+       trial_ends_at,
+       billing_interval,
+       paddle_customer_id,
+       paddle_subscription_id,
+       paddle_transaction_id,
+       paddle_price_id,
+       last_event_at,
+       updated_at
+     )
+     VALUES (?1, 'free', 'Free', NULL, NULL, NULL, ?2, ?3, NULL, NULL, ?4, ?5)
+     ON CONFLICT(user_id) DO UPDATE SET
+       status = 'free',
+       plan_name = 'Free',
+       trial_started_at = NULL,
+       trial_ends_at = NULL,
+       billing_interval = NULL,
+       paddle_customer_id = COALESCE(excluded.paddle_customer_id, billing_profiles.paddle_customer_id),
+       paddle_subscription_id = COALESCE(excluded.paddle_subscription_id, billing_profiles.paddle_subscription_id),
+       paddle_transaction_id = NULL,
+       paddle_price_id = NULL,
+       last_event_at = COALESCE(excluded.last_event_at, billing_profiles.last_event_at),
+       updated_at = excluded.updated_at`
+  )
+    .bind(userId, options.customerId ?? null, options.subscriptionId ?? null, options.occurredAt ?? null, new Date().toISOString())
+    .run();
+}
+
+async function resolveBillingUserId(
+  db: D1Database,
+  options: {
+    userId?: string | null;
+    subscriptionId?: string | null;
+    customerId?: string | null;
+  }
+) {
+  if (options.userId) {
+    return options.userId;
+  }
+
+  if (options.subscriptionId) {
+    const row = await db.prepare(
+      `SELECT user_id
+       FROM billing_profiles
+       WHERE paddle_subscription_id = ?1
+       LIMIT 1`
+    )
+      .bind(options.subscriptionId)
+      .first<{ user_id: string }>();
+
+    if (row?.user_id) {
+      return row.user_id;
+    }
+  }
+
+  if (options.customerId) {
+    const row = await db.prepare(
+      `SELECT user_id
+       FROM billing_profiles
+       WHERE paddle_customer_id = ?1
+       LIMIT 1`
+    )
+      .bind(options.customerId)
+      .first<{ user_id: string }>();
+
+    if (row?.user_id) {
+      return row.user_id;
+    }
+  }
+
+  return null;
 }
 
 async function readBillingProfile(db: D1Database, userId: string) {
@@ -2201,9 +2489,9 @@ app.post("/v1/billing/checkout", async (c) => {
     return c.json({ error: "Paddle checkout is not configured." }, 500);
   }
 
-  const paddleBaseUrl = readPaddleEnvironment(c.env) === "production" ? "https://api.paddle.com" : "https://sandbox-api.paddle.com";
+  const baseUrl = paddleBaseUrl(readPaddleEnvironment(c.env));
 
-  const response = await fetch(`${paddleBaseUrl}/transactions`, {
+  const response = await fetch(`${baseUrl}/transactions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -2277,13 +2565,104 @@ app.post("/v1/billing/checkout", async (c) => {
 });
 
 app.post("/v1/webhooks/paddle", async (c) => {
+  const secretKey = readPaddleEndpointSecretKey(c.env);
   const signature = c.req.header("Paddle-Signature");
+  const rawBody = await c.req.text();
 
-  return c.json({
-    message: "Paddle webhook placeholder received.",
-    hasSignature: Boolean(signature),
-    secretConfigured: Boolean(readPaddleEndpointSecretKey(c.env))
+  if (!secretKey) {
+    return c.json({ error: "Paddle webhook signing secret is not configured." }, 500);
+  }
+
+  const signatureValid = await verifyPaddleWebhookSignature(secretKey, signature, rawBody);
+  if (!signatureValid) {
+    return c.json({ error: "Invalid Paddle webhook signature." }, 401);
+  }
+
+  const payload = JSON.parse(rawBody) as PaddleWebhookEvent;
+  const eventType = payload.event_type ?? "unknown";
+  const eventId = getPaddleEventId(payload);
+
+  await ensureBillingTables(c.env.DB);
+
+  if (eventId) {
+    const existing = await c.env.DB.prepare(
+      `SELECT event_id
+       FROM paddle_webhook_events
+       WHERE event_id = ?1
+       LIMIT 1`
+    )
+      .bind(eventId)
+      .first<{ event_id: string }>();
+
+    if (existing) {
+      return c.json({ ok: true, duplicate: true });
+    }
+  }
+
+  const data = payload.data ?? null;
+  const customData = getPaddleCustomData(data);
+  const interval = resolveBillingIntervalFromPaddle(data, c.env);
+  const priceId = readPaddlePriceId(data);
+  const customerId = getPaddleString(data?.customer_id);
+  const resourceId = getPaddleString(data?.id);
+  const subscriptionId = eventType.startsWith("subscription.") ? resourceId : getPaddleString(data?.subscription_id);
+  const transactionId = eventType.startsWith("transaction.") ? resourceId : null;
+  const occurredAt = getPaddleString(payload.occurred_at) ?? new Date().toISOString();
+  const subscriptionStatus = getPaddleString(data?.status)?.toLowerCase();
+  const userId = await resolveBillingUserId(c.env.DB, {
+    userId: getPaddleString(customData?.user_id),
+    subscriptionId,
+    customerId
   });
+
+  if (eventType === "transaction.completed" && userId) {
+    await upsertPremiumBillingProfile(c.env.DB, userId, {
+      interval,
+      customerId,
+      subscriptionId: getPaddleString(data?.subscription_id),
+      transactionId,
+      priceId,
+      occurredAt
+    });
+  }
+
+  if ((eventType === "subscription.created" || eventType === "subscription.updated") && userId) {
+    if (subscriptionStatus === "active" || subscriptionStatus === "trialing") {
+      await upsertPremiumBillingProfile(c.env.DB, userId, {
+        interval,
+        customerId,
+        subscriptionId,
+        transactionId: null,
+        priceId,
+        occurredAt
+      });
+    } else if (subscriptionStatus === "canceled" || subscriptionStatus === "paused" || subscriptionStatus === "past_due") {
+      await markBillingProfileFree(c.env.DB, userId, {
+        customerId,
+        subscriptionId,
+        occurredAt
+      });
+    }
+  }
+
+  if (eventType === "subscription.canceled" && userId) {
+    await markBillingProfileFree(c.env.DB, userId, {
+      customerId,
+      subscriptionId,
+      occurredAt
+    });
+  }
+
+  if (eventId) {
+    await c.env.DB.prepare(
+      `INSERT INTO paddle_webhook_events (event_id, event_type, processed_at)
+       VALUES (?1, ?2, ?3)`
+    )
+      .bind(eventId, eventType, new Date().toISOString())
+      .run();
+  }
+
+  return c.json({ ok: true });
 });
 
 export default {

@@ -13,7 +13,17 @@ declare global {
       };
       Initialize: (options: {
         token: string;
+        eventCallback?: (event: { name?: string }) => void;
       }) => void;
+      Checkout: {
+        open: (options: {
+          transactionId: string;
+          settings?: {
+            displayMode?: "overlay";
+            successUrl?: string;
+          };
+        }) => void;
+      };
     };
   }
 }
@@ -36,7 +46,9 @@ function PaddlePaymentLinkContent() {
   );
 
   useEffect(() => {
-    if (!transactionId) {
+    const currentTransactionId = transactionId;
+
+    if (!currentTransactionId) {
       setError("This checkout link is missing the Paddle transaction reference.");
       setStatus("");
       return;
@@ -71,12 +83,30 @@ function PaddlePaymentLinkContent() {
           throw new Error("Paddle.js did not load correctly.");
         }
 
+        const successUrl = `${window.location.origin}/dashboard?section=account&billing=success`;
+
         window.Paddle.Environment.set(config.paddleEnvironment);
         window.Paddle.Initialize({
-          token: clientToken
+          token: clientToken,
+          eventCallback(event) {
+            if (!active) {
+              return;
+            }
+
+            if (event.name === "checkout.completed") {
+              window.location.replace(successUrl);
+            }
+          }
         });
 
         setStatus("Opening checkout...");
+        window.Paddle.Checkout.open({
+          transactionId: currentTransactionId!,
+          settings: {
+            displayMode: "overlay",
+            successUrl
+          }
+        });
       } catch (nextError) {
         if (!active) {
           return;
