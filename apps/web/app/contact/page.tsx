@@ -74,7 +74,7 @@ export default function ContactPage() {
         message: message.trim()
       });
 
-      setStatus("Thanks. Your message has been sent to the Knowlense team.");
+      setStatus("Your message has been sent successfully. Our team will review it and reply as soon as possible.");
       setName("");
       setEmail("");
       setMessage("");

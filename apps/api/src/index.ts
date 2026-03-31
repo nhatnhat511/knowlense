@@ -697,7 +697,7 @@ app.post("/v1/contact", async (c) => {
       },
       body: JSON.stringify({
         from: c.env.RESEND_FROM_EMAIL,
-        to: ["phamnhat5111997@gmail.com"],
+        to: ["support@knowlense.com"],
         reply_to: email,
         subject: `[Knowlense Website] New contact message from ${name}`,
         text: textMessage,

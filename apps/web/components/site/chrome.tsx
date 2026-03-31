@@ -18,7 +18,7 @@ type SiteHeaderProps = {
   primaryCta?: NavItem;
 };
 
-export const DEFAULT_PUBLIC_HEADER_TAG = "TPT seller intelligence";
+export const DEFAULT_PUBLIC_HEADER_TAG = "Boost Your TPT Rankings & Sales";
 export const DEFAULT_PUBLIC_NAV_ITEMS: NavItem[] = [
   { href: "/pricing", label: "Pricing" },
   { href: "/about", label: "About" },
@@ -325,7 +325,7 @@ export function SiteFooter() {
       <div className="shell footer-shell">
         <div className="footer-grid">
           <div>
-            <BrandLockup className="mb-4" compact dark subtitle="TPT seller intelligence" />
+            <BrandLockup className="mb-4" compact dark subtitle="Boost Your TPT Rankings & Sales" />
             <p className="footer-copy">
               Knowlense helps Teachers Pay Teachers sellers move from scattered research to a structured workflow across the
               website and Chrome extension.
