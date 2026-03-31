@@ -99,8 +99,8 @@ function PaddlePaymentLinkContent() {
       <Script onLoad={() => setScriptLoaded(true)} src="https://cdn.paddle.com/paddle/v2/paddle.js" strategy="afterInteractive" />
       <section className="shell flex min-h-screen items-center justify-center py-16">
         <div className="w-full max-w-xl rounded-[30px] border border-[#ebe3d6] bg-white p-8 text-center shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b7f70]">Secure checkout</div>
-          <h1 className="mt-3 text-[2rem] font-semibold tracking-[-0.06em] text-black">Preparing your upgrade</h1>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b7f70]">Secure Checkout</div>
+          <h1 className="mt-3 text-[1.85rem] font-semibold tracking-[-0.02em] text-black">Preparing Your Upgrade</h1>
           <p className="mx-auto mt-3 max-w-lg text-[15px] leading-7 text-neutral-600">
             You're being redirected to a secure checkout to complete your Premium plan.
           </p>
@@ -119,8 +119,8 @@ export default function PaddlePaymentLinkPage() {
         <main className="app-shell min-h-screen">
           <section className="shell flex min-h-screen items-center justify-center py-16">
             <div className="w-full max-w-xl rounded-[30px] border border-[#ebe3d6] bg-white p-8 text-center shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b7f70]">Secure checkout</div>
-              <h1 className="mt-3 text-[2rem] font-semibold tracking-[-0.06em] text-black">Preparing your upgrade</h1>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b7f70]">Secure Checkout</div>
+              <h1 className="mt-3 text-[1.85rem] font-semibold tracking-[-0.02em] text-black">Preparing Your Upgrade</h1>
               <div className="mt-6 rounded-2xl border border-[#ebe3d6] bg-[#faf6ee] px-4 py-3 text-sm text-neutral-700">Preparing secure checkout...</div>
             </div>
           </section>
