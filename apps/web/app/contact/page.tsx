@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { HiOutlineMail } from "react-icons/hi";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { sendContactMessage } from "@/lib/api/contact";
 
@@ -97,9 +98,12 @@ export default function ContactPage() {
             <p className="mt-4 text-base leading-7 text-slate-600">Questions about your account, billing, or extension setup? Send a message and we&apos;ll help you move forward.</p>
             <div className="mt-8 space-y-4 text-sm leading-7 text-slate-700">
               <p>
-                Email:{" "}
-                <a className="font-medium text-slate-950 underline-offset-4 hover:underline" href="mailto:phamnhat5111997@gmail.com">
-                  phamnhat5111997@gmail.com
+                <span className="inline-flex items-center gap-2">
+                  <HiOutlineMail aria-hidden="true" className="h-4 w-4 text-slate-500" />
+                  <span>Email:</span>
+                </span>{" "}
+                <a className="font-medium text-slate-950 underline-offset-4 hover:underline" href="mailto:support@knowlense.com">
+                  support@knowlense.com
                 </a>
               </p>
               <p>We usually respond within 24 hours.</p>
@@ -107,7 +111,7 @@ export default function ContactPage() {
             </div>
             <a
               className="mt-8 inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-50"
-              href="mailto:phamnhat5111997@gmail.com?subject=Knowlense%20Website%20Contact"
+              href="mailto:support@knowlense.com?subject=Knowlense%20Website%20Contact"
             >
               Email Support
             </a>
