@@ -52,6 +52,7 @@ export async function confirmCheckout(accessToken: string, transactionId: string
       status: "free" | "active" | "expired" | "setup" | "trial";
       planName: string;
       billingInterval: "monthly" | "yearly" | null;
+      startedAt: string | null;
       nextBilledAt: string | null;
       trialEligible: boolean;
       trialActive: boolean;
@@ -82,6 +83,7 @@ export async function upgradeSubscriptionToYearly(accessToken: string) {
       status: "free" | "active" | "expired" | "setup" | "trial";
       planName: string;
       billingInterval: "monthly" | "yearly" | null;
+      startedAt: string | null;
       nextBilledAt: string | null;
       trialEligible: boolean;
       trialActive: boolean;

@@ -433,6 +433,10 @@ function readPaddleNextBilledAt(data: Record<string, unknown> | null | undefined
   return getPaddleString(data?.next_billed_at);
 }
 
+function readPaddleStartedAt(data: Record<string, unknown> | null | undefined) {
+  return getPaddleString(data?.started_at);
+}
+
 function getPremiumPlanName(interval: PaddleBillingInterval | null) {
   return interval === "yearly" ? "Premium Yearly" : "Premium Monthly";
 }
@@ -656,6 +660,7 @@ function getDefaultDashboardMetrics(billingConfigured: boolean) {
         status: "free" as const,
         planName: "Free",
         billingInterval: null,
+        startedAt: null,
         nextBilledAt: null,
         trialEligible: true,
         trialActive: false,
@@ -693,6 +698,7 @@ async function ensureBillingTables(db: D1Database) {
       paddle_subscription_id TEXT,
       paddle_transaction_id TEXT,
       paddle_price_id TEXT,
+      started_at TEXT,
       next_billed_at TEXT,
       last_event_at TEXT,
       updated_at TEXT NOT NULL
@@ -712,6 +718,7 @@ async function ensureBillingTables(db: D1Database) {
   await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN paddle_subscription_id TEXT`).run().catch(() => null);
   await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN paddle_transaction_id TEXT`).run().catch(() => null);
   await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN paddle_price_id TEXT`).run().catch(() => null);
+  await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN started_at TEXT`).run().catch(() => null);
   await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN next_billed_at TEXT`).run().catch(() => null);
   await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN last_event_at TEXT`).run().catch(() => null);
 }
@@ -725,6 +732,7 @@ async function upsertPremiumBillingProfile(
     subscriptionId?: string | null;
     transactionId?: string | null;
     priceId?: string | null;
+    startedAt?: string | null;
     nextBilledAt?: string | null;
     occurredAt?: string | null;
   }
@@ -743,11 +751,12 @@ async function upsertPremiumBillingProfile(
        paddle_subscription_id,
        paddle_transaction_id,
        paddle_price_id,
+       started_at,
        next_billed_at,
        last_event_at,
        updated_at
      )
-     VALUES (?1, 'active', ?2, NULL, NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+     VALUES (?1, 'active', ?2, NULL, NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
      ON CONFLICT(user_id) DO UPDATE SET
        status = 'active',
        plan_name = excluded.plan_name,
@@ -758,6 +767,7 @@ async function upsertPremiumBillingProfile(
        paddle_subscription_id = COALESCE(excluded.paddle_subscription_id, billing_profiles.paddle_subscription_id),
        paddle_transaction_id = COALESCE(excluded.paddle_transaction_id, billing_profiles.paddle_transaction_id),
        paddle_price_id = COALESCE(excluded.paddle_price_id, billing_profiles.paddle_price_id),
+       started_at = COALESCE(excluded.started_at, billing_profiles.started_at),
        next_billed_at = COALESCE(excluded.next_billed_at, billing_profiles.next_billed_at),
        last_event_at = COALESCE(excluded.last_event_at, billing_profiles.last_event_at),
        updated_at = excluded.updated_at`
@@ -770,6 +780,7 @@ async function upsertPremiumBillingProfile(
       options.subscriptionId ?? null,
       options.transactionId ?? null,
       options.priceId ?? null,
+      options.startedAt ?? null,
       options.nextBilledAt ?? null,
       options.occurredAt ?? null,
       new Date().toISOString()
@@ -800,11 +811,12 @@ async function markBillingProfileFree(
        paddle_subscription_id,
        paddle_transaction_id,
        paddle_price_id,
+       started_at,
        next_billed_at,
        last_event_at,
        updated_at
      )
-     VALUES (?1, 'free', 'Free', NULL, NULL, NULL, ?2, ?3, NULL, NULL, NULL, ?4, ?5)
+     VALUES (?1, 'free', 'Free', NULL, NULL, NULL, ?2, ?3, NULL, NULL, NULL, NULL, ?4, ?5)
      ON CONFLICT(user_id) DO UPDATE SET
        status = 'free',
        plan_name = 'Free',
@@ -815,6 +827,7 @@ async function markBillingProfileFree(
        paddle_subscription_id = COALESCE(excluded.paddle_subscription_id, billing_profiles.paddle_subscription_id),
        paddle_transaction_id = NULL,
        paddle_price_id = NULL,
+       started_at = NULL,
        next_billed_at = NULL,
        last_event_at = COALESCE(excluded.last_event_at, billing_profiles.last_event_at),
        updated_at = excluded.updated_at`
@@ -872,7 +885,7 @@ async function readBillingProfile(db: D1Database, userId: string) {
   await ensureBillingTables(db);
 
   const row = await db.prepare(
-    `SELECT user_id, status, plan_name, trial_started_at, trial_ends_at, billing_interval, next_billed_at, updated_at
+    `SELECT user_id, status, plan_name, trial_started_at, trial_ends_at, billing_interval, started_at, next_billed_at, updated_at
      FROM billing_profiles
      WHERE user_id = ?1
      LIMIT 1`
@@ -883,6 +896,7 @@ async function readBillingProfile(db: D1Database, userId: string) {
     trial_started_at: string | null;
     trial_ends_at: string | null;
     billing_interval: string | null;
+    started_at: string | null;
     next_billed_at: string | null;
     updated_at: string;
   }>();
@@ -892,6 +906,7 @@ async function readBillingProfile(db: D1Database, userId: string) {
       status: "free" as const,
       planName: "Free",
       billingInterval: null,
+      startedAt: null,
       nextBilledAt: null,
       trialEligible: true,
       trialActive: false,
@@ -913,6 +928,7 @@ async function readBillingProfile(db: D1Database, userId: string) {
         status: "expired" as const,
         planName: "Free",
         billingInterval: null,
+        startedAt: null,
         nextBilledAt: null,
         trialEligible: false,
         trialActive: false,
@@ -924,6 +940,7 @@ async function readBillingProfile(db: D1Database, userId: string) {
       status: "trial" as const,
       planName: "Premium Trial",
       billingInterval: null,
+      startedAt: row.trial_started_at,
       nextBilledAt: row.trial_ends_at,
       trialEligible: false,
       trialActive: true,
@@ -936,6 +953,7 @@ async function readBillingProfile(db: D1Database, userId: string) {
       status: "active" as const,
       planName: row.plan_name || "Premium",
       billingInterval: row.billing_interval === "monthly" || row.billing_interval === "yearly" ? row.billing_interval : null,
+      startedAt: row.started_at,
       nextBilledAt: row.next_billed_at,
       trialEligible: false,
       trialActive: false,
@@ -947,6 +965,7 @@ async function readBillingProfile(db: D1Database, userId: string) {
     status: row.status === "expired" ? ("expired" as const) : ("free" as const),
     planName: row.plan_name || "Free",
     billingInterval: null,
+    startedAt: null,
     nextBilledAt: null,
     trialEligible: row.trial_started_at == null,
     trialActive: false,
@@ -2297,6 +2316,7 @@ app.get("/v1/dashboard/metrics", async (c) => {
           status: billingState.status,
           planName: billingState.planName,
           billingInterval: billingState.billingInterval,
+          startedAt: billingState.startedAt,
           nextBilledAt: billingState.nextBilledAt,
           trialEligible: billingState.trialEligible,
           trialActive: billingState.trialActive,
@@ -2867,6 +2887,7 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
     const subscription = payload.data;
     const customerId = getPaddleString(subscription.customer_id);
     const priceId = readPaddlePriceId(subscription);
+    const startedAt = readPaddleStartedAt(subscription);
     const nextBilledAt = readPaddleNextBilledAt(subscription);
 
     await upsertPremiumBillingProfile(c.env.DB, user.id, {
@@ -2875,6 +2896,7 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
       subscriptionId,
       transactionId: null,
       priceId,
+      startedAt,
       nextBilledAt,
       occurredAt: new Date().toISOString()
     });
@@ -2959,6 +2981,7 @@ app.post("/v1/billing/confirm", async (c) => {
     const customerId = getPaddleString(transaction.customer_id);
     const priceId = readPaddlePriceId(transaction);
     const subscription = subscriptionId ? await fetchPaddleSubscription(c.env, subscriptionId).catch(() => null) : null;
+    const startedAt = readPaddleStartedAt(subscription ?? transaction);
     const nextBilledAt = readPaddleNextBilledAt(subscription ?? transaction);
 
     if (ownerUserId && ownerUserId !== user.id) {
@@ -2979,6 +3002,7 @@ app.post("/v1/billing/confirm", async (c) => {
       subscriptionId,
       transactionId,
       priceId,
+      startedAt,
       nextBilledAt,
       occurredAt: new Date().toISOString()
     });
@@ -3039,6 +3063,7 @@ app.post("/v1/webhooks/paddle", async (c) => {
   const customData = getPaddleCustomData(data);
   const interval = resolveBillingIntervalFromPaddle(data, c.env);
   const priceId = readPaddlePriceId(data);
+  const startedAt = readPaddleStartedAt(data);
   const nextBilledAt = readPaddleNextBilledAt(data);
   const customerId = getPaddleString(data?.customer_id);
   const resourceId = getPaddleString(data?.id);
@@ -3059,6 +3084,7 @@ app.post("/v1/webhooks/paddle", async (c) => {
       subscriptionId: getPaddleString(data?.subscription_id),
       transactionId,
       priceId,
+      startedAt,
       nextBilledAt,
       occurredAt
     });
@@ -3072,6 +3098,7 @@ app.post("/v1/webhooks/paddle", async (c) => {
         subscriptionId,
         transactionId: null,
         priceId,
+        startedAt,
         nextBilledAt,
         occurredAt
       });
