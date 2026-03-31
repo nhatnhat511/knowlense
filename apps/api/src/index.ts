@@ -19,9 +19,11 @@ type Bindings = {
   DB: D1Database;
   PADDLE_ENVIRONMENT?: "sandbox" | "production";
   PADDLE_API_KEY?: string;
+  PADDLE_CLIENT_SIDE_TOKEN?: string;
   PADDLE_CLIENT_TOKEN?: string;
   PADDLE_PRICE_ID_MONTHLY?: string;
   PADDLE_PRICE_ID_YEARLY?: string;
+  PADDLE_ENDPOINT_SECRET_KEY?: string;
   PADDLE_WEBHOOK_SECRET?: string;
   SUPABASE_ANON_KEY?: string;
   SUPABASE_URL: string;
@@ -183,6 +185,18 @@ function jsonHeaders() {
   return {
     "Content-Type": "application/json"
   };
+}
+
+function readPaddleEnvironment(env: Bindings) {
+  return env.PADDLE_ENVIRONMENT ?? "sandbox";
+}
+
+function readPaddleClientSideToken(env: Bindings) {
+  return env.PADDLE_CLIENT_SIDE_TOKEN ?? env.PADDLE_CLIENT_TOKEN ?? null;
+}
+
+function readPaddleEndpointSecretKey(env: Bindings) {
+  return env.PADDLE_ENDPOINT_SECRET_KEY ?? env.PADDLE_WEBHOOK_SECRET ?? null;
 }
 
 async function hashToken(token: string) {
@@ -631,8 +645,8 @@ app.get("/health", (c) =>
 app.get("/v1/public/config", (c) =>
   c.json({
     app: "Knowlense",
-    paddleEnvironment: c.env.PADDLE_ENVIRONMENT ?? "sandbox",
-    paddleClientTokenConfigured: Boolean(c.env.PADDLE_CLIENT_TOKEN)
+    paddleEnvironment: readPaddleEnvironment(c.env),
+    paddleClientSideTokenConfigured: Boolean(readPaddleClientSideToken(c.env))
   })
 );
 
@@ -2094,7 +2108,7 @@ app.post("/v1/billing/checkout", async (c) => {
     return c.json({ error: "Paddle checkout is not configured." }, 500);
   }
 
-  const paddleBaseUrl = c.env.PADDLE_ENVIRONMENT === "production" ? "https://api.paddle.com" : "https://sandbox-api.paddle.com";
+  const paddleBaseUrl = readPaddleEnvironment(c.env) === "production" ? "https://api.paddle.com" : "https://sandbox-api.paddle.com";
 
   const response = await fetch(`${paddleBaseUrl}/transactions`, {
     method: "POST",
@@ -2163,7 +2177,7 @@ app.post("/v1/billing/checkout", async (c) => {
     {
       checkoutUrl,
       interval,
-      environment: c.env.PADDLE_ENVIRONMENT ?? "sandbox"
+      environment: readPaddleEnvironment(c.env)
     },
     200
   );
@@ -2175,7 +2189,7 @@ app.post("/v1/webhooks/paddle", async (c) => {
   return c.json({
     message: "Paddle webhook placeholder received.",
     hasSignature: Boolean(signature),
-    secretConfigured: Boolean(c.env.PADDLE_WEBHOOK_SECRET)
+    secretConfigured: Boolean(readPaddleEndpointSecretKey(c.env))
   });
 });
 

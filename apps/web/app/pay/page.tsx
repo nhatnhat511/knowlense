@@ -20,7 +20,7 @@ declare global {
 
 type PublicConfig = {
   paddleEnvironment: "sandbox" | "production";
-  paddleClientTokenConfigured: boolean;
+  paddleClientSideTokenConfigured: boolean;
 };
 
 function PaddlePaymentLinkContent() {
@@ -30,7 +30,10 @@ function PaddlePaymentLinkContent() {
   const [status, setStatus] = useState("Preparing secure checkout...");
   const [error, setError] = useState("");
 
-  const clientToken = useMemo(() => process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN ?? "", []);
+  const clientToken = useMemo(
+    () => process.env.NEXT_PUBLIC_PADDLE_CLIENT_SIDE_TOKEN ?? process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN ?? "",
+    []
+  );
 
   useEffect(() => {
     if (!transactionId) {
@@ -60,8 +63,8 @@ function PaddlePaymentLinkContent() {
           throw new Error("Unable to read Paddle environment settings.");
         }
 
-        if (!clientToken || !config.paddleClientTokenConfigured) {
-          throw new Error("Paddle client token is not configured for the Knowlense checkout page.");
+        if (!clientToken || !config.paddleClientSideTokenConfigured) {
+          throw new Error("Paddle client-side token is not configured for the Knowlense checkout page.");
         }
 
         if (!window.Paddle) {
