@@ -19,6 +19,7 @@ type Bindings = {
   DB: D1Database;
   PADDLE_ENVIRONMENT?: "sandbox" | "production";
   PADDLE_API_KEY?: string;
+  PADDLE_CLIENT_TOKEN?: string;
   PADDLE_PRICE_ID_MONTHLY?: string;
   PADDLE_PRICE_ID_YEARLY?: string;
   PADDLE_WEBHOOK_SECRET?: string;
@@ -630,7 +631,8 @@ app.get("/health", (c) =>
 app.get("/v1/public/config", (c) =>
   c.json({
     app: "Knowlense",
-    paddleEnvironment: c.env.PADDLE_ENVIRONMENT ?? "sandbox"
+    paddleEnvironment: c.env.PADDLE_ENVIRONMENT ?? "sandbox",
+    paddleClientTokenConfigured: Boolean(c.env.PADDLE_CLIENT_TOKEN)
   })
 );
 
@@ -2082,6 +2084,11 @@ app.post("/v1/billing/checkout", async (c) => {
 
   const priceId = interval === "monthly" ? c.env.PADDLE_PRICE_ID_MONTHLY : c.env.PADDLE_PRICE_ID_YEARLY;
   const apiKey = c.env.PADDLE_API_KEY;
+  const checkoutOrigin =
+    c.env.CORS_ORIGIN && c.env.CORS_ORIGIN !== "*"
+      ? c.env.CORS_ORIGIN.replace(/\/$/, "")
+      : "https://knowlense.com";
+  const checkoutOverrideUrl = `${checkoutOrigin}/pay`;
 
   if (!priceId || !apiKey) {
     return c.json({ error: "Paddle checkout is not configured." }, 500);
@@ -2100,7 +2107,7 @@ app.post("/v1/billing/checkout", async (c) => {
       collection_mode: "automatic",
       enable_checkout: true,
       checkout: {
-        url: null
+        url: checkoutOverrideUrl
       },
       currency_code: "USD",
       custom_data: {
