@@ -881,6 +881,20 @@ async function resolveBillingUserId(
   return null;
 }
 
+async function readBillingLinkage(db: D1Database, userId: string) {
+  await ensureBillingTables(db);
+
+  return db.prepare(
+    `SELECT paddle_customer_id, paddle_subscription_id
+     FROM billing_profiles
+     WHERE user_id = ?1
+     LIMIT 1`
+  ).bind(userId).first<{
+    paddle_customer_id: string | null;
+    paddle_subscription_id: string | null;
+  }>();
+}
+
 async function readBillingProfile(db: D1Database, userId: string) {
   await ensureBillingTables(db);
 
@@ -971,6 +985,39 @@ async function readBillingProfile(db: D1Database, userId: string) {
     trialActive: false,
     trialDaysRemaining: 0
   };
+}
+
+async function syncActiveBillingProfileFromPaddle(env: Bindings, userId: string, billingState: Awaited<ReturnType<typeof readBillingProfile>>) {
+  if (billingState.status !== "active" || !env.PADDLE_API_KEY) {
+    return billingState;
+  }
+
+  const linkage = await readBillingLinkage(env.DB, userId);
+  const subscriptionId = getPaddleString(linkage?.paddle_subscription_id);
+
+  if (!subscriptionId) {
+    return billingState;
+  }
+
+  const subscription = await fetchPaddleSubscription(env, subscriptionId).catch(() => null);
+  if (!subscription) {
+    return billingState;
+  }
+
+  await upsertPremiumBillingProfile(env.DB, userId, {
+    interval:
+      resolveBillingIntervalFromPaddle(subscription, env)
+      ?? (billingState.billingInterval === "monthly" || billingState.billingInterval === "yearly" ? billingState.billingInterval : null),
+    customerId: getPaddleString(subscription.customer_id) ?? getPaddleString(linkage?.paddle_customer_id),
+    subscriptionId,
+    transactionId: null,
+    priceId: readPaddlePriceId(subscription),
+    startedAt: readPaddleStartedAt(subscription),
+    nextBilledAt: readPaddleNextBilledAt(subscription),
+    occurredAt: new Date().toISOString()
+  });
+
+  return readBillingProfile(env.DB, userId);
 }
 
 async function ensureSeoHealthUsageTable(db: D1Database) {
@@ -2288,7 +2335,7 @@ app.get("/v1/dashboard/metrics", async (c) => {
   const billingConfigured = Boolean(c.env.PADDLE_PRICE_ID_MONTHLY && c.env.PADDLE_PRICE_ID_YEARLY);
 
   try {
-    const [keywordRunCountResult, extensionSessionCountResult, billingState] = await Promise.all([
+    const [keywordRunCountResult, extensionSessionCountResult, rawBillingState] = await Promise.all([
       c.env.DB.prepare(`SELECT COUNT(*) as total FROM keyword_runs WHERE user_id = ?1`).bind(user.id).first<{ total: number | string }>(),
       c.env.DB.prepare(
         `SELECT COUNT(*) as total
@@ -2301,6 +2348,7 @@ app.get("/v1/dashboard/metrics", async (c) => {
         .first<{ total: number | string }>(),
       readBillingProfile(c.env.DB, user.id)
     ]);
+    const billingState = await syncActiveBillingProfileFromPaddle(c.env, user.id, rawBillingState);
 
     const runsUsed = Number(keywordRunCountResult?.total ?? 0);
     const runsLimit = 10;
@@ -2909,6 +2957,79 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
     return c.json(
       {
         error: error instanceof Error ? error.message : "Unable to upgrade this subscription to yearly billing."
+      },
+      500
+    );
+  }
+});
+
+app.post("/v1/billing/manage", async (c) => {
+  c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  c.header("Pragma", "no-cache");
+
+  try {
+    const authResult = await authenticateRequest(c);
+    if (authResult) {
+      return c.json({ error: authResult.error }, authResult.status);
+    }
+
+    const user = c.get("user");
+    const linkage = await readBillingLinkage(c.env.DB, user.id);
+    const customerId = getPaddleString(linkage?.paddle_customer_id);
+    const subscriptionId = getPaddleString(linkage?.paddle_subscription_id);
+
+    if (!customerId || !subscriptionId || !c.env.PADDLE_API_KEY) {
+      return c.json({ error: "Manage subscription is not available for this account yet." }, 400);
+    }
+
+    const response = await fetch(`${paddleBaseUrl(readPaddleEnvironment(c.env))}/customers/${customerId}/portal-sessions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${c.env.PADDLE_API_KEY}`,
+        ...jsonHeaders()
+      },
+      body: JSON.stringify({
+        subscription_ids: [subscriptionId]
+      })
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          data?: {
+            urls?: {
+              general?: { overview?: string };
+              subscriptions?: Array<{ overview?: string }>;
+            };
+          };
+          error?: { detail?: string; message?: string };
+          errors?: Array<{ detail?: string; message?: string }>;
+        }
+      | null;
+
+    const manageUrl =
+      payload?.data?.urls?.subscriptions?.[0]?.overview
+      ?? payload?.data?.urls?.general?.overview
+      ?? null;
+
+    if (!response.ok || !manageUrl) {
+      return c.json(
+        {
+          error:
+            payload?.errors?.[0]?.detail
+            ?? payload?.errors?.[0]?.message
+            ?? payload?.error?.detail
+            ?? payload?.error?.message
+            ?? "Unable to open the Paddle subscription manager."
+        },
+        502
+      );
+    }
+
+    return c.json({ url: manageUrl });
+  } catch (error) {
+    return c.json(
+      {
+        error: error instanceof Error ? error.message : "Unable to open the Paddle subscription manager."
       },
       500
     );

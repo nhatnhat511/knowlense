@@ -91,3 +91,22 @@ export async function upgradeSubscriptionToYearly(accessToken: string) {
     };
   };
 }
+
+export async function fetchManageSubscriptionUrl(accessToken: string) {
+  const response = await fetch(`${getApiBaseUrl()}/v1/billing/manage`, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    }
+  });
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok || !payload?.url) {
+    throw new Error(payload?.error ?? "Unable to open the subscription manager.");
+  }
+
+  return payload.url as string;
+}
