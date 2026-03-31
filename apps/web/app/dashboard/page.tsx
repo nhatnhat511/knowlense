@@ -1144,20 +1144,18 @@ function DashboardContent() {
     if (showSubscriptionPricing) {
       return (
         <div className="mt-5 space-y-4">
-          <Card compact={compact} dark={dark} title="Choose your plan" description="Select the Premium billing cycle that fits your workflow.">
-            <div className="flex flex-wrap gap-3">
-              <button
-                className={cn(
-                  "inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium transition",
-                  dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50"
-                )}
-                onClick={() => setShowSubscriptionPricing(false)}
-                type="button"
-              >
-                Back
-              </button>
-            </div>
-          </Card>
+          <div className="flex">
+            <button
+              className={cn(
+                "inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium transition",
+                dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50"
+              )}
+              onClick={() => setShowSubscriptionPricing(false)}
+              type="button"
+            >
+              Back
+            </button>
+          </div>
           <PricingSection embedded dark={dark} hideCompare />
         </div>
       );

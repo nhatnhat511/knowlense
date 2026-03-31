@@ -114,6 +114,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
   const [billing, setBilling] = useState<DashboardMetrics["billing"] | null>(null);
   const [loadingPlan, setLoadingPlan] = useState<BillingInterval | "">("");
   const [status, setStatus] = useState("");
+
   const activePremiumPlanKey =
     billing?.status === "active"
       ? billing.planName.toLowerCase().includes("year")
@@ -199,7 +200,10 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
 
   function planAction(plan: PlanCard) {
     const isFreeCurrent = plan.key === "free" && billing?.status !== "active";
-    const isPremiumCurrent = plan.key !== "free" && billing?.status === "active" && (activePremiumPlanKey ? plan.key === activePremiumPlanKey : false);
+    const isPremiumCurrent =
+      plan.key !== "free" &&
+      billing?.status === "active" &&
+      (activePremiumPlanKey ? plan.key === activePremiumPlanKey : false);
 
     if (isFreeCurrent) {
       return (
@@ -264,12 +268,11 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
 
   return (
     <section className={cn("space-y-8", embedded ? "" : "py-2")}>
-      <div className={embedded ? "max-w-3xl" : "mx-auto max-w-3xl text-center"}>
-        <div className={cn("text-xs font-semibold uppercase tracking-[0.18em]", dark ? "text-white/45" : "text-neutral-500")}>Pricing</div>
-        <h2 className={cn("mt-2 font-semibold tracking-[-0.06em]", embedded ? "text-[1.8rem] sm:text-[2rem]" : "text-[2rem] sm:text-[2.3rem]", dark ? "text-white" : "text-black")}>
+      <div className="mx-auto max-w-3xl text-center">
+        <h2 className={cn(embedded ? "text-[1.8rem] sm:text-[2rem]" : "text-[2rem] sm:text-[2.3rem]", "font-semibold tracking-[-0.06em]", dark ? "text-white" : "text-black")}>
           Simple pricing for a focused TPT SEO workflow.
         </h2>
-        <p className={cn("mt-3 max-w-2xl text-[15px] leading-7", embedded ? "" : "mx-auto", dark ? "text-white/60" : "text-neutral-600")}>
+        <p className={cn("mx-auto mt-3 max-w-2xl text-[15px] leading-7", dark ? "text-white/60" : "text-neutral-600")}>
           Start with the free workflow, then upgrade when you want keyword tracking, broader audits, and uninterrupted research inside the extension.
         </p>
       </div>
@@ -320,38 +323,43 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
         ))}
       </div>
 
-      {hideCompare ? null : <div className={cn("rounded-[28px] border p-5 sm:p-6", dark ? "border-white/10 bg-[#111318]" : "border-[#ebe3d6] bg-white")}>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className={cn("text-xs font-semibold uppercase tracking-[0.18em]", dark ? "text-white/40" : "text-[#8b7f70]")}>Compare plans</div>
-            <h3 className={cn("mt-2 text-[1.25rem] font-semibold tracking-[-0.05em]", dark ? "text-white" : "text-black")}>See what changes as you upgrade.</h3>
-          </div>
-          <div className={cn("text-sm", dark ? "text-white/50" : "text-neutral-500")}>Free gives access. Premium unlocks tracking and scale.</div>
-        </div>
-        <div className="mt-5 overflow-hidden rounded-[22px] border">
-          <div className={cn("grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] text-sm font-semibold", dark ? "border-white/10 bg-white/5 text-white" : "border-black/8 bg-[#faf6ee] text-gray-900")}>
-            <div className="px-4 py-3">Feature</div>
-            <div className="px-4 py-3">Free</div>
-            <div className="px-4 py-3">Monthly</div>
-            <div className="px-4 py-3">Yearly</div>
-          </div>
-          {compareRows.map((row, index) => (
-            <div
-              className={cn(
-                "grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] border-t text-sm",
-                dark ? "border-white/10 bg-[#111318] text-white/72" : "border-black/8 bg-white text-neutral-700",
-                index % 2 === 1 && (dark ? "bg-white/[0.03]" : "bg-[#fcfaf6]")
-              )}
-              key={row.feature}
-            >
-              <div className={cn("flex items-center gap-2 px-4 py-3 font-medium", dark ? "text-white" : "text-gray-900")}><CheckCircle2 className={cn("h-4 w-4 shrink-0", dark ? "text-emerald-300" : "text-emerald-600")} />{row.feature}</div>
-              <div className="px-4 py-3">{row.free}</div>
-              <div className="px-4 py-3">{row.monthly}</div>
-              <div className="px-4 py-3">{row.yearly}</div>
+      {hideCompare ? null : (
+        <div className={cn("rounded-[28px] border p-5 sm:p-6", dark ? "border-white/10 bg-[#111318]" : "border-[#ebe3d6] bg-white")}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className={cn("text-xs font-semibold uppercase tracking-[0.18em]", dark ? "text-white/40" : "text-[#8b7f70]")}>Compare plans</div>
+              <h3 className={cn("mt-2 text-[1.25rem] font-semibold tracking-[-0.05em]", dark ? "text-white" : "text-black")}>See what changes as you upgrade.</h3>
             </div>
-          ))}
+            <div className={cn("text-sm", dark ? "text-white/50" : "text-neutral-500")}>Free gives access. Premium unlocks tracking and scale.</div>
+          </div>
+          <div className="mt-5 overflow-hidden rounded-[22px] border">
+            <div className={cn("grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] text-sm font-semibold", dark ? "border-white/10 bg-white/5 text-white" : "border-black/8 bg-[#faf6ee] text-gray-900")}>
+              <div className="px-4 py-3">Feature</div>
+              <div className="px-4 py-3">Free</div>
+              <div className="px-4 py-3">Monthly</div>
+              <div className="px-4 py-3">Yearly</div>
+            </div>
+            {compareRows.map((row, index) => (
+              <div
+                className={cn(
+                  "grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] border-t text-sm",
+                  dark ? "border-white/10 bg-[#111318] text-white/72" : "border-black/8 bg-white text-neutral-700",
+                  index % 2 === 1 && (dark ? "bg-white/[0.03]" : "bg-[#fcfaf6]")
+                )}
+                key={row.feature}
+              >
+                <div className={cn("flex items-center gap-2 px-4 py-3 font-medium", dark ? "text-white" : "text-gray-900")}>
+                  <CheckCircle2 className={cn("h-4 w-4 shrink-0", dark ? "text-emerald-300" : "text-emerald-600")} />
+                  {row.feature}
+                </div>
+                <div className="px-4 py-3">{row.free}</div>
+                <div className="px-4 py-3">{row.monthly}</div>
+                <div className="px-4 py-3">{row.yearly}</div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>}
+      )}
     </section>
   );
 }
