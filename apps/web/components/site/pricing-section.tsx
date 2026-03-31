@@ -194,6 +194,10 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
   }, [supabase]);
 
   async function handleCheckout(interval: BillingInterval) {
+    if (loadingPlan) {
+      return;
+    }
+
     if (!accessToken) {
       router.push(embedded ? "/auth/sign-in?next=/dashboard?section=subscription" : "/auth/sign-in?next=/pricing");
       return;

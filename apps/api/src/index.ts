@@ -2537,24 +2537,30 @@ app.post("/v1/billing/checkout", async (c) => {
           };
         }
       | null;
-    const checkoutUrl = payload?.data?.checkout?.url;
-    const paddleError =
-      payload?.errors?.[0]?.detail
-      ?? payload?.errors?.[0]?.message
-      ?? payload?.error?.detail
-      ?? payload?.error?.message
-      ?? null;
+      const checkoutUrl = payload?.data?.checkout?.url;
+      const paddleError =
+        payload?.errors?.[0]?.detail
+        ?? payload?.errors?.[0]?.message
+        ?? payload?.error?.detail
+        ?? payload?.error?.message
+        ?? null;
 
-    if (!response.ok || !checkoutUrl) {
-      const normalizedError =
-        paddleError === "Cannot create a transaction or open a checkout as no default payment link has been set for this account. Set in the Paddle dashboard, then try again."
-          ? "Paddle sandbox checkout is not ready yet. Set a default payment link in your Paddle dashboard and try again."
-          : paddleError ?? "Unable to create Paddle checkout.";
+      if (!response.ok || !checkoutUrl) {
+        const retryAfter = response.headers.get("Retry-After");
+        const retryAfterSeconds = retryAfter ? Number.parseInt(retryAfter, 10) : Number.NaN;
+        const normalizedError =
+          response.status === 429
+            ? Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+              ? `Paddle checkout is temporarily busy. Please wait ${retryAfterSeconds} seconds and try again.`
+              : "Paddle checkout is temporarily busy. Please wait a moment and try again."
+          : paddleError === "Cannot create a transaction or open a checkout as no default payment link has been set for this account. Set in the Paddle dashboard, then try again."
+            ? "Paddle sandbox checkout is not ready yet. Set a default payment link in your Paddle dashboard and try again."
+            : paddleError ?? "Unable to create Paddle checkout.";
 
-      return c.json(
-        {
-          error: normalizedError
-        },
+        return c.json(
+          {
+            error: normalizedError
+          },
         502
       );
     }
@@ -2613,14 +2619,20 @@ app.post("/v1/billing/confirm", async (c) => {
     | null;
 
   if (!response.ok || !payload?.data) {
+    const retryAfter = response.headers.get("Retry-After");
+    const retryAfterSeconds = retryAfter ? Number.parseInt(retryAfter, 10) : Number.NaN;
     return c.json(
       {
         error:
-          payload?.errors?.[0]?.detail
-          ?? payload?.errors?.[0]?.message
-          ?? payload?.error?.detail
-          ?? payload?.error?.message
-          ?? "Unable to confirm the Paddle transaction."
+          response.status === 429
+            ? Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+              ? `Paddle confirmation is temporarily busy. Please wait ${retryAfterSeconds} seconds and try again.`
+              : "Paddle confirmation is temporarily busy. Please wait a moment and try again."
+            : payload?.errors?.[0]?.detail
+              ?? payload?.errors?.[0]?.message
+              ?? payload?.error?.detail
+              ?? payload?.error?.message
+              ?? "Unable to confirm the Paddle transaction."
       },
       502
     );
