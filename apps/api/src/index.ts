@@ -687,7 +687,18 @@ app.post("/v1/contact", async (c) => {
     const escapedName = escapeHtml(name);
     const escapedEmail = escapeHtml(email);
     const escapedMessage = escapeHtml(message).replace(/\r?\n/g, "<br />");
-    const textMessage = `Knowlense Website Contact\n\nName: ${name}\nEmail: ${email}\n\nMessage:\n${message}`;
+    const submittedAt = new Date().toISOString();
+    const textMessage = [
+      "Knowlense Contact Request",
+      "",
+      `Source: Knowlense website`,
+      `Submitted: ${submittedAt}`,
+      `Name: ${name}`,
+      `Email: ${email}`,
+      "",
+      "Message:",
+      message
+    ].join("\n");
 
     const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -699,14 +710,19 @@ app.post("/v1/contact", async (c) => {
         from: c.env.RESEND_FROM_EMAIL,
         to: ["support@knowlense.com"],
         reply_to: email,
-        subject: `[Knowlense Website] New contact message from ${name}`,
+        subject: `Knowlense contact request from ${name}`,
         text: textMessage,
         html: `
           <div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.6; color: #0f172a;">
-            <p style="margin: 0 0 16px;"><strong>Source:</strong> Knowlense website contact form</p>
-            <p style="margin: 0 0 8px;"><strong>Name:</strong> ${escapedName}</p>
-            <p style="margin: 0 0 20px;"><strong>Email:</strong> ${escapedEmail}</p>
-            <div style="padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc;">
+            <div style="padding: 18px; border: 1px solid #e2e8f0; border-radius: 16px; background: #ffffff;">
+              <h2 style="margin: 0 0 16px; font-size: 18px; line-height: 1.4;">Knowlense Contact Request</h2>
+              <p style="margin: 0 0 8px;"><strong>Source:</strong> Knowlense website</p>
+              <p style="margin: 0 0 8px;"><strong>Submitted:</strong> ${escapeHtml(submittedAt)}</p>
+              <p style="margin: 0 0 8px;"><strong>Name:</strong> ${escapedName}</p>
+              <p style="margin: 0 0 18px;"><strong>Email:</strong> ${escapedEmail}</p>
+            </div>
+            <div style="margin-top: 16px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 16px; background: #f8fafc;">
+              <p style="margin: 0 0 8px;"><strong>Message</strong></p>
               ${escapedMessage}
             </div>
           </div>

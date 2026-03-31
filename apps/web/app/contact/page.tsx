@@ -34,6 +34,7 @@ export default function ContactPage() {
   const [message, setMessage] = useState("");
   const [errors, setErrors] = useState<FormErrors>({});
   const [status, setStatus] = useState("");
+  const [statusType, setStatusType] = useState<"success" | "error" | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function validateForm() {
@@ -57,6 +58,7 @@ export default function ContactPage() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("");
+    setStatusType(null);
 
     const nextErrors = validateForm();
     setErrors(nextErrors);
@@ -75,12 +77,14 @@ export default function ContactPage() {
       });
 
       setStatus("Your message has been sent successfully. Our team will review it and reply as soon as possible.");
+      setStatusType("success");
       setName("");
       setEmail("");
       setMessage("");
       setErrors({});
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to send your message right now.");
+      setStatusType("error");
     } finally {
       setIsSubmitting(false);
     }
@@ -158,9 +162,7 @@ export default function ContactPage() {
                 {errors.message ? <p className="text-sm text-red-600">{errors.message}</p> : null}
               </div>
 
-              {status ? (
-                <p className={`text-sm ${status.startsWith("Thanks") ? "text-emerald-700" : "text-red-600"}`}>{status}</p>
-              ) : null}
+              {status ? <p className={`text-sm ${statusType === "success" ? "text-emerald-700" : "text-red-600"}`}>{status}</p> : null}
 
               <button
                 className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
