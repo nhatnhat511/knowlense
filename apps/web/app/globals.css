@@ -1114,6 +1114,55 @@ button {
   gap: 24px;
 }
 
+.legal-intro {
+  display: grid;
+  gap: 10px;
+  max-width: 880px;
+}
+
+.legal-intro .section-label {
+  color: var(--primary);
+}
+
+.legal-meta {
+  color: var(--muted);
+  font-size: 0.96rem;
+}
+
+.legal-document {
+  max-width: 880px;
+  display: grid;
+  gap: 28px;
+}
+
+.legal-section {
+  display: grid;
+  gap: 12px;
+}
+
+.legal-section h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.legal-section p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.legal-section .policy-list {
+  margin-top: 2px;
+}
+
+.legal-section .policy-list li {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 .legal-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

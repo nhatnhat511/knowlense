@@ -15,21 +15,20 @@ export default function PrivacyPage() {
       />
 
       <section className="shell legal-surface">
-        <div className="section-heading">
-          <span className="section-label">Privacy</span>
-          <h1 className="page-title">Knowlense explains what data is collected, why it is collected, and how it is handled.</h1>
+        <div className="legal-intro">
+          <span className="section-label">Privacy Policy</span>
+          <h1 className="page-title">Privacy Policy</h1>
           <p className="page-copy">
-            This Privacy Policy describes how Knowlense collects, uses, stores, and shares information when you use the
-            Knowlense website, dashboard, and browser extension. By using the service, you acknowledge the practices described
-            below.
+            This Privacy Policy explains what Knowlense collects, why it is collected, how it is used, and how it is shared
+            when you use the website, dashboard, browser extension, and paid billing workflows.
           </p>
-          <p className="page-copy">
+          <p className="legal-meta">
             Last updated: <strong>{lastUpdated}</strong>
           </p>
         </div>
 
-        <div className="legal-grid">
-          <article className="legal-card">
+        <article className="legal-document">
+          <section className="legal-section">
             <h2>1. Scope of this policy</h2>
             <p>
               This policy applies to the public website at <strong>knowlense.com</strong>, the logged-in dashboard, browser
@@ -39,9 +38,9 @@ export default function PrivacyPage() {
               It does not govern third-party websites, marketplaces, payment pages, or browser stores that are operated
               independently of Knowlense, even when they are linked from the service.
             </p>
-          </article>
+          </section>
 
-          <article className="legal-card">
+          <section className="legal-section">
             <h2>2. Information we collect</h2>
             <ul className="policy-list">
               <li>
@@ -86,9 +85,9 @@ export default function PrivacyPage() {
                 </span>
               </li>
             </ul>
-          </article>
+          </section>
 
-          <article className="legal-card">
+          <section className="legal-section">
             <h2>3. How information is used</h2>
             <ul className="policy-list">
               <li>
@@ -112,9 +111,9 @@ export default function PrivacyPage() {
                 <span>Understand product reliability, prioritize fixes, and improve workflows based on actual usage patterns.</span>
               </li>
             </ul>
-          </article>
+          </section>
 
-          <article className="legal-card">
+          <section className="legal-section">
             <h2>4. Service providers and infrastructure</h2>
             <ul className="policy-list">
               <li>
@@ -140,9 +139,9 @@ export default function PrivacyPage() {
                 </span>
               </li>
             </ul>
-          </article>
+          </section>
 
-          <article className="legal-card">
+          <section className="legal-section">
             <h2>5. Data sharing</h2>
             <p>Knowlense does not sell personal information.</p>
             <p>Information may be shared only in the following limited circumstances:</p>
@@ -169,9 +168,9 @@ export default function PrivacyPage() {
                 </span>
               </li>
             </ul>
-          </article>
+          </section>
 
-          <article className="legal-card">
+          <section className="legal-section">
             <h2>6. Data retention</h2>
             <p>
               Knowlense keeps information for as long as reasonably necessary to operate the service, maintain subscriptions,
@@ -181,27 +180,27 @@ export default function PrivacyPage() {
               Some records, such as billing references, audit logs, or revoked session records, may be retained after account
               closure when required for security, accounting, fraud prevention, or legal compliance.
             </p>
-          </article>
+          </section>
 
-          <article className="legal-card">
+          <section className="legal-section">
             <h2>7. Security</h2>
             <p>
               Knowlense uses commercially reasonable administrative, technical, and organizational measures to protect account
               and service data. No internet-connected service can guarantee absolute security, and users remain responsible for
               protecting their devices, browser profiles, and account credentials.
             </p>
-          </article>
+          </section>
 
-          <article className="legal-card">
+          <section className="legal-section">
             <h2>8. International processing</h2>
             <p>
               Knowlense and its service providers may process information in more than one country. By using the service, you
               understand that your information may be transferred to and processed in locations where privacy laws may differ
               from those in your jurisdiction.
             </p>
-          </article>
+          </section>
 
-          <article className="legal-card">
+          <section className="legal-section">
             <h2>9. Your choices</h2>
             <ul className="policy-list">
               <li>
@@ -221,31 +220,31 @@ export default function PrivacyPage() {
                 <span>Privacy-related requests may be sent to <strong>support@knowlense.com</strong>.</span>
               </li>
             </ul>
-          </article>
+          </section>
 
-          <article className="legal-card">
+          <section className="legal-section">
             <h2>10. Children’s privacy</h2>
             <p>
               Knowlense is intended for business and professional users. It is not directed to children, and Knowlense does
               not knowingly collect personal information from children.
             </p>
-          </article>
+          </section>
 
-          <article className="legal-card">
+          <section className="legal-section">
             <h2>11. Changes to this policy</h2>
             <p>
               Knowlense may update this Privacy Policy from time to time. When material changes are made, the updated policy
               will be posted on this page with a revised “Last updated” date.
             </p>
-          </article>
+          </section>
 
-          <article className="legal-card">
+          <section className="legal-section">
             <h2>12. Contact</h2>
             <p>
               For privacy questions, data requests, or account concerns, contact <strong>support@knowlense.com</strong>.
             </p>
-          </article>
-        </div>
+          </section>
+        </article>
       </section>
       <SiteFooter />
     </main>
