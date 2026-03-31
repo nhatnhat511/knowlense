@@ -1,49 +1,64 @@
 import Link from "next/link";
-import {
-  PublicSiteHeader,
-  SiteFooter,
-} from "@/components/site/chrome";
+import { PublicSiteHeader, SiteFooter } from "@/components/site/chrome";
 
 const proofPoints = [
   {
-    label: "Website-first auth",
-    value: "Safer account flow",
-    copy: "Users authenticate on the web app first, then approve the extension separately."
+    label: "Built for TPT",
+    value: "Focused on product visibility",
+    copy: "Every workflow is designed around improving how TPT products are found, reviewed, and improved."
   },
   {
-    label: "Worker-owned logic",
-    value: "One central API layer",
-    copy: "Core logic stays in Cloudflare Workers instead of being scattered across surfaces."
+    label: "Free to start",
+    value: "Immediate product audits",
+    copy: "Run core checks before paying, then unlock tracking and broader research when you need more depth."
   },
   {
-    label: "Focused workflow",
-    value: "Built for TPT sellers",
-    copy: "Research, listing review, and next actions stay connected in one product flow."
+    label: "Website + extension",
+    value: "One connected workspace",
+    copy: "Use the extension for fast product checks and the dashboard for account, billing, and keyword history."
   }
 ];
 
-const modules = [
+const featureModules = [
   {
-    meta: "Research",
-    title: "Keyword Finder",
-    copy: "Capture live TPT search pages and turn them into structured keyword opportunities with consistent scoring."
+    meta: "Extension",
+    title: "Keyword SEO",
+    copy: "Check target keywords directly on a TPT product page and see whether the listing supports the terms you want to rank for."
   },
   {
-    meta: "Optimization",
-    title: "Listing Grader",
-    copy: "Review titles, previews, and positioning signals directly alongside the seller workflow."
+    meta: "Extension",
+    title: "SEO Health",
+    copy: "Run a focused listing audit to review the signals that matter most for a stronger, clearer, more searchable product page."
   },
   {
-    meta: "Decision making",
-    title: "Opportunity Board",
-    copy: "Keep promising ideas, adjacent niches, and next actions inside one workspace instead of loose notes."
+    meta: "Extension",
+    title: "Search Indexing",
+    copy: "See whether a product appears across major search engines so you can confirm visibility beyond the marketplace."
+  }
+];
+
+const workflowSteps = [
+  {
+    meta: "Step 1",
+    title: "Open a TPT product",
+    copy: "Launch the extension on any product page and start with a fast audit instead of jumping between tabs and notes."
+  },
+  {
+    meta: "Step 2",
+    title: "Run the right checks",
+    copy: "Review keyword coverage, listing health, and search indexing in one place with guidance that is easy to act on."
+  },
+  {
+    meta: "Step 3",
+    title: "Track what improves",
+    copy: "Move into the dashboard when you want keyword tracking, account management, and a more structured research workflow."
   }
 ];
 
 const checklist = [
-  "Keep seller research in one cleaner workflow",
-  "Connect web auth and extension usage without friction",
-  "Turn marketplace observations into actual next steps"
+  "Audit TPT listings in minutes",
+  "Track ranking progress when you upgrade",
+  "Turn product reviews into clear next steps"
 ];
 
 export default function HomePage() {
@@ -54,25 +69,25 @@ export default function HomePage() {
       <section className="shell hero-home">
         <div className="hero-copy-block hero-copy-clean">
           <span className="eyebrow hero-eyebrow">Built for Teachers Pay Teachers sellers</span>
-          <h1 className="page-title hero-headline">One workspace for research, listings, and smarter seller decisions.</h1>
+          <h1 className="page-title hero-headline">Boost Your TPT Rankings and Sales with One Clear SEO Workspace.</h1>
           <p className="page-copy hero-copy-text">
-            Knowlense gives TPT sellers a cleaner SaaS workflow: website-first account management, secure extension
-            connection, and structured product insight that stays useful after the browser tab closes.
+            Knowlense helps TPT sellers audit listings, improve keyword targeting, check search visibility, and track ranking
+            progress without juggling scattered tools.
           </p>
 
           <div className="hero-cta-row">
             <Link className="primary-button hero-primary" href="/auth/sign-up">
-              Get started. It&apos;s free.
+              Start Free
             </Link>
             <div className="hero-cta-note">
-              <span>Free to start.</span>
-              <span>No credit card required.</span>
+              <span>Free plan available.</span>
+              <span>Upgrade when you need tracking and unlimited audits.</span>
             </div>
           </div>
         </div>
 
         <aside className="hero-aside">
-          <div className="hero-chip">New: seller-side intelligence for TPT</div>
+          <div className="hero-chip">Designed for TPT listing growth</div>
           <ul className="hero-checklist">
             {checklist.map((item) => (
               <li key={item}>{item}</li>
@@ -84,53 +99,53 @@ export default function HomePage() {
       <section className="hero-stage">
         <div className="shell hero-stage-frame">
           <div className="stage-sidebar">
-            <div className="stage-sidebar-title">Knowlense workspace</div>
+            <div className="stage-sidebar-title">Knowlense extension</div>
             <ul className="stage-sidebar-list">
-              <li className="active">Keyword Finder</li>
-              <li>Listing Grader</li>
-              <li>Opportunity Board</li>
-              <li>Dashboard</li>
-              <li>Extension Connect</li>
+              <li className="active">Keyword SEO</li>
+              <li>SEO Health</li>
+              <li>Search Indexing</li>
+              <li>Keyword Rankings</li>
+              <li>Account</li>
             </ul>
           </div>
 
           <div className="stage-preview">
             <div className="stage-topbar">
-              <span className="stage-pill">Store Research</span>
-              <span className="stage-search">Search query: reading comprehension</span>
+              <span className="stage-pill">Live product check</span>
+              <span className="stage-search">Product: Reading Comprehension Passages Bundle</span>
             </div>
             <div className="stage-table">
               <div className="stage-row heading">
-                <span>Keyword Cluster</span>
-                <span>Competition</span>
-                <span>Opportunity</span>
+                <span>Signal</span>
                 <span>Status</span>
+                <span>Coverage</span>
+                <span>Next step</span>
               </div>
               <div className="stage-row">
-                <span>Main idea passages</span>
-                <span>Medium</span>
-                <span>High</span>
-                <span>Review</span>
+                <span>Primary keyword usage</span>
+                <span>Strong</span>
+                <span>Title + intro</span>
+                <span>Ready</span>
               </div>
               <div className="stage-row">
-                <span>Paired reading passages</span>
-                <span>Low</span>
-                <span>High</span>
-                <span>Promising</span>
+                <span>Listing health review</span>
+                <span>Needs work</span>
+                <span>7 of 10</span>
+                <span>Improve</span>
               </div>
               <div className="stage-row">
-                <span>Theme worksheets</span>
-                <span>High</span>
-                <span>Medium</span>
-                <span>Saturated</span>
+                <span>Search indexing</span>
+                <span>Google found</span>
+                <span>1 of 4</span>
+                <span>Monitor</span>
               </div>
             </div>
           </div>
 
           <div className="stage-note-card">
-            <div className="stage-note-label">Next action</div>
-            <strong>Build a differentiated paired-passage listing</strong>
-            <p>Use the current search snapshot to create a higher-conviction product angle before competition thickens.</p>
+            <div className="stage-note-label">Recommended next move</div>
+            <strong>Start tracking your main keyword after improving the listing health score.</strong>
+            <p>Use the dashboard to monitor ranking changes once your product page is aligned with the target term.</p>
           </div>
         </div>
       </section>
@@ -149,22 +164,63 @@ export default function HomePage() {
 
       <section className="shell modules-section">
         <div className="section-heading">
-          <span className="section-label">Core Modules</span>
-          <h2 className="section-title">Purpose-built for the parts of the seller workflow that actually matter.</h2>
+          <span className="section-label">Core Features</span>
+          <h2 className="section-title">Everything on the page is built around the checks TPT sellers actually need.</h2>
           <p className="section-copy">
-            Knowlense is designed to help sellers research the market, sharpen listings, and turn signals into practical next
-            moves.
+            Knowlense is not a generic SEO suite. It is a focused workflow for checking product pages, identifying gaps, and
+            deciding what to improve next.
           </p>
         </div>
 
         <div className="module-grid">
-          {modules.map((module) => (
+          {featureModules.map((module) => (
             <article className="module-card" key={module.title}>
               <span className="module-meta">{module.meta}</span>
               <h3>{module.title}</h3>
               <p>{module.copy}</p>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className="shell modules-section">
+        <div className="section-heading compact">
+          <span className="section-label">How It Works</span>
+          <h2 className="section-title">A simpler path from product page review to ranking improvement.</h2>
+          <p className="section-copy">
+            Start with the extension, keep your account and billing on the website, and move into tracking when you need a
+            more advanced workflow.
+          </p>
+        </div>
+
+        <div className="module-grid">
+          {workflowSteps.map((step) => (
+            <article className="module-card" key={step.title}>
+              <span className="module-meta">{step.meta}</span>
+              <h3>{step.title}</h3>
+              <p>{step.copy}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="shell marketing-surface">
+        <div className="section-heading compact">
+          <span className="section-label">Start Free</span>
+          <h2 className="section-title">Run your first listing checks before you commit to Premium.</h2>
+          <p className="section-copy">
+            The free plan lets you use core audits inside the extension. Premium unlocks keyword tracking, broader research,
+            and a more complete workflow for long-term growth.
+          </p>
+        </div>
+
+        <div className="stack-row">
+          <Link className="primary-button" href="/auth/sign-up">
+            Create Free Account
+          </Link>
+          <Link className="secondary-button" href="/pricing">
+            View Pricing
+          </Link>
         </div>
       </section>
 
