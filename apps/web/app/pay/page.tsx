@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { getApiBaseUrl } from "@/lib/api/profile";
 
@@ -23,7 +23,7 @@ type PublicConfig = {
   paddleClientTokenConfigured: boolean;
 };
 
-export default function PaddlePaymentLinkPage() {
+function PaddlePaymentLinkContent() {
   const searchParams = useSearchParams();
   const transactionId = searchParams.get("_ptxn");
   const [scriptLoaded, setScriptLoaded] = useState(false);
@@ -106,5 +106,25 @@ export default function PaddlePaymentLinkPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function PaddlePaymentLinkPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="app-shell min-h-screen">
+          <section className="shell flex min-h-screen items-center justify-center py-16">
+            <div className="w-full max-w-xl rounded-[30px] border border-[#ebe3d6] bg-white p-8 text-center shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b7f70]">Secure checkout</div>
+              <h1 className="mt-3 text-[2rem] font-semibold tracking-[-0.06em] text-black">Completing your Premium upgrade</h1>
+              <div className="mt-6 rounded-2xl border border-[#ebe3d6] bg-[#faf6ee] px-4 py-3 text-sm text-neutral-700">Preparing secure checkout...</div>
+            </div>
+          </section>
+        </main>
+      }
+    >
+      <PaddlePaymentLinkContent />
+    </Suspense>
   );
 }
