@@ -10,6 +10,8 @@ export type DashboardMetrics = {
   billing: {
     status: "free" | "active" | "expired" | "setup" | "trial";
     planName: string;
+    billingInterval: "monthly" | "yearly" | null;
+    nextBilledAt: string | null;
     trialEligible: boolean;
     trialActive: boolean;
     trialDaysRemaining: number;

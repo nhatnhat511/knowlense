@@ -13,7 +13,7 @@ import { useAuthGuard } from "@/hooks/use-auth";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useExtensionStatus } from "@/hooks/use-extension-status";
 import { signOutFromApi } from "@/lib/api/auth";
-import { confirmCheckout } from "@/lib/api/billing";
+import { confirmCheckout, upgradeSubscriptionToYearly } from "@/lib/api/billing";
 import { fetchRankTrackingDashboard, type RankTrackingDashboard } from "@/lib/api/dashboard";
 import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice, revokeOtherExtensionDevices } from "@/lib/api/extension-connect";
 import { getAuthCallbackUrl } from "@/lib/auth/redirects";
@@ -359,6 +359,7 @@ function DashboardContent() {
   const [showSubscriptionPricing, setShowSubscriptionPricing] = useState(false);
   const [billingSyncError, setBillingSyncError] = useState("");
   const processedBillingTransactionRef = useRef("");
+  const [yearlyUpgradeBusy, setYearlyUpgradeBusy] = useState(false);
 
   const requestId = searchParams.get("request");
   const requestedSection = searchParams.get("section");
@@ -373,6 +374,11 @@ function DashboardContent() {
   const sectionMeta = SECTION_META[section] ?? SECTION_META.overview;
   const billing = metrics?.billing;
   const planLabel = billing?.status === "active" ? "Premium" : billing?.status === "trial" ? "Premium Trial" : billing?.status === "expired" ? "Trial expired" : "Free";
+  const billingCycleLabel = billing?.billingInterval === "yearly" ? "Yearly" : billing?.billingInterval === "monthly" ? "Monthly" : null;
+  const nextBillingLabel =
+    billing?.nextBilledAt
+      ? new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(billing.nextBilledAt))
+      : null;
   const sidebarCollapsed = true;
   const signInMethod = user?.signInMethod ?? "unknown";
   const signInMethodMeta = getSignInMethodMeta(signInMethod);
@@ -470,6 +476,25 @@ function DashboardContent() {
       router.replace("/dashboard?section=subscription");
     });
   }, [billing?.status, billingResult, router, showToast]);
+
+  async function handleUpgradeToYearly() {
+    if (!accessToken || yearlyUpgradeBusy) {
+      return;
+    }
+
+    setYearlyUpgradeBusy(true);
+    setBillingSyncError("");
+
+    try {
+      await upgradeSubscriptionToYearly(accessToken);
+      refresh();
+      showToast("Your subscription has been updated to yearly billing.");
+    } catch (error) {
+      setBillingSyncError(error instanceof Error ? error.message : "Unable to upgrade this subscription to yearly billing.");
+    } finally {
+      setYearlyUpgradeBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!accessToken) {
@@ -1253,7 +1278,7 @@ function DashboardContent() {
         <Card compact={compact} dark={dark} title="Subscription" description={billing?.status === "active" ? "Premium is active for this account. Review plans and billing options here." : "Choose a Premium billing cycle without leaving your workspace."}>
           {billingSyncError ? <div className={cn("mb-4 rounded-[18px] border px-4 py-3 text-sm leading-6", dark ? "border-red-400/30 bg-red-500/10 text-red-100" : "border-red-200 bg-red-50 text-red-700")}>{billingSyncError}</div> : null}
           <div className="grid gap-3 md:grid-cols-2">
-            <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Current plan</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{planLabel}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{billing?.status === "active" ? "Premium access is already active on this account." : "Your account is currently on the free plan."}</p></div>
+            <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Current plan</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{planLabel}{billingCycleLabel ? ` (${billingCycleLabel})` : ""}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{billing?.status === "active" ? nextBillingLabel ? `Your renewal date is ${nextBillingLabel}.` : "Premium access is already active on this account." : "Your account is currently on the free plan."}</p>{billing?.status === "active" && billing?.billingInterval === "monthly" ? <div className="mt-4"><button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100 disabled:bg-white/60" : "bg-gray-900 text-white hover:bg-black disabled:bg-gray-400")} disabled={yearlyUpgradeBusy} onClick={() => void handleUpgradeToYearly()} type="button">{yearlyUpgradeBusy ? "Updating..." : "Upgrade to Yearly"}</button></div> : null}</div>
             <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Keyword usage</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{metrics ? `${metrics.keywordRuns.used}/${metrics.keywordRuns.limit}` : "..."}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{quotaAtLimit ? "You have reached the current free usage limit." : `${metrics?.keywordRuns.remaining ?? 0} runs are still available on this account.`}</p></div>
           </div>
           {billing?.status !== "active" ? <div className="mt-4"><button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} onClick={() => setShowSubscriptionPricing(true)} type="button">Upgrade to Premium</button></div> : null}

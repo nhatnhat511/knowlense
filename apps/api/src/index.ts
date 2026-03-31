@@ -292,6 +292,39 @@ function paddleBaseUrl(environment: Bindings["PADDLE_ENVIRONMENT"]) {
   return environment === "production" ? "https://api.paddle.com" : "https://sandbox-api.paddle.com";
 }
 
+async function fetchPaddleSubscription(env: Bindings, subscriptionId: string) {
+  if (!env.PADDLE_API_KEY) {
+    throw new Error("Paddle checkout is not configured.");
+  }
+
+  const response = await fetch(`${paddleBaseUrl(readPaddleEnvironment(env))}/subscriptions/${subscriptionId}`, {
+    headers: {
+      Authorization: `Bearer ${env.PADDLE_API_KEY}`,
+      Accept: "application/json"
+    }
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        data?: Record<string, unknown>;
+        error?: { detail?: string; message?: string };
+        errors?: Array<{ detail?: string; message?: string }>;
+      }
+    | null;
+
+  if (!response.ok || !payload?.data) {
+    throw new Error(
+      payload?.errors?.[0]?.detail
+      ?? payload?.errors?.[0]?.message
+      ?? payload?.error?.detail
+      ?? payload?.error?.message
+      ?? "Unable to load the Paddle subscription."
+    );
+  }
+
+  return payload.data;
+}
+
 function parsePaddleSignature(header: string | undefined) {
   if (!header) {
     return null;
@@ -394,6 +427,10 @@ function resolveBillingIntervalFromPaddle(data: Record<string, unknown> | null |
   }
 
   return null;
+}
+
+function readPaddleNextBilledAt(data: Record<string, unknown> | null | undefined) {
+  return getPaddleString(data?.next_billed_at);
 }
 
 function getPremiumPlanName(interval: PaddleBillingInterval | null) {
@@ -618,6 +655,8 @@ function getDefaultDashboardMetrics(billingConfigured: boolean) {
       billing: {
         status: "free" as const,
         planName: "Free",
+        billingInterval: null,
+        nextBilledAt: null,
         trialEligible: true,
         trialActive: false,
         trialDaysRemaining: 0,
@@ -642,8 +681,8 @@ function getDefaultDashboardMetrics(billingConfigured: boolean) {
 }
 
 async function ensureBillingTables(db: D1Database) {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS billing_profiles (
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS billing_profiles (
       user_id TEXT PRIMARY KEY,
       status TEXT NOT NULL DEFAULT 'free',
       plan_name TEXT NOT NULL DEFAULT 'Free',
@@ -654,22 +693,26 @@ async function ensureBillingTables(db: D1Database) {
       paddle_subscription_id TEXT,
       paddle_transaction_id TEXT,
       paddle_price_id TEXT,
+      next_billed_at TEXT,
       last_event_at TEXT,
       updated_at TEXT NOT NULL
-    );
+    )`
+  ).run();
 
-    CREATE TABLE IF NOT EXISTS paddle_webhook_events (
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS paddle_webhook_events (
       event_id TEXT PRIMARY KEY,
       event_type TEXT NOT NULL,
       processed_at TEXT NOT NULL
-    );
-  `);
+    )`
+  ).run();
 
   await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN billing_interval TEXT`).run().catch(() => null);
   await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN paddle_customer_id TEXT`).run().catch(() => null);
   await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN paddle_subscription_id TEXT`).run().catch(() => null);
   await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN paddle_transaction_id TEXT`).run().catch(() => null);
   await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN paddle_price_id TEXT`).run().catch(() => null);
+  await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN next_billed_at TEXT`).run().catch(() => null);
   await db.prepare(`ALTER TABLE billing_profiles ADD COLUMN last_event_at TEXT`).run().catch(() => null);
 }
 
@@ -682,6 +725,7 @@ async function upsertPremiumBillingProfile(
     subscriptionId?: string | null;
     transactionId?: string | null;
     priceId?: string | null;
+    nextBilledAt?: string | null;
     occurredAt?: string | null;
   }
 ) {
@@ -699,10 +743,11 @@ async function upsertPremiumBillingProfile(
        paddle_subscription_id,
        paddle_transaction_id,
        paddle_price_id,
+       next_billed_at,
        last_event_at,
        updated_at
      )
-     VALUES (?1, 'active', ?2, NULL, NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+     VALUES (?1, 'active', ?2, NULL, NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
      ON CONFLICT(user_id) DO UPDATE SET
        status = 'active',
        plan_name = excluded.plan_name,
@@ -713,6 +758,7 @@ async function upsertPremiumBillingProfile(
        paddle_subscription_id = COALESCE(excluded.paddle_subscription_id, billing_profiles.paddle_subscription_id),
        paddle_transaction_id = COALESCE(excluded.paddle_transaction_id, billing_profiles.paddle_transaction_id),
        paddle_price_id = COALESCE(excluded.paddle_price_id, billing_profiles.paddle_price_id),
+       next_billed_at = COALESCE(excluded.next_billed_at, billing_profiles.next_billed_at),
        last_event_at = COALESCE(excluded.last_event_at, billing_profiles.last_event_at),
        updated_at = excluded.updated_at`
   )
@@ -724,6 +770,7 @@ async function upsertPremiumBillingProfile(
       options.subscriptionId ?? null,
       options.transactionId ?? null,
       options.priceId ?? null,
+      options.nextBilledAt ?? null,
       options.occurredAt ?? null,
       new Date().toISOString()
     )
@@ -753,10 +800,11 @@ async function markBillingProfileFree(
        paddle_subscription_id,
        paddle_transaction_id,
        paddle_price_id,
+       next_billed_at,
        last_event_at,
        updated_at
      )
-     VALUES (?1, 'free', 'Free', NULL, NULL, NULL, ?2, ?3, NULL, NULL, ?4, ?5)
+     VALUES (?1, 'free', 'Free', NULL, NULL, NULL, ?2, ?3, NULL, NULL, NULL, ?4, ?5)
      ON CONFLICT(user_id) DO UPDATE SET
        status = 'free',
        plan_name = 'Free',
@@ -767,6 +815,7 @@ async function markBillingProfileFree(
        paddle_subscription_id = COALESCE(excluded.paddle_subscription_id, billing_profiles.paddle_subscription_id),
        paddle_transaction_id = NULL,
        paddle_price_id = NULL,
+       next_billed_at = NULL,
        last_event_at = COALESCE(excluded.last_event_at, billing_profiles.last_event_at),
        updated_at = excluded.updated_at`
   )
@@ -823,7 +872,7 @@ async function readBillingProfile(db: D1Database, userId: string) {
   await ensureBillingTables(db);
 
   const row = await db.prepare(
-    `SELECT user_id, status, plan_name, trial_started_at, trial_ends_at, updated_at
+    `SELECT user_id, status, plan_name, trial_started_at, trial_ends_at, billing_interval, next_billed_at, updated_at
      FROM billing_profiles
      WHERE user_id = ?1
      LIMIT 1`
@@ -833,6 +882,8 @@ async function readBillingProfile(db: D1Database, userId: string) {
     plan_name: string;
     trial_started_at: string | null;
     trial_ends_at: string | null;
+    billing_interval: string | null;
+    next_billed_at: string | null;
     updated_at: string;
   }>();
 
@@ -840,6 +891,8 @@ async function readBillingProfile(db: D1Database, userId: string) {
     return {
       status: "free" as const,
       planName: "Free",
+      billingInterval: null,
+      nextBilledAt: null,
       trialEligible: true,
       trialActive: false,
       trialDaysRemaining: 0
@@ -859,6 +912,8 @@ async function readBillingProfile(db: D1Database, userId: string) {
       return {
         status: "expired" as const,
         planName: "Free",
+        billingInterval: null,
+        nextBilledAt: null,
         trialEligible: false,
         trialActive: false,
         trialDaysRemaining: 0
@@ -868,6 +923,8 @@ async function readBillingProfile(db: D1Database, userId: string) {
     return {
       status: "trial" as const,
       planName: "Premium Trial",
+      billingInterval: null,
+      nextBilledAt: row.trial_ends_at,
       trialEligible: false,
       trialActive: true,
       trialDaysRemaining: Math.max(Math.ceil(remainingMs / (1000 * 60 * 60 * 24)), 1)
@@ -878,6 +935,8 @@ async function readBillingProfile(db: D1Database, userId: string) {
     return {
       status: "active" as const,
       planName: row.plan_name || "Premium",
+      billingInterval: row.billing_interval === "monthly" || row.billing_interval === "yearly" ? row.billing_interval : null,
+      nextBilledAt: row.next_billed_at,
       trialEligible: false,
       trialActive: false,
       trialDaysRemaining: 0
@@ -887,6 +946,8 @@ async function readBillingProfile(db: D1Database, userId: string) {
   return {
     status: row.status === "expired" ? ("expired" as const) : ("free" as const),
     planName: row.plan_name || "Free",
+    billingInterval: null,
+    nextBilledAt: null,
     trialEligible: row.trial_started_at == null,
     trialActive: false,
     trialDaysRemaining: 0
@@ -2235,6 +2296,8 @@ app.get("/v1/dashboard/metrics", async (c) => {
         billing: {
           status: billingState.status,
           planName: billingState.planName,
+          billingInterval: billingState.billingInterval,
+          nextBilledAt: billingState.nextBilledAt,
           trialEligible: billingState.trialEligible,
           trialActive: billingState.trialActive,
           trialDaysRemaining: billingState.trialDaysRemaining,
@@ -2712,6 +2775,124 @@ app.post("/v1/billing/checkout", async (c) => {
   }
 });
 
+app.post("/v1/billing/upgrade-yearly", async (c) => {
+  c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  c.header("Pragma", "no-cache");
+
+  try {
+    const authResult = await authenticateRequest(c);
+    if (authResult) {
+      return c.json({ error: authResult.error }, authResult.status);
+    }
+
+    const user = c.get("user");
+    const billing = await readBillingProfile(c.env.DB, user.id);
+
+    if (billing.status !== "active" || billing.billingInterval !== "monthly") {
+      return c.json({ error: "Only active monthly subscriptions can be upgraded to yearly." }, 400);
+    }
+
+    const billingRow = await c.env.DB.prepare(
+      `SELECT paddle_subscription_id
+       FROM billing_profiles
+       WHERE user_id = ?1
+       LIMIT 1`
+    ).bind(user.id).first<{ paddle_subscription_id: string | null }>();
+
+    const subscriptionId = getPaddleString(billingRow?.paddle_subscription_id);
+
+    if (!subscriptionId || !c.env.PADDLE_API_KEY || !c.env.PADDLE_PRICE_ID_YEARLY) {
+      return c.json({ error: "Yearly upgrade is not configured for this account." }, 500);
+    }
+
+    const existingSubscription = await fetchPaddleSubscription(c.env, subscriptionId);
+    const existingItems = Array.isArray(existingSubscription.items) ? existingSubscription.items : [];
+    const items = existingItems
+      .map((item) => {
+        if (!item || typeof item !== "object") {
+          return null;
+        }
+
+        const row = item as Record<string, unknown>;
+        const currentPriceId =
+          getPaddleString(row.price_id)
+          ?? (row.price && typeof row.price === "object" ? getPaddleString((row.price as Record<string, unknown>).id) : null);
+        const quantityValue = typeof row.quantity === "number" ? row.quantity : Number(row.quantity ?? 1);
+
+        return {
+          price_id: currentPriceId === c.env.PADDLE_PRICE_ID_MONTHLY ? c.env.PADDLE_PRICE_ID_YEARLY : currentPriceId,
+          quantity: Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1
+        };
+      })
+      .filter((item): item is { price_id: string; quantity: number } => Boolean(item?.price_id));
+
+    if (!items.length) {
+      return c.json({ error: "This subscription does not contain any updatable Paddle items." }, 400);
+    }
+
+    const response = await fetch(`${paddleBaseUrl(readPaddleEnvironment(c.env))}/subscriptions/${subscriptionId}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${c.env.PADDLE_API_KEY}`,
+        ...jsonHeaders()
+      },
+      body: JSON.stringify({
+        items,
+        proration_billing_mode: "prorated_immediately"
+      })
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          data?: Record<string, unknown>;
+          error?: { detail?: string; message?: string };
+          errors?: Array<{ detail?: string; message?: string }>;
+        }
+      | null;
+
+    if (!response.ok || !payload?.data) {
+      return c.json(
+        {
+          error:
+            payload?.errors?.[0]?.detail
+            ?? payload?.errors?.[0]?.message
+            ?? payload?.error?.detail
+            ?? payload?.error?.message
+            ?? "Unable to upgrade this subscription to yearly billing."
+        },
+        502
+      );
+    }
+
+    const subscription = payload.data;
+    const customerId = getPaddleString(subscription.customer_id);
+    const priceId = readPaddlePriceId(subscription);
+    const nextBilledAt = readPaddleNextBilledAt(subscription);
+
+    await upsertPremiumBillingProfile(c.env.DB, user.id, {
+      interval: "yearly",
+      customerId,
+      subscriptionId,
+      transactionId: null,
+      priceId,
+      nextBilledAt,
+      occurredAt: new Date().toISOString()
+    });
+
+    return c.json({
+      ok: true,
+      billing: await readBillingProfile(c.env.DB, user.id)
+    });
+  } catch (error) {
+    return c.json(
+      {
+        error: error instanceof Error ? error.message : "Unable to upgrade this subscription to yearly billing."
+      },
+      500
+    );
+  }
+});
+
 app.post("/v1/billing/confirm", async (c) => {
   c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   c.header("Pragma", "no-cache");
@@ -2777,6 +2958,8 @@ app.post("/v1/billing/confirm", async (c) => {
     const subscriptionId = getPaddleString(transaction.subscription_id);
     const customerId = getPaddleString(transaction.customer_id);
     const priceId = readPaddlePriceId(transaction);
+    const subscription = subscriptionId ? await fetchPaddleSubscription(c.env, subscriptionId).catch(() => null) : null;
+    const nextBilledAt = readPaddleNextBilledAt(subscription ?? transaction);
 
     if (ownerUserId && ownerUserId !== user.id) {
       return c.json({ error: "This Paddle transaction belongs to a different account." }, 403);
@@ -2796,6 +2979,7 @@ app.post("/v1/billing/confirm", async (c) => {
       subscriptionId,
       transactionId,
       priceId,
+      nextBilledAt,
       occurredAt: new Date().toISOString()
     });
 
@@ -2855,6 +3039,7 @@ app.post("/v1/webhooks/paddle", async (c) => {
   const customData = getPaddleCustomData(data);
   const interval = resolveBillingIntervalFromPaddle(data, c.env);
   const priceId = readPaddlePriceId(data);
+  const nextBilledAt = readPaddleNextBilledAt(data);
   const customerId = getPaddleString(data?.customer_id);
   const resourceId = getPaddleString(data?.id);
   const subscriptionId = eventType.startsWith("subscription.") ? resourceId : getPaddleString(data?.subscription_id);
@@ -2874,6 +3059,7 @@ app.post("/v1/webhooks/paddle", async (c) => {
       subscriptionId: getPaddleString(data?.subscription_id),
       transactionId,
       priceId,
+      nextBilledAt,
       occurredAt
     });
   }
@@ -2886,6 +3072,7 @@ app.post("/v1/webhooks/paddle", async (c) => {
         subscriptionId,
         transactionId: null,
         priceId,
+        nextBilledAt,
         occurredAt
       });
     } else if (subscriptionStatus === "canceled" || subscriptionStatus === "paused" || subscriptionStatus === "past_due") {
