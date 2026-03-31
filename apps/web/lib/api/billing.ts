@@ -7,6 +7,7 @@ export type BillingInterval = "monthly" | "yearly";
 export async function createCheckout(accessToken: string, interval: BillingInterval) {
   const response = await fetch(`${getApiBaseUrl()}/v1/billing/checkout`, {
     method: "POST",
+    cache: "no-store",
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json"
@@ -29,6 +30,7 @@ export async function createCheckout(accessToken: string, interval: BillingInter
 export async function confirmCheckout(accessToken: string, transactionId: string) {
   const response = await fetch(`${getApiBaseUrl()}/v1/billing/confirm`, {
     method: "POST",
+    cache: "no-store",
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json"

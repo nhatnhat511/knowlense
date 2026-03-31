@@ -107,6 +107,7 @@ export type RankTrackingDashboard = {
 
 async function fetchDashboardResource<T>(accessToken: string, path: string, key: string) {
   const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    cache: "no-store",
     headers: {
       Authorization: `Bearer ${accessToken}`
     }
@@ -150,6 +151,7 @@ export async function fetchRankTrackingDashboard(
 
 export async function fetchExtensionStatus(accessToken: string) {
   const response = await fetch(`${getApiBaseUrl()}/v1/dashboard/extension-status`, {
+    cache: "no-store",
     headers: {
       Authorization: `Bearer ${accessToken}`
     }

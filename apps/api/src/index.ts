@@ -2064,6 +2064,8 @@ app.post("/v1/rank-tracking/checks", async (c) => {
 });
 
 app.use("/v1/dashboard/*", async (c, next) => {
+  c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  c.header("Pragma", "no-cache");
   const authResult = await authenticateRequest(c);
   if (authResult) {
     return c.json({ error: authResult.error }, authResult.status);
@@ -2465,6 +2467,8 @@ app.post("/v1/dashboard/trial/start", async (c) => {
 
 app.post("/v1/billing/checkout", async (c) => {
   try {
+    c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    c.header("Pragma", "no-cache");
     const authResult = await authenticateRequest(c);
     if (authResult) {
       return c.json({ error: authResult.error }, authResult.status);
@@ -2574,6 +2578,8 @@ app.post("/v1/billing/checkout", async (c) => {
 });
 
 app.post("/v1/billing/confirm", async (c) => {
+  c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  c.header("Pragma", "no-cache");
   const authResult = await authenticateRequest(c);
   if (authResult) {
     return c.json({ error: authResult.error }, authResult.status);

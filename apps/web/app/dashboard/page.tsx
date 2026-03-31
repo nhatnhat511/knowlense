@@ -357,6 +357,7 @@ function DashboardContent() {
   const [linkedAccountsLoading, setLinkedAccountsLoading] = useState(false);
   const [linkedAccountAction, setLinkedAccountAction] = useState("");
   const [showSubscriptionPricing, setShowSubscriptionPricing] = useState(false);
+  const [billingSyncError, setBillingSyncError] = useState("");
 
   const requestId = searchParams.get("request");
   const requestedSection = searchParams.get("section");
@@ -394,11 +395,14 @@ function DashboardContent() {
       return;
     }
 
+    setBillingSyncError("");
     let active = true;
     let attempts = 0;
     const maxAttempts = 8;
 
     async function syncCheckout() {
+      let lastError = "";
+
       while (active && attempts < maxAttempts) {
         attempts += 1;
 
@@ -408,16 +412,27 @@ function DashboardContent() {
             refresh();
 
             if (result.confirmed && result.ready) {
+              setBillingSyncError("");
               return;
+            }
+
+            if (result.status) {
+              lastError = `Payment received. Subscription is still syncing (${result.status}).`;
             }
           } else {
             refresh();
+            lastError = "Payment received, but the checkout reference is missing from the return URL.";
           }
-        } catch {
+        } catch (error) {
           refresh();
+          lastError = error instanceof Error ? error.message : "Unable to confirm the Paddle checkout yet.";
         }
 
         await new Promise((resolve) => window.setTimeout(resolve, 2500));
+      }
+
+      if (active && lastError) {
+        setBillingSyncError(lastError);
       }
     }
 
@@ -438,6 +453,7 @@ function DashboardContent() {
     }
 
     showToast("Premium access is now active on this account.");
+    setBillingSyncError("");
     setShowSubscriptionPricing(false);
     startTransition(() => {
       router.replace("/dashboard?section=subscription");
@@ -1224,6 +1240,7 @@ function DashboardContent() {
     return (
       <div className="mt-5 space-y-4">
         <Card compact={compact} dark={dark} title="Subscription" description={billing?.status === "active" ? "Premium is active for this account. Review plans and billing options here." : "Choose a Premium billing cycle without leaving your workspace."}>
+          {billingSyncError ? <div className={cn("mb-4 rounded-[18px] border px-4 py-3 text-sm leading-6", dark ? "border-red-400/30 bg-red-500/10 text-red-100" : "border-red-200 bg-red-50 text-red-700")}>{billingSyncError}</div> : null}
           <div className="grid gap-3 md:grid-cols-2">
             <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Current plan</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{planLabel}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{billing?.status === "active" ? "Premium access is already active on this account." : "Your account is currently on the free plan."}</p></div>
             <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}><div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Keyword usage</div><div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", dark ? "text-white" : "text-black")}>{metrics ? `${metrics.keywordRuns.used}/${metrics.keywordRuns.limit}` : "..."}</div><p className={cn("mt-2 text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>{quotaAtLimit ? "You have reached the current free usage limit." : `${metrics?.keywordRuns.remaining ?? 0} runs are still available on this account.`}</p></div>
