@@ -183,7 +183,8 @@ button {
 .nav-link,
 .primary-button,
 .secondary-button,
-.ghost-button {
+.ghost-button,
+.header-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -239,6 +240,24 @@ button {
   background: #202020;
   color: #fff;
   font-weight: 700;
+}
+
+.header-avatar {
+  min-width: 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid #e5e7eb;
+  background: #f3f4ff;
+  color: #4f46e5;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.header-avatar:hover {
+  background: #e8eaff;
+  border-color: #d8dcff;
+  transform: translateY(-1px);
 }
 
 .primary-button:hover {

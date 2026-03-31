@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { BrandLockup } from "@/components/brand/brand";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type NavItem = {
   href: string;
@@ -21,6 +23,73 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
   const menuId = useId();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [account, setAccount] = useState<{ initials: string; name: string | null } | null>(null);
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      setAuthReady(true);
+      setAccount(null);
+      return;
+    }
+    const client = supabase;
+    let active = true;
+
+    function normalizeAccount(session: Session | null) {
+      const email = session?.user.email ?? "";
+      const metadata = session?.user.user_metadata ?? {};
+      const displayName =
+        typeof metadata.display_name === "string"
+          ? metadata.display_name
+          : typeof metadata.full_name === "string"
+            ? metadata.full_name
+            : email.split("@")[0] || null;
+      const initialsSource = (displayName ?? email).trim();
+      const initials = initialsSource
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() ?? "")
+        .join("") || "A";
+
+      return {
+        initials,
+        name: displayName || null
+      };
+    }
+
+    async function hydrate() {
+      const {
+        data: { session }
+      } = await client.auth.getSession();
+
+      if (!active) {
+        return;
+      }
+
+      setAccount(session ? normalizeAccount(session) : null);
+      setAuthReady(true);
+    }
+
+    void hydrate();
+
+    const {
+      data: { subscription }
+    } = client.auth.onAuthStateChange((_event, session) => {
+      if (!active) {
+        return;
+      }
+
+      setAccount(session ? normalizeAccount(session) : null);
+      setAuthReady(true);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -72,6 +141,10 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
     }
   }
 
+  const signedOutNavItems = navItems.filter((item) => !/sign in|login/i.test(item.label));
+  const loginItem = navItems.find((item) => /sign in|login/i.test(item.label));
+  const isSignedIn = authReady && Boolean(account);
+
   return (
     <header className="site-header">
       <a className="skip-link" href="#main-content">
@@ -82,7 +155,7 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
         <BrandLockup className="brand-lockup" compact subtitle={tag} />
 
         <nav aria-label="Primary navigation" className="nav nav-desktop">
-          {navItems.map((item) => (
+          {(isSignedIn ? signedOutNavItems : navItems).map((item) => (
             <Link
               aria-current={pathname === item.href ? "page" : undefined}
               className={`nav-link${/sign in|login/i.test(item.label) ? " nav-link-utility" : " nav-link-text"}`}
@@ -92,10 +165,31 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
               {item.label}
             </Link>
           ))}
-          {primaryCta ? (
-            <Link aria-current={pathname === primaryCta.href ? "page" : undefined} className="primary-button" href={primaryCta.href}>
-              {primaryCta.label}
-            </Link>
+          {isSignedIn ? (
+            <>
+              <Link aria-current={pathname === "/dashboard" ? "page" : undefined} className="nav-link nav-link-utility" href="/dashboard">
+                Dashboard
+              </Link>
+              <Link
+                aria-label={account?.name ? `${account.name} account` : "Account"}
+                className="header-avatar"
+                href="/dashboard?section=account"
+                title={account?.name ?? "Account"}
+              >
+                {account?.initials ?? "A"}
+              </Link>
+            </>
+          ) : primaryCta ? (
+            <>
+              {loginItem ? (
+                <Link aria-current={pathname === loginItem.href ? "page" : undefined} className="nav-link nav-link-utility" href={loginItem.href}>
+                  {loginItem.label}
+                </Link>
+              ) : null}
+              <Link aria-current={pathname === primaryCta.href ? "page" : undefined} className="primary-button" href={primaryCta.href}>
+                {primaryCta.label}
+              </Link>
+            </>
           ) : null}
         </nav>
 
@@ -115,7 +209,7 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
 
         <div aria-label="Mobile navigation" className={`mobile-menu${menuOpen ? " open" : ""}`} id={menuId}>
           <nav className="mobile-menu-list">
-            {navItems.map((item) => (
+            {(isSignedIn ? signedOutNavItems : navItems).map((item) => (
               <Link
                 aria-current={pathname === item.href ? "page" : undefined}
                 className="mobile-menu-link"
@@ -125,10 +219,26 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
                 {item.label}
               </Link>
             ))}
-            {primaryCta ? (
-              <Link aria-current={pathname === primaryCta.href ? "page" : undefined} className="primary-button" href={primaryCta.href}>
-                {primaryCta.label}
-              </Link>
+            {isSignedIn ? (
+              <>
+                <Link aria-current={pathname === "/dashboard" ? "page" : undefined} className="mobile-menu-link" href="/dashboard">
+                  Dashboard
+                </Link>
+                <Link className="mobile-menu-link" href="/dashboard?section=account">
+                  Account
+                </Link>
+              </>
+            ) : primaryCta ? (
+              <>
+                {loginItem ? (
+                  <Link aria-current={pathname === loginItem.href ? "page" : undefined} className="mobile-menu-link" href={loginItem.href}>
+                    {loginItem.label}
+                  </Link>
+                ) : null}
+                <Link aria-current={pathname === primaryCta.href ? "page" : undefined} className="primary-button" href={primaryCta.href}>
+                  {primaryCta.label}
+                </Link>
+              </>
             ) : null}
           </nav>
         </div>
