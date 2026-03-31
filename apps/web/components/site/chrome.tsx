@@ -22,9 +22,11 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
   const pathname = usePathname();
   const menuId = useId();
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [authReady, setAuthReady] = useState(false);
-  const [account, setAccount] = useState<{ initials: string; name: string | null } | null>(null);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [account, setAccount] = useState<{ initials: string; name: string | null; avatarUrl: string | null } | null>(null);
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
@@ -45,6 +47,7 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
           : typeof metadata.full_name === "string"
             ? metadata.full_name
             : email.split("@")[0] || null;
+      const avatarUrl = typeof metadata.avatar_url === "string" ? metadata.avatar_url : null;
       const initialsSource = (displayName ?? email).trim();
       const initials = initialsSource
         .split(/\s+/)
@@ -55,7 +58,8 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
 
       return {
         initials,
-        name: displayName || null
+        name: displayName || null,
+        avatarUrl
       };
     }
 
@@ -93,6 +97,7 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
 
   useEffect(() => {
     setMenuOpen(false);
+    setAccountMenuOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -130,6 +135,32 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!accountMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!accountMenuRef.current?.contains(event.target as Node)) {
+        setAccountMenuOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setAccountMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [accountMenuOpen]);
+
   function handleMenuToggle() {
     setMenuOpen((current) => !current);
   }
@@ -139,6 +170,14 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
       event.preventDefault();
       handleMenuToggle();
     }
+  }
+
+  async function handleSignOut() {
+    const supabase = getSupabaseBrowserClient();
+    if (supabase) {
+      await supabase.auth.signOut().catch(() => null);
+    }
+    window.location.href = "/";
   }
 
   const signedOutNavItems = navItems.filter((item) => !/sign in|login/i.test(item.label));
@@ -170,14 +209,36 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
               <Link aria-current={pathname === "/dashboard" ? "page" : undefined} className="nav-link nav-link-utility" href="/dashboard">
                 Dashboard
               </Link>
-              <Link
-                aria-label={account?.name ? `${account.name} account` : "Account"}
-                className="header-avatar"
-                href="/dashboard?section=account"
-                title={account?.name ?? "Account"}
-              >
-                {account?.initials ?? "A"}
-              </Link>
+              <div className="account-menu-shell" ref={accountMenuRef}>
+                <button
+                  aria-expanded={accountMenuOpen}
+                  aria-label={account?.name ? `${account.name} account menu` : "Account menu"}
+                  className="header-avatar"
+                  onClick={() => setAccountMenuOpen((current) => !current)}
+                  title={account?.name ?? "Account"}
+                  type="button"
+                >
+                  {account?.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img alt={account?.name ?? "Account"} className="header-avatar-image" src={account.avatarUrl} />
+                  ) : (
+                    <span>{account?.initials ?? "A"}</span>
+                  )}
+                </button>
+                {accountMenuOpen ? (
+                  <div className="account-menu-dropdown">
+                    <Link className="account-menu-item" href="/dashboard?section=account">
+                      Account
+                    </Link>
+                    <Link className="account-menu-item" href="/dashboard?section=subscription">
+                      Subscription
+                    </Link>
+                    <button className="account-menu-item account-menu-item-danger" onClick={() => void handleSignOut()} type="button">
+                      Log out
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </>
           ) : primaryCta ? (
             <>
