@@ -101,7 +101,7 @@ const compareRows: CompareRow[] = [
     yearly: "Included"
   },
   {
-    feature: "Track this keyword",
+    feature: "Keyword Tracking",
     description: "Saves a keyword for ongoing rank tracking so you can monitor movement over time.",
     free: "—",
     monthly: "Included",
@@ -382,8 +382,8 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
                       aria-expanded={openCompareHint === row.feature}
                       aria-label={`Learn more about ${row.feature}`}
                       className={cn(
-                        "inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-semibold leading-none",
-                        dark ? "border-white/15 bg-white/5 text-white/75 hover:bg-white/10" : "border-black/10 bg-white text-neutral-500 hover:bg-neutral-50"
+                        "inline-flex h-4.5 w-4.5 items-center justify-center rounded-full border bg-transparent text-[10px] font-semibold leading-none",
+                        dark ? "border-white/25 text-white/60 hover:border-white/40 hover:text-white/80" : "border-neutral-300 text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"
                       )}
                       onClick={() => setOpenCompareHint((current) => current === row.feature ? null : row.feature)}
                       type="button"
@@ -393,7 +393,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
                     {openCompareHint === row.feature ? (
                       <div
                         className={cn(
-                          "absolute left-0 top-[calc(100%+10px)] z-10 w-64 rounded-2xl border px-3 py-2 text-xs font-normal leading-5 shadow-[0_18px_40px_rgba(15,23,42,0.12)]",
+                          "absolute bottom-[calc(100%+10px)] left-[calc(100%-16px)] z-10 w-64 rounded-2xl border px-3 py-2 text-xs font-normal leading-5 shadow-[0_18px_40px_rgba(15,23,42,0.12)]",
                           dark ? "border-white/10 bg-[#161a22] text-white/72" : "border-[#ebe3d6] bg-white text-neutral-600"
                         )}
                       >
