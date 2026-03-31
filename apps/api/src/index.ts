@@ -2098,6 +2098,11 @@ app.post("/v1/billing/checkout", async (c) => {
     body: JSON.stringify({
       items: [{ price_id: priceId, quantity: 1 }],
       collection_mode: "automatic",
+      enable_checkout: true,
+      checkout: {
+        url: null
+      },
+      currency_code: "USD",
       custom_data: {
         app: "Knowlense",
         plan: interval,
@@ -2114,6 +2119,11 @@ app.post("/v1/billing/checkout", async (c) => {
             url?: string;
           };
         };
+        errors?: Array<{
+          code?: string;
+          detail?: string;
+          message?: string;
+        }>;
         error?: {
           detail?: string;
           message?: string;
@@ -2121,11 +2131,22 @@ app.post("/v1/billing/checkout", async (c) => {
       }
     | null;
   const checkoutUrl = payload?.data?.checkout?.url;
+  const paddleError =
+    payload?.errors?.[0]?.detail
+    ?? payload?.errors?.[0]?.message
+    ?? payload?.error?.detail
+    ?? payload?.error?.message
+    ?? null;
 
   if (!response.ok || !checkoutUrl) {
+    const normalizedError =
+      paddleError === "Cannot create a transaction or open a checkout as no default payment link has been set for this account. Set in the Paddle dashboard, then try again."
+        ? "Paddle sandbox checkout is not ready yet. Set a default payment link in your Paddle dashboard and try again."
+        : paddleError ?? "Unable to create Paddle checkout.";
+
     return c.json(
       {
-        error: payload?.error?.detail ?? payload?.error?.message ?? "Unable to create Paddle checkout."
+        error: normalizedError
       },
       502
     );
