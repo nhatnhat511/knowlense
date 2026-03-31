@@ -16,7 +16,6 @@ export default function PrivacyPage() {
 
       <section className="shell legal-surface">
         <div className="legal-intro">
-          <span className="section-label">Privacy Policy</span>
           <h1 className="page-title">Privacy Policy</h1>
           <p className="page-copy">
             This Privacy Policy explains what Knowlense collects, why it is collected, how it is used, and how it is shared

@@ -16,7 +16,6 @@ export default function RefundPolicyPage() {
 
       <section className="shell legal-surface">
         <div className="legal-intro">
-          <span className="section-label">Refund Policy</span>
           <h1 className="page-title">Refund Policy</h1>
           <p className="page-copy">
             This Refund Policy explains how billing issues, cancellation requests, and refund reviews are handled for paid

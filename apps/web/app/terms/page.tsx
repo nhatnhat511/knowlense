@@ -16,7 +16,6 @@ export default function TermsPage() {
 
       <section className="shell legal-surface">
         <div className="legal-intro">
-          <span className="section-label">Terms of Service</span>
           <h1 className="page-title">Terms of Service</h1>
           <p className="page-copy">
             These Terms govern access to and use of the Knowlense website, dashboard, browser extension, and paid plans.
