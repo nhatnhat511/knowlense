@@ -1,12 +1,17 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { Manrope, Plus_Jakarta_Sans } from "next/font/google";
 import Script from "next/script";
 import { AppProviders } from "@/components/providers/app-providers";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
   variable: "--font-sans"
+});
+
+const manrope = Manrope({
+  subsets: ["latin"],
+  variable: "--font-display"
 });
 
 export const metadata: Metadata = {
@@ -25,7 +30,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${plusJakartaSans.variable}`}>
+      <body className={`${plusJakartaSans.variable} ${manrope.variable}`}>
         <Script async src="https://www.googletagmanager.com/gtag/js?id=G-8FRPDTZV9Y" strategy="afterInteractive" />
         <Script id="google-analytics" strategy="afterInteractive">
           {`

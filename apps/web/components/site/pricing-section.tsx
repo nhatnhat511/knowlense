@@ -296,7 +296,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
   return (
     <section className={cn("space-y-8", embedded ? "" : "py-2")}>
       <div className="mx-auto max-w-3xl text-center">
-        <h2 className={cn(embedded ? "text-[1.55rem] sm:text-[1.75rem]" : "text-[2rem] sm:text-[2.3rem]", "font-semibold tracking-[-0.06em]", dark ? "text-white" : "text-black")}>
+        <h2 className={cn(embedded ? "text-[1.55rem] sm:text-[1.75rem]" : "text-[2rem] sm:text-[2.3rem]", "font-semibold tracking-[-0.03em]", dark ? "text-white" : "text-black")}>
           Simple pricing for a focused TPT SEO workflow.
         </h2>
         <p className={cn("mx-auto mt-3 max-w-2xl text-[15px] leading-7", dark ? "text-white/60" : "text-neutral-600")}>
@@ -333,7 +333,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
             </div>
             <p className={cn("mt-3 text-sm leading-6", dark ? "text-white/65" : "text-neutral-600")}>{plan.description}</p>
             <div className="mt-6 flex items-end gap-2">
-              <div className={cn("text-[2rem] font-semibold tracking-[-0.06em]", dark ? "text-white" : "text-black")}>{plan.price}</div>
+              <div className={cn("text-[2rem] font-semibold tracking-[-0.03em]", dark ? "text-white" : "text-black")}>{plan.price}</div>
               <div className={cn("pb-1 text-sm", dark ? "text-white/50" : "text-neutral-500")}>{plan.cadence}</div>
             </div>
             <div className={cn("mt-1 text-sm", dark ? "text-white/50" : "text-neutral-500")}>{plan.note}</div>
@@ -355,7 +355,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className={cn("text-xs font-semibold uppercase tracking-[0.18em]", dark ? "text-white/40" : "text-[#8b7f70]")}>Compare plans</div>
-              <h3 className={cn("mt-2 text-[1.25rem] font-semibold tracking-[-0.05em]", dark ? "text-white" : "text-black")}>See what changes as you upgrade.</h3>
+              <h3 className={cn("mt-2 text-[1.25rem] font-semibold tracking-[-0.03em]", dark ? "text-white" : "text-black")}>See what changes as you upgrade.</h3>
             </div>
             <div className={cn("text-sm", dark ? "text-white/50" : "text-neutral-500")}>Free gives access. Premium unlocks tracking and scale.</div>
           </div>

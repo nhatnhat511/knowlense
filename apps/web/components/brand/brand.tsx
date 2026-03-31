@@ -59,7 +59,12 @@ export function BrandLockup({
       <BrandIcon dark={dark} size={size} />
       {!iconOnly ? (
         <span className={`flex min-w-0 flex-col ${centered ? "items-center text-center" : ""}`}>
-          <span className={`text-lg font-semibold tracking-[-0.05em] ${dark ? "text-white" : "text-black"}`}>{title}</span>
+          <span
+            className={`text-lg font-semibold tracking-[-0.02em] ${dark ? "text-white" : "text-black"}`}
+            style={{ fontFamily: "var(--font-display), var(--font-sans), sans-serif" }}
+          >
+            {title}
+          </span>
           {subtitle ? (
             <span className={`text-sm leading-5 ${dark ? "text-white/65" : "text-neutral-500"}`}>{subtitle}</span>
           ) : null}

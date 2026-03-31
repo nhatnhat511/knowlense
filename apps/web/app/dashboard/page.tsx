@@ -182,7 +182,7 @@ function ThemeButton({
 function Card({ dark, compact, title, description, children }: { dark: boolean; compact?: boolean; title: string; description?: string; children: React.ReactNode }) {
   return (
     <article className={cn("rounded-2xl border shadow-[0_20px_55px_rgba(15,23,42,0.08)]", compact ? "p-3.5 sm:p-4" : "p-4 sm:p-5", dark ? "border-white/10 bg-[#111318]" : "border-gray-100 bg-white")}>
-      <h3 className={cn("text-[0.98rem] font-bold tracking-[-0.04em] sm:text-base", dark ? "text-white" : "text-gray-900")}>{title}</h3>
+      <h3 className={cn("text-[0.98rem] font-bold tracking-[-0.025em] sm:text-base", dark ? "text-white" : "text-gray-900")}>{title}</h3>
       {description ? <p className={cn("mt-1 text-[13px] leading-6", dark ? "text-white/55" : "text-gray-500")}>{description}</p> : null}
       <div className={cn(compact ? "mt-3" : "mt-4")}>{children}</div>
     </article>
@@ -1199,7 +1199,7 @@ function DashboardContent() {
         <section className="min-w-0">
           <header className={cn("flex min-h-[88px] items-center border-b px-5 py-3 sm:px-6", dark ? "border-white/10 bg-[#0f1116]" : "border-[#e7e1d5] bg-[#fbf7ef]/72")}>
             <div className="flex w-full items-center justify-between gap-4">
-              <div><h1 className={cn("text-[1.65rem] font-extrabold tracking-[-0.08em]", dark ? "text-white" : "text-gray-900")}>{sectionMeta.title}</h1><p className={cn("mt-0.5 text-[13px]", dark ? "text-white/55" : "text-gray-500")}>{section === "overview" ? `Welcome back, ${authLoading ? "..." : firstName}.` : sectionMeta.description}</p></div>
+              <div><h1 className={cn("text-[1.65rem] font-bold tracking-[-0.03em]", dark ? "text-white" : "text-gray-900")}>{sectionMeta.title}</h1><p className={cn("mt-0.5 text-[13px]", dark ? "text-white/55" : "text-gray-500")}>{section === "overview" ? `Welcome back, ${authLoading ? "..." : firstName}.` : sectionMeta.description}</p></div>
               <div className="flex items-center gap-2">
                 <a
                   className={cn(
@@ -1268,7 +1268,7 @@ function DashboardContent() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className={cn("text-[0.78rem] font-semibold uppercase tracking-[0.18em]", dark ? "text-white/35" : "text-[#8b7f70]")}>Account connection</div>
-                    <h2 className={cn("mt-2 text-[1.55rem] font-bold tracking-[-0.06em]", dark ? "text-white" : "text-gray-900")}>Approve this browser</h2>
+                    <h2 className={cn("mt-2 text-[1.55rem] font-bold tracking-[-0.03em]", dark ? "text-white" : "text-gray-900")}>Approve this browser</h2>
                     <p className={cn("mt-2 text-sm leading-6", dark ? "text-white/60" : "text-gray-600")}>Confirm this browser connection to finish linking the extension to your Knowlense account.</p>
                   </div>
                   <button className={cn("inline-flex h-10 w-10 items-center justify-center rounded-full border text-xl leading-none transition", dark ? "border-white/10 bg-white/5 text-white/65 hover:bg-white/10 hover:text-white" : "border-black/10 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-900")} onClick={clearConnectRequestFromUrl} type="button">
