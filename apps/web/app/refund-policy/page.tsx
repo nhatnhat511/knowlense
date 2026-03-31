@@ -1,4 +1,10 @@
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import {
+  DEFAULT_PUBLIC_HEADER_TAG,
+  DEFAULT_PUBLIC_NAV_ITEMS,
+  DEFAULT_PUBLIC_PRIMARY_CTA,
+  SiteFooter,
+  SiteHeader
+} from "@/components/site/chrome";
 
 const lastUpdated = "March 31, 2026";
 
@@ -6,12 +12,9 @@ export default function RefundPolicyPage() {
   return (
     <main className="app-shell">
       <SiteHeader
-        tag="Refund Policy"
-        navItems={[
-          { href: "/pricing", label: "Pricing" },
-          { href: "/terms", label: "Terms" },
-          { href: "/contact", label: "Contact" }
-        ]}
+        tag={DEFAULT_PUBLIC_HEADER_TAG}
+        navItems={DEFAULT_PUBLIC_NAV_ITEMS}
+        primaryCta={DEFAULT_PUBLIC_PRIMARY_CTA}
       />
 
       <section className="shell legal-surface">

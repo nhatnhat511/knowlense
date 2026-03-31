@@ -1,16 +1,18 @@
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import {
+  DEFAULT_PUBLIC_HEADER_TAG,
+  DEFAULT_PUBLIC_NAV_ITEMS,
+  DEFAULT_PUBLIC_PRIMARY_CTA,
+  SiteFooter,
+  SiteHeader
+} from "@/components/site/chrome";
 
 export default function AboutPage() {
   return (
     <main className="app-shell">
       <SiteHeader
-        tag="About"
-        navItems={[
-          { href: "/pricing", label: "Pricing" },
-          { href: "/contact", label: "Contact" },
-          { href: "/auth/sign-in", label: "Sign in" }
-        ]}
-        primaryCta={{ href: "/auth/sign-up", label: "Start free" }}
+        tag={DEFAULT_PUBLIC_HEADER_TAG}
+        navItems={DEFAULT_PUBLIC_NAV_ITEMS}
+        primaryCta={DEFAULT_PUBLIC_PRIMARY_CTA}
       />
 
       <section className="shell marketing-surface">

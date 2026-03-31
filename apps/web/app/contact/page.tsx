@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import { HiOutlineMail } from "react-icons/hi";
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import {
+  DEFAULT_PUBLIC_HEADER_TAG,
+  DEFAULT_PUBLIC_NAV_ITEMS,
+  DEFAULT_PUBLIC_PRIMARY_CTA,
+  SiteFooter,
+  SiteHeader
+} from "@/components/site/chrome";
 import { sendContactMessage } from "@/lib/api/contact";
 
 type FormErrors = {
@@ -83,12 +89,9 @@ export default function ContactPage() {
   return (
     <main className="app-shell">
       <SiteHeader
-        tag="Contact"
-        navItems={[
-          { href: "/pricing", label: "Pricing" },
-          { href: "/about", label: "About" },
-          { href: "/faq", label: "FAQ" }
-        ]}
+        tag={DEFAULT_PUBLIC_HEADER_TAG}
+        navItems={DEFAULT_PUBLIC_NAV_ITEMS}
+        primaryCta={DEFAULT_PUBLIC_PRIMARY_CTA}
       />
 
       <section className="shell marketing-surface">

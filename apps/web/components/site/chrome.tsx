@@ -18,6 +18,15 @@ type SiteHeaderProps = {
   primaryCta?: NavItem;
 };
 
+export const DEFAULT_PUBLIC_HEADER_TAG = "TPT seller intelligence";
+export const DEFAULT_PUBLIC_NAV_ITEMS: NavItem[] = [
+  { href: "/pricing", label: "Pricing" },
+  { href: "/about", label: "About" },
+  { href: "/contact", label: "Contact" },
+  { href: "/auth/sign-in", label: "Login" }
+];
+export const DEFAULT_PUBLIC_PRIMARY_CTA: NavItem = { href: "/auth/sign-up", label: "Sign Up" };
+
 export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) {
   const pathname = usePathname();
   const menuId = useId();

@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import {
+  DEFAULT_PUBLIC_HEADER_TAG,
+  DEFAULT_PUBLIC_NAV_ITEMS,
+  DEFAULT_PUBLIC_PRIMARY_CTA,
+  SiteFooter,
+  SiteHeader
+} from "@/components/site/chrome";
 
 const proofPoints = [
   {
@@ -47,14 +53,9 @@ export default function HomePage() {
   return (
     <main className="app-shell">
       <SiteHeader
-        tag="TPT seller intelligence"
-        navItems={[
-          { href: "/pricing", label: "Pricing" },
-          { href: "/about", label: "About" },
-          { href: "/contact", label: "Contact Sales" },
-          { href: "/auth/sign-in", label: "Login" }
-        ]}
-        primaryCta={{ href: "/auth/sign-up", label: "Sign Up" }}
+        tag={DEFAULT_PUBLIC_HEADER_TAG}
+        navItems={DEFAULT_PUBLIC_NAV_ITEMS}
+        primaryCta={DEFAULT_PUBLIC_PRIMARY_CTA}
       />
 
       <section className="shell hero-home">
