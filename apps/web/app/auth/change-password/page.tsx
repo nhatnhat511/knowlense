@@ -240,7 +240,7 @@ export default function ChangePasswordPage() {
           disabled={loading || !ready}
           type="submit"
         >
-          {loading ? "Updating..." : nonceSent ? "Change password" : "Send verification code"}
+          {loading ? (nonceSent ? "Updating password..." : "Sending verification code...") : nonceSent ? "Update password" : "Send verification code"}
         </button>
       </form>
     </AuthShell>

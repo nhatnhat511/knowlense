@@ -173,7 +173,7 @@ export default function UpdatePasswordPage() {
           disabled={loading}
           type="submit"
         >
-          {loading ? "Updating..." : "Update password"}
+          {loading ? "Updating password..." : "Save new password"}
         </button>
       </form>
     </AuthShell>
