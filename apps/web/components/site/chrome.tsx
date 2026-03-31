@@ -337,8 +337,8 @@ export function SiteFooter() {
           <div>
             <BrandLockup className="mb-4" compact dark subtitle="Boost Your TPT Rankings & Sales" />
             <p className="footer-copy">
-              Knowlense helps Teachers Pay Teachers sellers move from scattered research to a structured workflow across the
-              website and Chrome extension.
+              Knowlense gives TPT sellers a clearer way to audit listings, review keyword performance, and improve product
+              visibility from one focused SEO workspace.
             </p>
             <a className="footer-inline-link" href="mailto:support@knowlense.com">
               support@knowlense.com

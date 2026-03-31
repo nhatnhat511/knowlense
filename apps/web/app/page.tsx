@@ -56,9 +56,9 @@ const workflowSteps = [
 ];
 
 const checklist = [
-  "Audit TPT listings in minutes",
-  "Track ranking progress when you upgrade",
-  "Turn product reviews into clear next steps"
+  "Check keyword positioning on TPT product pages",
+  "Run SEO Health reviews in one focused panel",
+  "Confirm search indexing across major engines"
 ];
 
 export default function HomePage() {
@@ -87,7 +87,7 @@ export default function HomePage() {
         </div>
 
         <aside className="hero-aside">
-          <div className="hero-chip">Designed for TPT listing growth</div>
+          <div className="hero-chip">Core extension checks</div>
           <ul className="hero-checklist">
             {checklist.map((item) => (
               <li key={item}>{item}</li>
