@@ -93,8 +93,8 @@ export default function ContactPage() {
 
       <section className="shell marketing-surface">
         <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[0.9fr_1.8fr]">
-          <article className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
-            <h1 className="text-3xl font-semibold tracking-[-0.02em] text-slate-950">Contact</h1>
+          <article className="rounded-[2rem] border border-slate-300 bg-white p-8 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
+            <h1 className="font-display text-3xl font-semibold tracking-[-0.02em] text-slate-950">Contact</h1>
             <p className="mt-4 text-base leading-7 text-slate-600">Questions about your account, billing, or extension setup? Send a message and we&apos;ll help you move forward.</p>
             <div className="mt-8 space-y-4 text-sm leading-7 text-slate-700">
               <p>
@@ -109,15 +109,9 @@ export default function ContactPage() {
               <p>We usually respond within 24 hours.</p>
               <p>Use this form for product questions, account access issues, billing follow-up, or extension connection support.</p>
             </div>
-            <a
-              className="mt-8 inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-50"
-              href="mailto:support@knowlense.com?subject=Knowlense%20Website%20Contact"
-            >
-              Email Support
-            </a>
           </article>
 
-          <article className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
+          <article className="rounded-[2rem] border border-slate-300 bg-white p-8 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
             <form className="space-y-5" onSubmit={handleSubmit}>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-800" htmlFor="contact-name">
@@ -125,7 +119,7 @@ export default function ContactPage() {
                 </label>
                 <input
                   id="contact-name"
-                  className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-slate-950 outline-none transition-all focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                  className="h-14 w-full rounded-2xl border border-slate-300 bg-white px-4 text-slate-950 outline-none transition-all focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                   onChange={(event) => setName(event.target.value)}
                   type="text"
                   value={name}
@@ -139,7 +133,7 @@ export default function ContactPage() {
                 </label>
                 <input
                   id="contact-email"
-                  className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-slate-950 outline-none transition-all focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                  className="h-14 w-full rounded-2xl border border-slate-300 bg-white px-4 text-slate-950 outline-none transition-all focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                   onChange={(event) => setEmail(event.target.value)}
                   type="email"
                   value={email}
@@ -153,7 +147,7 @@ export default function ContactPage() {
                 </label>
                 <textarea
                   id="contact-message"
-                  className="min-h-44 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition-all focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                  className="min-h-44 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none transition-all focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                   onChange={(event) => setMessage(event.target.value)}
                   placeholder="Tell us how we can help..."
                   value={message}
