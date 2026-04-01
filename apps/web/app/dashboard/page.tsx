@@ -1322,28 +1322,28 @@ function DashboardContent() {
           {billingSyncError ? <div className={cn("mb-4 rounded-[18px] border px-4 py-3 text-sm leading-6", dark ? "border-red-400/30 bg-red-500/10 text-red-100" : "border-red-200 bg-red-50 text-red-700")}>{billingSyncError}</div> : null}
           <div className="grid gap-3 md:grid-cols-2">
             <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}>
-              <div className={cn("text-sm font-medium", dark ? "text-white/55" : "text-neutral-500")}>Current plan</div>
+              <div className={cn("text-base font-semibold", dark ? "text-white/65" : "text-neutral-700")}>Current plan</div>
               <div className={cn("mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] sm:text-[2rem]", billing?.status === "active" ? (dark ? "text-emerald-300" : "text-emerald-700") : dark ? "text-white" : "text-black")}>
                 {planLabel}{billingCycleLabel ? ` (${billingCycleLabel})` : ""}
               </div>
               <div className="mt-4 space-y-3">
                 {billing?.status === "active" ? <>
-                  <div className={cn("rounded-[18px] border px-4 py-3", dark ? "border-emerald-400/20 bg-emerald-400/10" : "border-emerald-200 bg-emerald-50/80")}>
-                    <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-emerald-200/70" : "text-emerald-700/75")}>Started on</div>
-                    <div className={cn("mt-1 text-base font-semibold", dark ? "text-emerald-100" : "text-emerald-900")}>{startedBillingLabel ?? "Premium access is already active."}</div>
+                  <div className={cn("rounded-[18px] border px-4 py-3", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+                    <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-white/45" : "text-neutral-500")}>Started on</div>
+                    <div className={cn("mt-1 text-base font-semibold", dark ? "text-white" : "text-gray-900")}>{startedBillingLabel ?? "Premium access is already active."}</div>
                   </div>
-                  <div className={cn("rounded-[18px] border px-4 py-3", dark ? "border-emerald-400/20 bg-emerald-400/10" : "border-emerald-200 bg-emerald-50/80")}>
-                    <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-emerald-200/70" : "text-emerald-700/75")}>Premium until</div>
-                    <div className={cn("mt-1 text-base font-semibold", dark ? "text-emerald-100" : "text-emerald-900")}>{nextBillingLabel ?? "Will appear here once Paddle sync is available."}</div>
+                  <div className={cn("rounded-[18px] border px-4 py-3", dark ? "border-emerald-400/25 bg-emerald-400/12" : "border-emerald-200 bg-emerald-50/90")}>
+                    <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-emerald-200/75" : "text-emerald-700/75")}>Premium until</div>
+                    <div className={cn("mt-1 text-[1.15rem] font-semibold", dark ? "text-emerald-100" : "text-emerald-900")}>{nextBillingLabel ?? "Will appear here once Paddle sync is available."}</div>
                   </div>
                 </> : <p className={cn("text-sm leading-6", dark ? "text-white/55" : "text-neutral-600")}>Your account is currently on the free plan.</p>}
               </div>
-              {billing?.status === "active" ? <div className="mt-4 flex flex-wrap gap-2">
-                <button className={cn("inline-flex min-h-[52px] items-center rounded-[18px] px-4 text-left text-sm font-semibold transition", dark ? "border border-white/10 bg-white/5 text-white hover:bg-white/10 disabled:bg-white/5 disabled:text-white/45" : "border border-black/10 bg-white text-gray-900 hover:bg-neutral-50 disabled:text-gray-400")} disabled={manageSubscriptionBusy} onClick={() => void handleManageSubscription()} type="button">
-                  {manageSubscriptionBusy ? "Opening..." : "Manage Subscription"}
-                  {!manageSubscriptionBusy ? <span className={cn("ml-3 text-xs font-medium", dark ? "text-white/45" : "text-neutral-500")}>Update billing details, invoices, and payment methods</span> : null}
-                </button>
-                {billing?.billingInterval === "monthly" ? <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100 disabled:bg-white/60" : "bg-gray-900 text-white hover:bg-black disabled:bg-gray-400")} disabled={yearlyUpgradeBusy} onClick={() => void handleUpgradeToYearly()} type="button">{yearlyUpgradeBusy ? "Updating..." : "Upgrade to Yearly"}</button> : null}
+              {billing?.status === "active" ? <div className="mt-4 space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <button className={cn("inline-flex h-11 items-center rounded-full px-5 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100 disabled:bg-white/60" : "bg-gray-900 text-white hover:bg-black disabled:bg-gray-400")} disabled={manageSubscriptionBusy} onClick={() => void handleManageSubscription()} type="button">{manageSubscriptionBusy ? "Opening..." : "Manage Subscription"}</button>
+                  {billing?.billingInterval === "monthly" ? <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100 disabled:bg-white/60" : "bg-gray-900 text-white hover:bg-black disabled:bg-gray-400")} disabled={yearlyUpgradeBusy} onClick={() => void handleUpgradeToYearly()} type="button">{yearlyUpgradeBusy ? "Updating..." : "Upgrade to Yearly"}</button> : null}
+                </div>
+                <p className={cn("text-sm leading-6", dark ? "text-white/45" : "text-neutral-500")}>Update billing details, invoices, payment methods, and subscription settings.</p>
               </div> : null}
             </div>
             <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
@@ -1355,8 +1355,11 @@ function DashboardContent() {
                     <div className={cn("text-sm leading-6", dark ? "text-white/75" : "text-neutral-700")}>{feature}</div>
                   </div>
                 ))}
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className={cn("mt-0.5 h-5 w-5 shrink-0", dark ? "text-emerald-300" : "text-emerald-600")} />
+                  <div className={cn("text-sm leading-6", dark ? "text-white/55" : "text-neutral-500")}>New plan improvements and product updates will appear here as Knowlense expands.</div>
+                </div>
               </div>
-              <p className={cn("mt-4 text-sm leading-6", dark ? "text-white/45" : "text-neutral-500")}>New plan improvements and product updates will appear here as Knowlense expands.</p>
             </div>
           </div>
           {billing?.status !== "active" ? <div className="mt-4"><button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100" : "bg-gray-900 text-white hover:bg-black")} onClick={() => setShowSubscriptionPricing(true)} type="button">Upgrade to Premium</button></div> : null}
