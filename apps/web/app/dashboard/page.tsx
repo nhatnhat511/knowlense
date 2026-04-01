@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState, startTransition, type ChangeEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { UserIdentity } from "@supabase/supabase-js";
-import { Bell, CheckCircle2, CreditCard, Globe2, KeyRound, LayoutGrid, LifeBuoy, Moon, PlugZap, RefreshCw, Shield, Sparkles, Sun, Trash2, Upload, UserRound } from "lucide-react";
+import { Bell, CheckCircle2, CreditCard, Globe2, KeyRound, LayoutGrid, LifeBuoy, Moon, PlugZap, RefreshCw, Settings2, Shield, Sparkles, Sun, Trash2, Upload, UserRound } from "lucide-react";
 import { FaBrave, FaChrome, FaEdge, FaFirefoxBrowser, FaSafari } from "react-icons/fa6";
 import { SiGithub, SiGoogle } from "react-icons/si";
 import { BrandLockup } from "@/components/brand/brand";
@@ -183,8 +183,8 @@ function ThemeButton({
 function Card({ dark, compact, title, description, children }: { dark: boolean; compact?: boolean; title: string; description?: string; children: React.ReactNode }) {
   return (
     <article className={cn("rounded-2xl border shadow-[0_20px_55px_rgba(15,23,42,0.08)]", compact ? "p-3.5 sm:p-4" : "p-4 sm:p-5", dark ? "border-white/10 bg-[#111318]" : "border-gray-100 bg-white")}>
-      <h3 className={cn("text-[0.98rem] font-bold tracking-[-0.025em] sm:text-base", dark ? "text-white" : "text-gray-900")}>{title}</h3>
-      {description ? <p className={cn("mt-1 text-[13px] leading-6", dark ? "text-white/55" : "text-gray-500")}>{description}</p> : null}
+      {title ? <h3 className={cn("text-[0.98rem] font-bold tracking-[-0.025em] sm:text-base", dark ? "text-white" : "text-gray-900")}>{title}</h3> : null}
+      {description ? <p className={cn(title ? "mt-1" : "mt-0", "text-[13px] leading-6", dark ? "text-white/55" : "text-gray-500")}>{description}</p> : null}
       <div className={cn(compact ? "mt-3" : "mt-4")}>{children}</div>
     </article>
   );
@@ -1318,7 +1318,7 @@ function DashboardContent() {
 
     return (
       <div className="mt-5 space-y-4">
-        <Card compact={compact} dark={dark} title="Subscription" description={billing?.status === "active" ? undefined : "Choose a Premium billing cycle without leaving your workspace."}>
+        <Card compact={compact} dark={dark} title="" description={billing?.status === "active" ? undefined : "Choose a Premium billing cycle without leaving your workspace."}>
           {billingSyncError ? <div className={cn("mb-4 rounded-[18px] border px-4 py-3 text-sm leading-6", dark ? "border-red-400/30 bg-red-500/10 text-red-100" : "border-red-200 bg-red-50 text-red-700")}>{billingSyncError}</div> : null}
           <div className="grid gap-3 md:grid-cols-2">
             <div className={cn("rounded-[20px] border p-4", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-white")}>
@@ -1340,8 +1340,8 @@ function DashboardContent() {
               </div>
               {billing?.status === "active" ? <div className="mt-4 space-y-3">
                 <div className="flex flex-wrap gap-2">
-                  <button className={cn("inline-flex h-11 items-center rounded-full px-5 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100 disabled:bg-white/60" : "bg-gray-900 text-white hover:bg-black disabled:bg-gray-400")} disabled={manageSubscriptionBusy} onClick={() => void handleManageSubscription()} type="button">{manageSubscriptionBusy ? "Opening..." : "Manage Subscription"}</button>
-                  {billing?.billingInterval === "monthly" ? <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100 disabled:bg-white/60" : "bg-gray-900 text-white hover:bg-black disabled:bg-gray-400")} disabled={yearlyUpgradeBusy} onClick={() => void handleUpgradeToYearly()} type="button">{yearlyUpgradeBusy ? "Updating..." : "Upgrade to Yearly"}</button> : null}
+                  <button className={cn("inline-flex h-11 items-center gap-2 rounded-full px-5 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100 disabled:bg-white/60" : "bg-gray-900 text-white hover:bg-black disabled:bg-gray-400")} disabled={manageSubscriptionBusy} onClick={() => void handleManageSubscription()} type="button">{manageSubscriptionBusy ? "Opening..." : <><Settings2 size={16} />Manage Subscription</>}</button>
+                  {billing?.billingInterval === "monthly" ? <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-amber-300 text-amber-950 hover:bg-amber-200 disabled:bg-amber-300/60" : "bg-amber-500 text-white hover:bg-amber-600 disabled:bg-amber-300")} disabled={yearlyUpgradeBusy} onClick={() => void handleUpgradeToYearly()} type="button">{yearlyUpgradeBusy ? "Updating..." : "Upgrade to Yearly"}</button> : null}
                 </div>
                 <p className={cn("text-sm leading-6", dark ? "text-white/45" : "text-neutral-500")}>Update billing details, invoices, payment methods, and subscription settings.</p>
               </div> : null}
