@@ -455,6 +455,22 @@ function DashboardContent() {
     yearlyUpgradePreview?.recurringTransaction?.total ?? null,
     yearlyUpgradePreview?.currencyCode ?? null
   );
+  const previewChargeTodaySubtotalLabel = formatBillingMoney(
+    yearlyUpgradePreview?.immediateTransaction?.subtotal ?? null,
+    yearlyUpgradePreview?.currencyCode ?? null
+  );
+  const previewChargeTodayTaxLabel = formatBillingMoney(
+    yearlyUpgradePreview?.immediateTransaction?.tax ?? null,
+    yearlyUpgradePreview?.currencyCode ?? null
+  );
+  const previewYearlySubtotalLabel = formatBillingMoney(
+    yearlyUpgradePreview?.recurringTransaction?.subtotal ?? null,
+    yearlyUpgradePreview?.currencyCode ?? null
+  );
+  const previewYearlyTaxLabel = formatBillingMoney(
+    yearlyUpgradePreview?.recurringTransaction?.tax ?? null,
+    yearlyUpgradePreview?.currencyCode ?? null
+  );
   const previewCreditLabel = formatBillingMoney(
     yearlyUpgradePreview?.updateSummary?.creditTotal ?? null,
     yearlyUpgradePreview?.currencyCode ?? null
@@ -1933,10 +1949,22 @@ function DashboardContent() {
                 <div className={cn("rounded-[22px] border px-4 py-3", dark ? "border-amber-300/20 bg-amber-300/10" : "border-amber-200 bg-amber-50/90")}>
                   <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-amber-100/70" : "text-amber-700/80")}>Charge today</div>
                   <div className={cn("mt-1 text-[1.2rem] font-semibold", dark ? "text-amber-100" : "text-amber-950")}>{previewChargeTodayLabel ?? "Calculated by Paddle at confirmation"}</div>
+                  {previewChargeTodayTaxLabel || previewChargeTodaySubtotalLabel ? (
+                    <div className={cn("mt-2 text-xs leading-5", dark ? "text-amber-100/75" : "text-amber-800/85")}>
+                      {previewChargeTodaySubtotalLabel ? <div>Subtotal: {previewChargeTodaySubtotalLabel}</div> : null}
+                      {previewChargeTodayTaxLabel ? <div>Tax: {previewChargeTodayTaxLabel}</div> : null}
+                    </div>
+                  ) : null}
                 </div>
                 <div className={cn("rounded-[22px] border px-4 py-3", dark ? "border-emerald-300/20 bg-emerald-300/10" : "border-emerald-200 bg-emerald-50/90")}>
                   <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-emerald-100/70" : "text-emerald-700/80")}>Future renewal</div>
                   <div className={cn("mt-1 text-[1.2rem] font-semibold", dark ? "text-emerald-100" : "text-emerald-950")}>{previewYearlyTotalLabel ?? "Calculated by Paddle"}</div>
+                  {previewYearlyTaxLabel || previewYearlySubtotalLabel ? (
+                    <div className={cn("mt-2 text-xs leading-5", dark ? "text-emerald-100/75" : "text-emerald-800/85")}>
+                      {previewYearlySubtotalLabel ? <div>Subtotal: {previewYearlySubtotalLabel}</div> : null}
+                      {previewYearlyTaxLabel ? <div>Tax: {previewYearlyTaxLabel}</div> : null}
+                    </div>
+                  ) : null}
                 </div>
                 <div className={cn("rounded-[22px] border px-4 py-3", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
                   <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-white/45" : "text-neutral-500")}>Next renewal date</div>
@@ -1950,6 +1978,7 @@ function DashboardContent() {
 
               <div className={cn("mt-4 rounded-[22px] border px-4 py-4 text-sm leading-6", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-gray-600")}>
                 <p>The update will switch this subscription from Premium Monthly to Premium Yearly using Paddle proration.</p>
+                <p>Tax is included in the totals above whenever Paddle applies tax to this subscription.</p>
                 <p>{previewChargeLabel ? `Prorated charges: ${previewChargeLabel}.` : "Prorated charges will be calculated by Paddle."} {previewCreditLabel ? `Prorated credits: ${previewCreditLabel}.` : ""}</p>
                 {yearlyUpgradePreview.consentRequirementsCount > 0 ? <p className={cn("mt-2 font-medium", dark ? "text-amber-200" : "text-amber-800")}>Paddle reported additional consent requirements for this billing period. Review carefully before confirming.</p> : null}
               </div>
