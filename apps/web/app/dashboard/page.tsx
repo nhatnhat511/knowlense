@@ -14,7 +14,7 @@ import { useAuthGuard } from "@/hooks/use-auth";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useExtensionStatus } from "@/hooks/use-extension-status";
 import { signOutFromApi } from "@/lib/api/auth";
-import { applyYearlyUpgrade, confirmCheckout, fetchManageSubscriptionUrl, previewYearlyUpgrade, type YearlyUpgradePreview } from "@/lib/api/billing";
+import { confirmCheckout, fetchManageSubscriptionUrl, upgradeSubscriptionToYearly } from "@/lib/api/billing";
 import { sendContactMessage } from "@/lib/api/contact";
 import { fetchRankTrackingDashboard, type RankTrackingDashboard } from "@/lib/api/dashboard";
 import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice, revokeOtherExtensionDevices } from "@/lib/api/extension-connect";
@@ -54,39 +54,6 @@ function formatDeviceTime(value: string) {
     year: "numeric",
     hour: "numeric",
     minute: "2-digit"
-  }).format(date);
-}
-
-function formatBillingMoney(value: string | null, currencyCode: string | null) {
-  if (!value || !currencyCode) {
-    return null;
-  }
-
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) {
-    return null;
-  }
-
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: currencyCode
-  }).format(amount / 100);
-}
-
-function formatBillingDate(value: string | null) {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric"
   }).format(date);
 }
 
@@ -407,8 +374,6 @@ function DashboardContent() {
   const [showSubscriptionPricing, setShowSubscriptionPricing] = useState(false);
   const [billingSyncError, setBillingSyncError] = useState("");
   const processedBillingTransactionRef = useRef("");
-  const [yearlyUpgradePreview, setYearlyUpgradePreview] = useState<YearlyUpgradePreview | null>(null);
-  const [yearlyUpgradePreviewBusy, setYearlyUpgradePreviewBusy] = useState(false);
   const [yearlyUpgradeBusy, setYearlyUpgradeBusy] = useState(false);
   const [manageSubscriptionBusy, setManageSubscriptionBusy] = useState(false);
   const [contactName, setContactName] = useState("");
@@ -447,23 +412,6 @@ function DashboardContent() {
     billing?.nextBilledAt
       ? new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(billing.nextBilledAt))
       : null;
-  const previewChargeTodayLabel = formatBillingMoney(
-    yearlyUpgradePreview?.updateSummary?.resultTotal ?? yearlyUpgradePreview?.immediateTransaction?.total ?? null,
-    yearlyUpgradePreview?.currencyCode ?? null
-  );
-  const previewYearlyTotalLabel = formatBillingMoney(
-    yearlyUpgradePreview?.recurringTransaction?.total ?? null,
-    yearlyUpgradePreview?.currencyCode ?? null
-  );
-  const previewCreditLabel = formatBillingMoney(
-    yearlyUpgradePreview?.updateSummary?.creditTotal ?? null,
-    yearlyUpgradePreview?.currencyCode ?? null
-  );
-  const previewChargeLabel = formatBillingMoney(
-    yearlyUpgradePreview?.updateSummary?.chargeTotal ?? null,
-    yearlyUpgradePreview?.currencyCode ?? null
-  );
-  const previewNextBillingLabel = formatBillingDate(yearlyUpgradePreview?.nextBilledAt ?? null);
   const sidebarCollapsed = true;
   const signInMethod = user?.signInMethod ?? "unknown";
   const signInMethodMeta = getSignInMethodMeta(signInMethod);
@@ -610,31 +558,12 @@ function DashboardContent() {
     showToast("Premium access is now active on this account.");
     setBillingSyncError("");
     setShowSubscriptionPricing(false);
-    setYearlyUpgradePreview(null);
     startTransition(() => {
       router.replace("/dashboard?section=subscription");
     });
   }, [billing?.status, billingResult, router, showToast]);
 
   async function handleUpgradeToYearly() {
-    if (!accessToken || yearlyUpgradeBusy || yearlyUpgradePreviewBusy) {
-      return;
-    }
-
-    setYearlyUpgradePreviewBusy(true);
-    setBillingSyncError("");
-
-    try {
-      const result = await previewYearlyUpgrade(accessToken);
-      setYearlyUpgradePreview(result.preview);
-    } catch (error) {
-      setBillingSyncError(error instanceof Error ? error.message : "Unable to preview this subscription upgrade.");
-    } finally {
-      setYearlyUpgradePreviewBusy(false);
-    }
-  }
-
-  async function handleConfirmYearlyUpgrade() {
     if (!accessToken || yearlyUpgradeBusy) {
       return;
     }
@@ -643,8 +572,7 @@ function DashboardContent() {
     setBillingSyncError("");
 
     try {
-      await applyYearlyUpgrade(accessToken);
-      setYearlyUpgradePreview(null);
+      await upgradeSubscriptionToYearly(accessToken);
       refresh();
       showToast("Your subscription has been updated to yearly billing.");
     } catch (error) {
@@ -1494,7 +1422,7 @@ function DashboardContent() {
             {billing?.status === "active" ? <div className="mt-4 space-y-3">
               <div className="flex flex-wrap gap-2">
                 <button className={cn("inline-flex h-11 items-center gap-2 rounded-full px-5 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100 disabled:bg-white/60" : "bg-gray-900 text-white hover:bg-black disabled:bg-gray-400")} disabled={manageSubscriptionBusy} onClick={() => void handleManageSubscription()} type="button">{manageSubscriptionBusy ? "Opening..." : <><Settings2 size={16} />Manage Subscription</>}</button>
-                {normalizedBillingInterval === "monthly" ? <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-amber-300 text-amber-950 hover:bg-amber-200 disabled:bg-amber-300/60" : "bg-amber-500 text-white hover:bg-amber-600 disabled:bg-amber-300")} disabled={yearlyUpgradePreviewBusy || yearlyUpgradeBusy} onClick={() => void handleUpgradeToYearly()} type="button">{yearlyUpgradePreviewBusy ? "Reviewing..." : yearlyUpgradeBusy ? "Updating..." : "Upgrade to Yearly"}</button> : null}
+                {normalizedBillingInterval === "monthly" ? <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-amber-300 text-amber-950 hover:bg-amber-200 disabled:bg-amber-300/60" : "bg-amber-500 text-white hover:bg-amber-600 disabled:bg-amber-300")} disabled={yearlyUpgradeBusy} onClick={() => void handleUpgradeToYearly()} type="button">{yearlyUpgradeBusy ? "Updating..." : "Upgrade to Yearly"}</button> : null}
               </div>
               <p className={cn("text-sm leading-6", dark ? "text-white/45" : "text-neutral-500")}>Update billing details, invoices, payment methods, and subscription settings.</p>
             </div> : null}
@@ -1901,74 +1829,6 @@ function DashboardContent() {
             {section === "contact" ? contactView() : null}
             {section === "privacy" ? privacyView() : null}
           </div>
-
-          {yearlyUpgradePreview ? (
-            <div className="fixed inset-0 z-40 flex items-center justify-center bg-[rgba(15,23,42,0.45)] px-4 py-8">
-              <div className={cn("w-full max-w-[520px] rounded-[28px] border p-5 shadow-[0_32px_90px_rgba(15,23,42,0.22)] sm:p-6", dark ? "border-white/10 bg-[#111318]" : "border-[#e7e1d5] bg-[#fffdf9]")}>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className={cn("text-[0.78rem] font-semibold uppercase tracking-[0.18em]", dark ? "text-white/35" : "text-[#8b7f70]")}>Billing confirmation</div>
-                    <h2 className={cn("mt-2 text-[1.55rem] font-bold tracking-[-0.03em]", dark ? "text-white" : "text-gray-900")}>Confirm your yearly upgrade</h2>
-                    <p className={cn("mt-2 text-sm leading-6", dark ? "text-white/60" : "text-gray-600")}>
-                      This preview is generated from Paddle before the subscription update is applied. Confirm only if you want us to charge the saved payment method on this subscription now.
-                    </p>
-                  </div>
-                  <button
-                    className={cn("inline-flex h-10 w-10 items-center justify-center rounded-full border text-xl leading-none transition", dark ? "border-white/10 bg-white/5 text-white/65 hover:bg-white/10 hover:text-white" : "border-black/10 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-900")}
-                    disabled={yearlyUpgradeBusy}
-                    onClick={() => setYearlyUpgradePreview(null)}
-                    type="button"
-                  >
-                    ×
-                  </button>
-                </div>
-
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <div className={cn("rounded-[22px] border px-4 py-3", dark ? "border-amber-300/20 bg-amber-300/10" : "border-amber-200 bg-amber-50/90")}>
-                    <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-amber-100/70" : "text-amber-700/80")}>Charge today</div>
-                    <div className={cn("mt-1 text-[1.2rem] font-semibold", dark ? "text-amber-100" : "text-amber-950")}>{previewChargeTodayLabel ?? "Calculated by Paddle at confirmation"}</div>
-                  </div>
-                  <div className={cn("rounded-[22px] border px-4 py-3", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
-                    <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-white/45" : "text-neutral-500")}>Next yearly renewal</div>
-                    <div className={cn("mt-1 text-[1.2rem] font-semibold", dark ? "text-white" : "text-gray-900")}>{previewYearlyTotalLabel ?? "Unavailable"}</div>
-                  </div>
-                  <div className={cn("rounded-[22px] border px-4 py-3", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
-                    <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-white/45" : "text-neutral-500")}>Next billing date</div>
-                    <div className={cn("mt-1 text-base font-semibold", dark ? "text-white" : "text-gray-900")}>{previewNextBillingLabel ?? "Unavailable"}</div>
-                  </div>
-                  <div className={cn("rounded-[22px] border px-4 py-3", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
-                    <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-white/45" : "text-neutral-500")}>Collection method</div>
-                    <div className={cn("mt-1 text-base font-semibold", dark ? "text-white" : "text-gray-900")}>{yearlyUpgradePreview.collectionMode === "automatic" ? "Saved payment method" : yearlyUpgradePreview.collectionMode === "manual" ? "Manual collection" : "Unavailable"}</div>
-                  </div>
-                </div>
-
-                <div className={cn("mt-4 rounded-[22px] border px-4 py-4 text-sm leading-6", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-gray-600")}>
-                  <p>The update will switch this subscription from Premium Monthly to Premium Yearly using Paddle proration.</p>
-                  <p>{previewChargeLabel ? `Prorated charges: ${previewChargeLabel}.` : "Prorated charges will be calculated by Paddle."} {previewCreditLabel ? `Prorated credits: ${previewCreditLabel}.` : ""}</p>
-                  {yearlyUpgradePreview.consentRequirementsCount > 0 ? <p className={cn("mt-2 font-medium", dark ? "text-amber-200" : "text-amber-800")}>Paddle reported additional consent requirements for this billing period. Review carefully before confirming.</p> : null}
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <button
-                    className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100 disabled:bg-white/60" : "bg-gray-900 text-white hover:bg-black disabled:bg-gray-400")}
-                    disabled={yearlyUpgradeBusy}
-                    onClick={() => void handleConfirmYearlyUpgrade()}
-                    type="button"
-                  >
-                    {yearlyUpgradeBusy ? "Applying upgrade..." : "Confirm and charge"}
-                  </button>
-                  <button
-                    className={cn("inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium transition", dark ? "border-white/10 bg-white/5 text-white hover:bg-white/10" : "border-black/10 bg-white text-black hover:bg-neutral-50")}
-                    disabled={yearlyUpgradeBusy}
-                    onClick={() => setYearlyUpgradePreview(null)}
-                    type="button"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
 
           {requestId ? (
             <div className="pointer-events-none fixed inset-0 z-40 flex items-start justify-center bg-[rgba(15,23,42,0.16)] px-4 pt-24">
