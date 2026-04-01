@@ -527,6 +527,42 @@ async function syncPaddleCustomerIdentity(env: Bindings, customerId: string, ema
   return updatePaddleCustomer(env, customerId, email, name);
 }
 
+async function resolveWebhookBillingUserId(
+  env: Bindings,
+  eventType: string,
+  options: {
+    customDataUserId?: string | null;
+    subscriptionId?: string | null;
+    customerId?: string | null;
+  }
+) {
+  if (options.customDataUserId) {
+    return options.customDataUserId;
+  }
+
+  // For transaction events, require explicit custom_data.user_id so one user can't
+  // accidentally claim another customer's transaction via stale billing linkage.
+  if (eventType.startsWith("transaction.")) {
+    return null;
+  }
+
+  if (options.subscriptionId) {
+    const userId = await findBillingUserIdBySubscriptionId(env, options.subscriptionId);
+    if (userId) {
+      return userId;
+    }
+  }
+
+  if (options.customerId) {
+    const userId = await findBillingUserIdByCustomerId(env, options.customerId);
+    if (userId) {
+      return userId;
+    }
+  }
+
+  return null;
+}
+
 function parsePaddleSignature(header: string | undefined) {
   if (!header) {
     return null;
@@ -2923,8 +2959,6 @@ app.post("/v1/billing/manage", async (c) => {
       return c.json({ error: "Manage subscription is not available for this account yet." }, 400);
     }
 
-    await syncPaddleCustomerIdentity(c.env, customerId, user.email, user.name);
-
     const environment = readPaddleEnvironment(c.env);
     const url = `${paddleBaseUrl(environment)}/customers/${customerId}/portal-sessions`;
 
@@ -3067,7 +3101,11 @@ app.post("/v1/billing/confirm", async (c) => {
     const startedAt = readPaddleStartedAt(subscription ?? transaction);
     const nextBilledAt = readPaddleNextBilledAt(subscription ?? transaction);
 
-    if (ownerUserId && ownerUserId !== user.id) {
+    if (!ownerUserId) {
+      return c.json({ error: "This Paddle transaction is missing checkout ownership metadata." }, 409);
+    }
+
+    if (ownerUserId !== user.id) {
       return c.json({ error: "This Paddle transaction belongs to a different account." }, 403);
     }
 
@@ -3077,10 +3115,6 @@ app.post("/v1/billing/confirm", async (c) => {
         ready: false,
         status: transactionStatus ?? "unknown"
       });
-    }
-
-    if (customerId) {
-      await syncPaddleCustomerIdentity(c.env, customerId, user.email, user.name);
     }
 
     await upsertPremiumBillingProfile(c.env, user.id, {
@@ -3144,13 +3178,14 @@ app.post("/v1/webhooks/paddle", async (c) => {
   const nextBilledAt = readPaddleNextBilledAt(data);
   const customerId = getPaddleString(data?.customer_id);
   const userEmail = getPaddleString(customData?.user_email);
+  const customDataUserId = getPaddleString(customData?.user_id);
   const resourceId = getPaddleString(data?.id);
   const subscriptionId = eventType.startsWith("subscription.") ? resourceId : getPaddleString(data?.subscription_id);
   const transactionId = eventType.startsWith("transaction.") ? resourceId : null;
   const occurredAt = getPaddleString(payload.occurred_at) ?? new Date().toISOString();
   const subscriptionStatus = getPaddleString(data?.status)?.toLowerCase();
-  const userId = await resolveBillingUserId(c.env, {
-    userId: getPaddleString(customData?.user_id),
+  const userId = await resolveWebhookBillingUserId(c.env, eventType, {
+    customDataUserId,
     subscriptionId,
     customerId
   });
