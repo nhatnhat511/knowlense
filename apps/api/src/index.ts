@@ -600,17 +600,17 @@ function readPaddlePriceId(data: Record<string, unknown> | null | undefined) {
 }
 
 function resolveBillingIntervalFromPaddle(data: Record<string, unknown> | null | undefined, env: Bindings) {
-  const customPlan = getPaddleString(getPaddleCustomData(data)?.plan)?.toLowerCase();
-  if (customPlan === "monthly" || customPlan === "yearly") {
-    return customPlan as PaddleBillingInterval;
-  }
-
   const priceId = readPaddlePriceId(data);
   if (priceId && env.PADDLE_PRICE_ID_YEARLY && priceId === env.PADDLE_PRICE_ID_YEARLY) {
     return "yearly";
   }
   if (priceId && env.PADDLE_PRICE_ID_MONTHLY && priceId === env.PADDLE_PRICE_ID_MONTHLY) {
     return "monthly";
+  }
+
+  const customPlan = getPaddleString(getPaddleCustomData(data)?.plan)?.toLowerCase();
+  if (customPlan === "monthly" || customPlan === "yearly") {
+    return customPlan as PaddleBillingInterval;
   }
 
   return null;

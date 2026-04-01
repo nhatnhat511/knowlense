@@ -396,8 +396,14 @@ function DashboardContent() {
   const quotaAtLimit = Boolean(metrics?.keywordRuns.disabled || overview?.quota.atLimit);
   const sectionMeta = SECTION_META[section] ?? SECTION_META.overview;
   const billing = metrics?.billing;
+  const normalizedBillingInterval =
+    billing?.planName?.toLowerCase().includes("yearly")
+      ? "yearly"
+      : billing?.planName?.toLowerCase().includes("monthly")
+        ? "monthly"
+        : billing?.billingInterval;
   const planLabel = billing?.status === "active" ? "Premium" : billing?.status === "trial" ? "Premium Trial" : billing?.status === "expired" ? "Trial expired" : "Free";
-  const billingCycleLabel = billing?.billingInterval === "yearly" ? "Yearly" : billing?.billingInterval === "monthly" ? "Monthly" : null;
+  const billingCycleLabel = normalizedBillingInterval === "yearly" ? "Yearly" : normalizedBillingInterval === "monthly" ? "Monthly" : null;
   const startedBillingLabel =
     billing?.startedAt
       ? new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(billing.startedAt))
@@ -1416,7 +1422,7 @@ function DashboardContent() {
             {billing?.status === "active" ? <div className="mt-4 space-y-3">
               <div className="flex flex-wrap gap-2">
                 <button className={cn("inline-flex h-11 items-center gap-2 rounded-full px-5 text-sm font-semibold transition", dark ? "bg-white text-gray-900 hover:bg-gray-100 disabled:bg-white/60" : "bg-gray-900 text-white hover:bg-black disabled:bg-gray-400")} disabled={manageSubscriptionBusy} onClick={() => void handleManageSubscription()} type="button">{manageSubscriptionBusy ? "Opening..." : <><Settings2 size={16} />Manage Subscription</>}</button>
-                {billing?.billingInterval === "monthly" ? <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-amber-300 text-amber-950 hover:bg-amber-200 disabled:bg-amber-300/60" : "bg-amber-500 text-white hover:bg-amber-600 disabled:bg-amber-300")} disabled={yearlyUpgradeBusy} onClick={() => void handleUpgradeToYearly()} type="button">{yearlyUpgradeBusy ? "Updating..." : "Upgrade to Yearly"}</button> : null}
+                {normalizedBillingInterval === "monthly" ? <button className={cn("inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold transition", dark ? "bg-amber-300 text-amber-950 hover:bg-amber-200 disabled:bg-amber-300/60" : "bg-amber-500 text-white hover:bg-amber-600 disabled:bg-amber-300")} disabled={yearlyUpgradeBusy} onClick={() => void handleUpgradeToYearly()} type="button">{yearlyUpgradeBusy ? "Updating..." : "Upgrade to Yearly"}</button> : null}
               </div>
               <p className={cn("text-sm leading-6", dark ? "text-white/45" : "text-neutral-500")}>Update billing details, invoices, payment methods, and subscription settings.</p>
             </div> : null}
