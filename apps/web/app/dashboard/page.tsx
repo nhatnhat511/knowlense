@@ -1526,18 +1526,10 @@ function DashboardContent() {
 
   function privacyView() {
     return (
-      <section className="mt-5 legal-surface">
-        <div className="legal-intro">
-          <h1 className="page-title">Privacy Policy</h1>
-          <p className="page-copy">
-            This Privacy Policy explains what Knowlense collects, why it is collected, how it is used, and how it is shared
-            when you use the website, dashboard, browser extension, and paid billing workflows.
-          </p>
-          <p className="legal-meta">
-            Last updated: <strong>{PRIVACY_LAST_UPDATED}</strong>
-          </p>
-        </div>
-
+      <section className="legal-surface">
+        <p className="legal-meta">
+          Last updated: <strong>{PRIVACY_LAST_UPDATED}</strong>
+        </p>
         <article className="legal-document">
           <section className="legal-section">
             <h2>1. Scope of this policy</h2>
