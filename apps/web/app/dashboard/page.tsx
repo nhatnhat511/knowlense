@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState, startTransition, type ChangeEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { UserIdentity } from "@supabase/supabase-js";
-import { Bell, CheckCircle2, CreditCard, Globe2, KeyRound, LayoutGrid, LifeBuoy, Moon, PlugZap, RefreshCw, Settings2, Shield, Sparkles, Sun, Trash2, Upload, UserRound } from "lucide-react";
+import { Bell, CheckCircle2, CreditCard, Globe2, KeyRound, LayoutGrid, Mail, Moon, PlugZap, RefreshCw, Settings2, Shield, Sparkles, Sun, Trash2, Upload, UserRound } from "lucide-react";
 import { FaBrave, FaChrome, FaEdge, FaFirefoxBrowser, FaSafari } from "react-icons/fa6";
 import { SiGithub, SiGoogle } from "react-icons/si";
 import { BrandLockup } from "@/components/brand/brand";
@@ -21,15 +21,15 @@ import { fetchApiProfile } from "@/lib/api/profile";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type ThemeMode = "light" | "dark";
-type Section = "overview" | "rankings" | "account" | "subscription" | "support" | "privacy";
+type Section = "overview" | "rankings" | "account" | "subscription" | "contact" | "privacy";
 
 const SECTION_META: Record<Section, { title: string; description: string }> = {
   overview: { title: "Dashboard", description: "A tighter overview of your account, subscription state, extension access, and latest workspace signals." },
   rankings: { title: "Keyword Rankings", description: "Track keyword movement over time for the exact product + keyword pairs started from the extension." },
   account: { title: "Account", description: "Manage your website identity, connected browsers, and account shortcuts without leaving the dashboard." },
   subscription: { title: "Subscription", description: "Review your current plan and upgrade to Premium from inside the workspace." },
-  support: { title: "Support", description: "Troubleshooting guidance and support escalation live directly in the dashboard." },
-  privacy: { title: "Privacy", description: "The key privacy and data-handling commitments are embedded directly into the app workspace." }
+  contact: { title: "Contact", description: "Reach Knowlense about billing, account access, extension setup, or product questions from the workspace." },
+  privacy: { title: "Privacy", description: "Review the core privacy commitments for accounts, billing, extension access, and service infrastructure." }
 };
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -366,7 +366,7 @@ function DashboardContent() {
   const requestedSection = searchParams.get("section");
   const billingResult = searchParams.get("billing");
   const billingTransactionId = searchParams.get("txn");
-  const section: Section = requestedSection === "rankings" || requestedSection === "account" || requestedSection === "subscription" || requestedSection === "support" || requestedSection === "privacy" ? requestedSection : requestId ? "account" : "overview";
+  const section: Section = requestedSection === "rankings" || requestedSection === "account" || requestedSection === "subscription" || requestedSection === "contact" || requestedSection === "privacy" ? requestedSection : requestId ? "account" : "overview";
   const dark = theme === "dark";
   const compact = true;
   const firstName = user?.name ?? "there";
@@ -1367,8 +1367,73 @@ function DashboardContent() {
     );
   }
 
-  function textPanel(items: string[]) {
-    return <div className="mt-5"><Card compact={compact} dark={dark} title="Summary"><div className="space-y-3 text-sm leading-6">{items.map((item) => <div className={cn("rounded-[18px] border p-3.5", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>{item}</div>)}</div></Card></div>;
+  function contactView() {
+    return (
+      <div className="mt-5 grid gap-3 xl:grid-cols-[0.9fr_1.1fr]">
+        <Card compact={compact} dark={dark} title="Reach Knowlense">
+          <div className={cn("space-y-3 text-sm leading-6", dark ? "text-white/70" : "text-neutral-600")}>
+            <p>Questions about your account, billing, or extension setup can be sent directly to the team.</p>
+            <div className={cn("rounded-[18px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
+              <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-white/40" : "text-neutral-500")}>Support email</div>
+              <a className={cn("mt-1 inline-block font-medium underline-offset-4 hover:underline", dark ? "text-white" : "text-gray-900")} href="mailto:support@knowlense.com">
+                support@knowlense.com
+              </a>
+            </div>
+            <p>Knowlense usually replies within 24 hours when the message includes enough context to reproduce the issue.</p>
+          </div>
+        </Card>
+
+        <Card compact={compact} dark={dark} title="Best topics for this inbox">
+          <div className="space-y-3">
+            {[
+              "Billing follow-up, invoices, refunds, and subscription issues.",
+              "Account access issues, sign-in problems, or browser connection failures.",
+              "Product questions about Keyword SEO, SEO Health, Search Indexing, or tracked rankings.",
+              "Extension setup details, screenshots, and the exact steps taken before the issue appeared."
+            ].map((item) => (
+              <div className={cn("rounded-[18px] border p-3.5 text-sm leading-6", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>
+                {item}
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  function privacyView() {
+    return (
+      <div className="mt-5 grid gap-3 xl:grid-cols-2">
+        <Card compact={compact} dark={dark} title="What Knowlense collects">
+          <div className="space-y-3">
+            {[
+              "Account information such as name, email, authentication identifiers, and sign-in provider details.",
+              "Extension connection data, device labels, request timestamps, and revocation history needed to manage browser access.",
+              "Billing references including plan status, Paddle customer references, subscription references, and renewal state."
+            ].map((item) => (
+              <div className={cn("rounded-[18px] border p-3.5 text-sm leading-6", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>
+                {item}
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card compact={compact} dark={dark} title="How data is handled">
+          <div className="space-y-3">
+            {[
+              "Supabase is used for account authentication, identity management, and related session services.",
+              "Cloudflare runs the website, Workers-based application logic, and operational infrastructure for the workspace.",
+              "Paddle acts as Merchant of Record for paid subscriptions, billing, taxes, and related payment workflows.",
+              "Privacy questions, data requests, or account concerns can be sent to support@knowlense.com."
+            ].map((item) => (
+              <div className={cn("rounded-[18px] border p-3.5 text-sm leading-6", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>
+                {item}
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -1384,7 +1449,7 @@ function DashboardContent() {
             </div>
           </div>
           <div className="pt-2 2xl:pt-3"><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>Workspace</p><nav className="mt-3 space-y-1"><SidebarItem active={section === "overview"} dark={dark} icon={<LayoutGrid size={16} />} iconOnly={sidebarCollapsed} label="Dashboard" onClick={() => setSection("overview")} /><SidebarItem active={section === "rankings"} dark={dark} icon={<Sparkles size={16} />} iconOnly={sidebarCollapsed} label="Keyword Rankings" onClick={() => setSection("rankings")} /><SidebarItem active={section === "account"} dark={dark} icon={<UserRound size={16} />} iconOnly={sidebarCollapsed} label="Account" onClick={() => setSection("account")} /><SidebarItem active={section === "subscription"} dark={dark} icon={<CreditCard size={16} />} iconOnly={sidebarCollapsed} label="Subscription" onClick={() => setSection("subscription")} /></nav></div>
-          <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>More</p><div className="mt-3 space-y-1"><SidebarItem active={section === "support"} dark={dark} icon={<LifeBuoy size={16} />} iconOnly={sidebarCollapsed} label="Support" onClick={() => setSection("support")} /><SidebarItem active={section === "privacy"} dark={dark} icon={<Shield size={16} />} iconOnly={sidebarCollapsed} label="Privacy" onClick={() => setSection("privacy")} /></div></div>
+          <div className={cn("mt-5 border-t pt-4 2xl:mt-6 2xl:pt-5", dark ? "border-white/8" : "border-[#e7e1d5]")}><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>More</p><div className="mt-3 space-y-1"><SidebarItem active={section === "contact"} dark={dark} icon={<Mail size={16} />} iconOnly={sidebarCollapsed} label="Contact" onClick={() => setSection("contact")} /><SidebarItem active={section === "privacy"} dark={dark} icon={<Shield size={16} />} iconOnly={sidebarCollapsed} label="Privacy" onClick={() => setSection("privacy")} /></div></div>
         </aside>
 
         <section className="min-w-0">
@@ -1439,18 +1504,8 @@ function DashboardContent() {
             {section === "rankings" ? rankingsView() : null}
             {section === "account" ? accountView() : null}
             {section === "subscription" ? subscriptionView() : null}
-            {section === "support" ? textPanel([
-              "Auth issues: if sign-in loops or callback problems happen, clear the current session and sign in again from the website.",
-              "Extension issues: open the popup, choose Connect account, then approve the request from the account popup on the website.",
-              "Billing issues: if plan state looks wrong, refresh the workspace and retry the Premium upgrade flow.",
-              "Quota issues: if keyword runs hit the limit, the workspace should steer the user toward Premium."
-            ]) : null}
-            {section === "privacy" ? textPanel([
-              "Supabase handles website identity and authentication.",
-              "Cloudflare Workers and D1 handle product logic, extension sessions, and workspace data.",
-              "Paddle handles checkout, tax, and invoice processing for paid plans.",
-              "The extension receives an approval-based session instead of direct website credentials."
-            ]) : null}
+            {section === "contact" ? contactView() : null}
+            {section === "privacy" ? privacyView() : null}
           </div>
 
           {requestId ? (
