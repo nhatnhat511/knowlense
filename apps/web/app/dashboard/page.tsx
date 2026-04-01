@@ -1,10 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, startTransition, type ChangeEvent } from "react";
+import { Suspense, useEffect, useRef, useState, startTransition, type ChangeEvent, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { UserIdentity } from "@supabase/supabase-js";
 import { Bell, CheckCircle2, CreditCard, Globe2, KeyRound, LayoutGrid, Mail, Moon, PlugZap, RefreshCw, Settings2, Shield, Sparkles, Sun, Trash2, Upload, UserRound } from "lucide-react";
 import { FaBrave, FaChrome, FaEdge, FaFirefoxBrowser, FaSafari } from "react-icons/fa6";
+import { HiOutlineMail } from "react-icons/hi";
 import { SiGithub, SiGoogle } from "react-icons/si";
 import { BrandLockup } from "@/components/brand/brand";
 import { PricingSection } from "@/components/site/pricing-section";
@@ -14,6 +15,7 @@ import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useExtensionStatus } from "@/hooks/use-extension-status";
 import { signOutFromApi } from "@/lib/api/auth";
 import { confirmCheckout, fetchManageSubscriptionUrl, upgradeSubscriptionToYearly } from "@/lib/api/billing";
+import { sendContactMessage } from "@/lib/api/contact";
 import { fetchRankTrackingDashboard, type RankTrackingDashboard } from "@/lib/api/dashboard";
 import { authorizeExtensionConnection, fetchExtensionDevices, revokeExtensionDevice, revokeOtherExtensionDevices } from "@/lib/api/extension-connect";
 import { getAuthCallbackUrl } from "@/lib/auth/redirects";
@@ -22,6 +24,10 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type ThemeMode = "light" | "dark";
 type Section = "overview" | "rankings" | "account" | "subscription" | "contact" | "privacy";
+type ContactFormErrors = { email?: string; message?: string; name?: string };
+
+const CONTACT_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PRIVACY_LAST_UPDATED = "March 31, 2026";
 
 const SECTION_META: Record<Section, { title: string; description: string }> = {
   overview: { title: "Dashboard", description: "A tighter overview of your account, subscription state, extension access, and latest workspace signals." },
@@ -79,6 +85,15 @@ function getBrowserBadge(label: string) {
   }
 
   return { icon: <Globe2 size={18} />, tone: "bg-gray-100 text-gray-600" };
+}
+
+function ContactLoadingSpinner() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5 animate-spin" viewBox="0 0 24 24">
+      <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+      <path className="opacity-100" d="M22 12a10 10 0 0 0-10-10" stroke="currentColor" strokeWidth="4" fill="none" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 function getSignInMethodMeta(method: "email" | "google" | "github" | "unknown") {
@@ -361,6 +376,13 @@ function DashboardContent() {
   const processedBillingTransactionRef = useRef("");
   const [yearlyUpgradeBusy, setYearlyUpgradeBusy] = useState(false);
   const [manageSubscriptionBusy, setManageSubscriptionBusy] = useState(false);
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactMessage, setContactMessage] = useState("");
+  const [contactErrors, setContactErrors] = useState<ContactFormErrors>({});
+  const [contactStatus, setContactStatus] = useState("");
+  const [contactStatusType, setContactStatusType] = useState<"success" | "error" | null>(null);
+  const [contactSubmitting, setContactSubmitting] = useState(false);
 
   const requestId = searchParams.get("request");
   const requestedSection = searchParams.get("section");
@@ -390,6 +412,59 @@ function DashboardContent() {
   const supabase = getSupabaseBrowserClient();
   const chromeStoreUrl = "https://chromewebstore.google.com/";
   const edgeStoreUrl = "https://microsoftedge.microsoft.com/addons/";
+
+  function validateContactForm() {
+    const nextErrors: ContactFormErrors = {};
+
+    if (!contactName.trim()) {
+      nextErrors.name = "Please enter your name.";
+    }
+
+    if (!CONTACT_EMAIL_REGEX.test(contactEmail.trim())) {
+      nextErrors.email = "Please enter a valid email address.";
+    }
+
+    if (contactMessage.trim().length < 20) {
+      nextErrors.message = "Please share at least 20 characters so we have enough context.";
+    }
+
+    return nextErrors;
+  }
+
+  async function handleContactSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setContactStatus("");
+    setContactStatusType(null);
+
+    const nextErrors = validateContactForm();
+    setContactErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    setContactSubmitting(true);
+
+    try {
+      await sendContactMessage({
+        name: contactName.trim(),
+        email: contactEmail.trim(),
+        message: contactMessage.trim()
+      });
+
+      setContactStatus("Your message has been sent successfully. Our team will review it and reply as soon as possible.");
+      setContactStatusType("success");
+      setContactName("");
+      setContactEmail("");
+      setContactMessage("");
+      setContactErrors({});
+    } catch (error) {
+      setContactStatus(error instanceof Error ? error.message : "Unable to send your message right now.");
+      setContactStatusType("error");
+    } finally {
+      setContactSubmitting(false);
+    }
+  }
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("knowlense-dashboard-theme");
@@ -1369,70 +1444,319 @@ function DashboardContent() {
 
   function contactView() {
     return (
-      <div className="mt-5 grid gap-3 xl:grid-cols-[0.9fr_1.1fr]">
-        <Card compact={compact} dark={dark} title="Reach Knowlense">
-          <div className={cn("space-y-3 text-sm leading-6", dark ? "text-white/70" : "text-neutral-600")}>
-            <p>Questions about your account, billing, or extension setup can be sent directly to the team.</p>
-            <div className={cn("rounded-[18px] border p-3.5", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
-              <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-white/40" : "text-neutral-500")}>Support email</div>
-              <a className={cn("mt-1 inline-block font-medium underline-offset-4 hover:underline", dark ? "text-white" : "text-gray-900")} href="mailto:support@knowlense.com">
-                support@knowlense.com
-              </a>
+      <section className="mt-5">
+        <div className="grid gap-6 lg:grid-cols-[0.9fr_1.8fr]">
+          <article className="rounded-[2rem] border border-slate-300 bg-white p-8 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
+            <h1 className="font-display text-3xl font-semibold tracking-[-0.02em] text-slate-950">Contact</h1>
+            <p className="mt-4 text-base leading-7 text-slate-600">Questions about your account, billing, or extension setup? Send a message and we&apos;ll help you move forward.</p>
+            <div className="mt-8 space-y-4 text-sm leading-7 text-slate-700">
+              <p>
+                <span className="inline-flex items-center gap-2">
+                  <HiOutlineMail aria-hidden="true" className="h-4 w-4 text-slate-500" />
+                  <span>Email:</span>
+                </span>{" "}
+                <a className="font-medium text-slate-950 underline-offset-4 hover:underline" href="mailto:support@knowlense.com">
+                  support@knowlense.com
+                </a>
+              </p>
+              <p>We usually respond within 24 hours.</p>
+              <p>Use this form for product questions, account access issues, billing follow-up, or extension connection support.</p>
             </div>
-            <p>Knowlense usually replies within 24 hours when the message includes enough context to reproduce the issue.</p>
-          </div>
-        </Card>
+          </article>
 
-        <Card compact={compact} dark={dark} title="Best topics for this inbox">
-          <div className="space-y-3">
-            {[
-              "Billing follow-up, invoices, refunds, and subscription issues.",
-              "Account access issues, sign-in problems, or browser connection failures.",
-              "Product questions about Keyword SEO, SEO Health, Search Indexing, or tracked rankings.",
-              "Extension setup details, screenshots, and the exact steps taken before the issue appeared."
-            ].map((item) => (
-              <div className={cn("rounded-[18px] border p-3.5 text-sm leading-6", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>
-                {item}
+          <article className="rounded-[2rem] border border-slate-300 bg-white p-8 shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
+            <form className="space-y-5" onSubmit={handleContactSubmit}>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-800" htmlFor="dashboard-contact-name">
+                  Name
+                </label>
+                <input
+                  id="dashboard-contact-name"
+                  className="h-14 w-full rounded-2xl border border-slate-300 bg-white px-4 text-slate-950 outline-none transition-all focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                  onChange={(event) => setContactName(event.target.value)}
+                  type="text"
+                  value={contactName}
+                />
+                {contactErrors.name ? <p className="text-sm text-red-600">{contactErrors.name}</p> : null}
               </div>
-            ))}
-          </div>
-        </Card>
-      </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-800" htmlFor="dashboard-contact-email">
+                  Email
+                </label>
+                <input
+                  id="dashboard-contact-email"
+                  className="h-14 w-full rounded-2xl border border-slate-300 bg-white px-4 text-slate-950 outline-none transition-all focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                  onChange={(event) => setContactEmail(event.target.value)}
+                  type="email"
+                  value={contactEmail}
+                />
+                {contactErrors.email ? <p className="text-sm text-red-600">{contactErrors.email}</p> : null}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-800" htmlFor="dashboard-contact-message">
+                  Message
+                </label>
+                <textarea
+                  id="dashboard-contact-message"
+                  className="min-h-44 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none transition-all focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                  onChange={(event) => setContactMessage(event.target.value)}
+                  placeholder="Tell us how we can help..."
+                  value={contactMessage}
+                />
+                {contactErrors.message ? <p className="text-sm text-red-600">{contactErrors.message}</p> : null}
+              </div>
+
+              {contactStatus ? <p className={`text-sm ${contactStatusType === "success" ? "text-emerald-700" : "text-red-600"}`}>{contactStatus}</p> : null}
+
+              <button
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+                disabled={contactSubmitting}
+                type="submit"
+              >
+                {contactSubmitting ? <ContactLoadingSpinner /> : "Send Message"}
+              </button>
+            </form>
+          </article>
+        </div>
+      </section>
     );
   }
 
   function privacyView() {
     return (
-      <div className="mt-5 grid gap-3 xl:grid-cols-2">
-        <Card compact={compact} dark={dark} title="What Knowlense collects">
-          <div className="space-y-3">
-            {[
-              "Account information such as name, email, authentication identifiers, and sign-in provider details.",
-              "Extension connection data, device labels, request timestamps, and revocation history needed to manage browser access.",
-              "Billing references including plan status, Paddle customer references, subscription references, and renewal state."
-            ].map((item) => (
-              <div className={cn("rounded-[18px] border p-3.5 text-sm leading-6", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>
-                {item}
-              </div>
-            ))}
-          </div>
-        </Card>
+      <section className="mt-5 legal-surface">
+        <div className="legal-intro">
+          <h1 className="page-title">Privacy Policy</h1>
+          <p className="page-copy">
+            This Privacy Policy explains what Knowlense collects, why it is collected, how it is used, and how it is shared
+            when you use the website, dashboard, browser extension, and paid billing workflows.
+          </p>
+          <p className="legal-meta">
+            Last updated: <strong>{PRIVACY_LAST_UPDATED}</strong>
+          </p>
+        </div>
 
-        <Card compact={compact} dark={dark} title="How data is handled">
-          <div className="space-y-3">
-            {[
-              "Supabase is used for account authentication, identity management, and related session services.",
-              "Cloudflare runs the website, Workers-based application logic, and operational infrastructure for the workspace.",
-              "Paddle acts as Merchant of Record for paid subscriptions, billing, taxes, and related payment workflows.",
-              "Privacy questions, data requests, or account concerns can be sent to support@knowlense.com."
-            ].map((item) => (
-              <div className={cn("rounded-[18px] border p-3.5 text-sm leading-6", dark ? "border-white/10 bg-white/5 text-white/70" : "border-black/8 bg-[#fafafa] text-neutral-600")} key={item}>
-                {item}
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
+        <article className="legal-document">
+          <section className="legal-section">
+            <h2>1. Scope of this policy</h2>
+            <p>
+              This policy applies to the public website at <strong>knowlense.com</strong>, the logged-in dashboard, browser
+              extension experiences, support interactions, and subscription-related billing activity.
+            </p>
+            <p>
+              It does not govern third-party websites, marketplaces, payment pages, or browser stores that are operated
+              independently of Knowlense, even when they are linked from the service.
+            </p>
+          </section>
+
+          <section className="legal-section">
+            <h2>2. Information we collect</h2>
+            <ul className="policy-list">
+              <li>
+                <strong>Account information</strong>
+                <span>
+                  Name, email address, authentication identifiers, sign-in provider details, profile image, and account status
+                  used to create and manage access.
+                </span>
+              </li>
+              <li>
+                <strong>Extension connection data</strong>
+                <span>
+                  Connected browser sessions, device labels, user agent details, request timestamps, and revocation history
+                  needed to manage secure extension access.
+                </span>
+              </li>
+              <li>
+                <strong>Product and workspace data</strong>
+                <span>
+                  Keyword audit results, SEO Health runs, search indexing checks, tracked keyword records, and related
+                  dashboard summaries created through normal use of the service.
+                </span>
+              </li>
+              <li>
+                <strong>Billing references</strong>
+                <span>
+                  Subscription plan, billing status, Paddle customer references, transaction references, renewal state, and
+                  other billing metadata required to provision Premium access.
+                </span>
+              </li>
+              <li>
+                <strong>Support communications</strong>
+                <span>
+                  Messages, email headers, screenshots, and issue details you send when requesting help from Knowlense.
+                </span>
+              </li>
+              <li>
+                <strong>Technical and security data</strong>
+                <span>
+                  Basic logs, browser information, page requests, and anti-abuse signals used to secure the service and
+                  diagnose failures.
+                </span>
+              </li>
+            </ul>
+          </section>
+
+          <section className="legal-section">
+            <h2>3. How information is used</h2>
+            <ul className="policy-list">
+              <li>
+                <strong>To operate the service</strong>
+                <span>Authenticate accounts, connect the extension, render dashboards, and provide the requested features.</span>
+              </li>
+              <li>
+                <strong>To process subscriptions</strong>
+                <span>Activate, maintain, renew, cancel, and support Free and Premium plans.</span>
+              </li>
+              <li>
+                <strong>To protect the platform</strong>
+                <span>Detect misuse, investigate suspicious activity, and enforce account and extension security controls.</span>
+              </li>
+              <li>
+                <strong>To support users</strong>
+                <span>Respond to support requests, troubleshoot account issues, and communicate service-related updates.</span>
+              </li>
+              <li>
+                <strong>To improve Knowlense</strong>
+                <span>Understand product reliability, prioritize fixes, and improve workflows based on actual usage patterns.</span>
+              </li>
+            </ul>
+          </section>
+
+          <section className="legal-section">
+            <h2>4. Service providers and infrastructure</h2>
+            <ul className="policy-list">
+              <li>
+                <strong>Supabase</strong>
+                <span>Used for account authentication, identity management, and related account session services.</span>
+              </li>
+              <li>
+                <strong>Cloudflare</strong>
+                <span>Used for website delivery, Workers-based application logic, storage, logging, and related infrastructure.</span>
+              </li>
+              <li>
+                <strong>Paddle</strong>
+                <span>
+                  Acts as Merchant of Record for paid subscriptions and handles payment processing, taxes, billing, and related
+                  payment data.
+                </span>
+              </li>
+              <li>
+                <strong>Browser platforms</strong>
+                <span>
+                  Chrome Web Store and Microsoft Edge Add-ons may separately process installation and browser store metadata
+                  under their own policies.
+                </span>
+              </li>
+            </ul>
+          </section>
+
+          <section className="legal-section">
+            <h2>5. Data sharing</h2>
+            <p>Knowlense does not sell personal information.</p>
+            <p>Information may be shared only in the following limited circumstances:</p>
+            <ul className="policy-list">
+              <li>
+                <strong>With service providers</strong>
+                <span>To operate authentication, infrastructure, billing, support, and security workflows.</span>
+              </li>
+              <li>
+                <strong>For legal compliance</strong>
+                <span>When disclosure is required by law, regulation, legal process, or enforceable governmental request.</span>
+              </li>
+              <li>
+                <strong>To protect rights and safety</strong>
+                <span>
+                  When necessary to investigate abuse, enforce terms, or protect the service, users, or the public from harm.
+                </span>
+              </li>
+              <li>
+                <strong>In a business transfer</strong>
+                <span>
+                  If Knowlense is involved in a merger, acquisition, financing, or sale of assets, data may be transferred as
+                  part of that transaction.
+                </span>
+              </li>
+            </ul>
+          </section>
+
+          <section className="legal-section">
+            <h2>6. Data retention</h2>
+            <p>
+              Knowlense keeps information for as long as reasonably necessary to operate the service, maintain subscriptions,
+              resolve disputes, enforce agreements, and comply with legal obligations.
+            </p>
+            <p>
+              Some records, such as billing references, audit logs, or revoked session records, may be retained after account
+              closure when required for security, accounting, fraud prevention, or legal compliance.
+            </p>
+          </section>
+
+          <section className="legal-section">
+            <h2>7. Security</h2>
+            <p>
+              Knowlense uses commercially reasonable administrative, technical, and organizational measures to protect account
+              and service data. No internet-connected service can guarantee absolute security, and users remain responsible for
+              protecting their devices, browser profiles, and account credentials.
+            </p>
+          </section>
+
+          <section className="legal-section">
+            <h2>8. International processing</h2>
+            <p>
+              Knowlense and its service providers may process information in more than one country. By using the service, you
+              understand that your information may be transferred to and processed in locations where privacy laws may differ
+              from those in your jurisdiction.
+            </p>
+          </section>
+
+          <section className="legal-section">
+            <h2>9. Your choices</h2>
+            <ul className="policy-list">
+              <li>
+                <strong>Profile updates</strong>
+                <span>You may update certain account details, password settings, and connected sign-in methods from the dashboard.</span>
+              </li>
+              <li>
+                <strong>Connected browsers</strong>
+                <span>You may revoke extension browser sessions from the dashboard or disconnect the extension from the popup.</span>
+              </li>
+              <li>
+                <strong>Subscription controls</strong>
+                <span>You may manage plan changes, billing, and cancellation through the available billing flows.</span>
+              </li>
+              <li>
+                <strong>Support requests</strong>
+                <span>Privacy-related requests may be sent to <strong>support@knowlense.com</strong>.</span>
+              </li>
+            </ul>
+          </section>
+
+          <section className="legal-section">
+            <h2>10. Children&apos;s privacy</h2>
+            <p>
+              Knowlense is intended for business and professional users. It is not directed to children, and Knowlense does
+              not knowingly collect personal information from children.
+            </p>
+          </section>
+
+          <section className="legal-section">
+            <h2>11. Changes to this policy</h2>
+            <p>
+              Knowlense may update this Privacy Policy from time to time. When material changes are made, the updated policy
+              will be posted on this page with a revised &ldquo;Last updated&rdquo; date.
+            </p>
+          </section>
+
+          <section className="legal-section">
+            <h2>12. Contact</h2>
+            <p>
+              For privacy questions, data requests, or account concerns, contact <strong>support@knowlense.com</strong>.
+            </p>
+          </section>
+        </article>
+      </section>
     );
   }
 
