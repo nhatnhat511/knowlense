@@ -4,7 +4,8 @@ import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createCheckout, type BillingInterval } from "@/lib/api/billing";
+import { YearlyUpgradeConfirmationModal } from "@/components/billing/yearly-upgrade-confirmation-modal";
+import { applyYearlyUpgrade, createCheckout, previewYearlyUpgrade, type BillingInterval, type YearlyUpgradePreview } from "@/lib/api/billing";
 import { fetchDashboardMetrics, type DashboardMetrics } from "@/lib/api/dashboard";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -137,6 +138,9 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
   const [loadingPlan, setLoadingPlan] = useState<BillingInterval | "">("");
   const [status, setStatus] = useState("");
   const [openCompareHint, setOpenCompareHint] = useState<string | null>(null);
+  const [yearlyUpgradePreview, setYearlyUpgradePreview] = useState<YearlyUpgradePreview | null>(null);
+  const [yearlyUpgradePreviewBusy, setYearlyUpgradePreviewBusy] = useState(false);
+  const [yearlyUpgradeBusy, setYearlyUpgradeBusy] = useState(false);
 
   const activePremiumPlanKey =
     billing?.status === "active"
@@ -202,6 +206,11 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
     };
   }, [supabase]);
 
+  async function refreshBilling(nextToken: string) {
+    const metrics = await fetchDashboardMetrics(nextToken);
+    setBilling(metrics.billing);
+  }
+
   useEffect(() => {
     if (!openCompareHint) {
       return;
@@ -223,7 +232,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
   }, [openCompareHint]);
 
   async function handleCheckout(interval: BillingInterval) {
-    if (loadingPlan) {
+    if (loadingPlan || yearlyUpgradePreviewBusy || yearlyUpgradeBusy) {
       return;
     }
 
@@ -236,12 +245,39 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
     setStatus("");
 
     try {
+      if (interval === "yearly" && activePremiumPlanKey === "monthly") {
+        setYearlyUpgradePreviewBusy(true);
+        const result = await previewYearlyUpgrade(accessToken);
+        setYearlyUpgradePreview(result.preview);
+        return;
+      }
+
       const checkout = await createCheckout(accessToken, interval);
       window.location.href = checkout.checkoutUrl;
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to start checkout.");
+      setStatus(error instanceof Error ? error.message : interval === "yearly" ? "Unable to preview this subscription upgrade." : "Unable to start checkout.");
     } finally {
+      setYearlyUpgradePreviewBusy(false);
       setLoadingPlan("");
+    }
+  }
+
+  async function handleConfirmYearlyUpgrade() {
+    if (!accessToken || yearlyUpgradeBusy) {
+      return;
+    }
+
+    setYearlyUpgradeBusy(true);
+    setStatus("");
+
+    try {
+      await applyYearlyUpgrade(accessToken);
+      setYearlyUpgradePreview(null);
+      await refreshBilling(accessToken);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to upgrade this subscription to yearly billing.");
+    } finally {
+      setYearlyUpgradeBusy(false);
     }
   }
 
@@ -332,11 +368,21 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
               ? "border border-white/10 bg-white text-gray-900 hover:bg-gray-100"
               : "border border-black/10 bg-[#fff4df] text-gray-900 hover:bg-[#ffe9c6]"
         )}
-        disabled={loadingPlan === interval}
+        disabled={loadingPlan === interval || yearlyUpgradePreviewBusy || yearlyUpgradeBusy}
         onClick={() => void handleCheckout(interval)}
         type="button"
       >
-        {loadingPlan === interval ? "Preparing..." : buttonLabel}
+        {plan.key === "yearly" && activePremiumPlanKey === "monthly"
+          ? yearlyUpgradePreviewBusy
+            ? "Reviewing..."
+            : yearlyUpgradeBusy
+              ? "Updating..."
+              : loadingPlan === interval
+                ? "Preparing..."
+                : buttonLabel
+          : loadingPlan === interval
+            ? "Preparing..."
+            : buttonLabel}
       </button>
     );
   }
@@ -490,6 +536,16 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
           </div>
         </div>
       )}
+
+      {yearlyUpgradePreview ? (
+        <YearlyUpgradeConfirmationModal
+          busy={yearlyUpgradeBusy}
+          dark={dark}
+          onClose={() => setYearlyUpgradePreview(null)}
+          onConfirm={() => void handleConfirmYearlyUpgrade()}
+          preview={yearlyUpgradePreview}
+        />
+      ) : null}
     </section>
   );
 }
