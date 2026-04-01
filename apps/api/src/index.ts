@@ -307,7 +307,16 @@ async function fetchPaddleSubscription(env: Bindings, subscriptionId: string) {
     throw new Error("Paddle checkout is not configured.");
   }
 
-  const response = await fetch(`${paddleBaseUrl(readPaddleEnvironment(env))}/subscriptions/${subscriptionId}`, {
+  const environment = readPaddleEnvironment(env);
+  const url = `${paddleBaseUrl(environment)}/subscriptions/${subscriptionId}`;
+
+  console.log("PADDLE_SUB_FETCH_START", {
+    environment,
+    subscriptionId,
+    url
+  });
+
+  const response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${env.PADDLE_API_KEY}`,
       Accept: "application/json"
@@ -321,6 +330,12 @@ async function fetchPaddleSubscription(env: Bindings, subscriptionId: string) {
         errors?: Array<{ detail?: string; message?: string }>;
       }
     | null;
+
+  console.log("PADDLE_SUB_FETCH_RESULT", {
+    subscriptionId,
+    status: response.status,
+    payload
+  });
 
   if (!response.ok || !payload?.data) {
     throw new Error(
@@ -2771,6 +2786,13 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
       return c.json({ error: "Yearly upgrade is not configured for this account." }, 500);
     }
 
+    console.log("BILLING_UPGRADE_INPUT", {
+      userId: user.id,
+      subscriptionId,
+      monthlyPriceId: c.env.PADDLE_PRICE_ID_MONTHLY ?? null,
+      yearlyPriceId: c.env.PADDLE_PRICE_ID_YEARLY
+    });
+
     const existingSubscription = await fetchPaddleSubscription(c.env, subscriptionId);
     const existingItems = Array.isArray(existingSubscription.items) ? existingSubscription.items : [];
     const items = existingItems
@@ -2796,7 +2818,17 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
       return c.json({ error: "This subscription does not contain any updatable Paddle items." }, 400);
     }
 
-    const response = await fetch(`${paddleBaseUrl(readPaddleEnvironment(c.env))}/subscriptions/${subscriptionId}`, {
+    const environment = readPaddleEnvironment(c.env);
+    const url = `${paddleBaseUrl(environment)}/subscriptions/${subscriptionId}`;
+
+    console.log("PADDLE_SUB_UPDATE_START", {
+      environment,
+      subscriptionId,
+      url,
+      items
+    });
+
+    const response = await fetch(url, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${c.env.PADDLE_API_KEY}`,
@@ -2815,6 +2847,12 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
           errors?: Array<{ detail?: string; message?: string }>;
         }
       | null;
+
+    console.log("PADDLE_SUB_UPDATE_RESULT", {
+      subscriptionId,
+      status: response.status,
+      payload
+    });
 
     if (!response.ok || !payload?.data) {
       return c.json(
@@ -2876,13 +2914,28 @@ app.post("/v1/billing/manage", async (c) => {
     const customerId = getPaddleString(linkage?.paddle_customer_id);
     const subscriptionId = getPaddleString(linkage?.paddle_subscription_id);
 
+    console.log("BILLING_MANAGE_INPUT", {
+      userId: user.id,
+      linkage
+    });
+
     if (!customerId || !subscriptionId || !c.env.PADDLE_API_KEY) {
       return c.json({ error: "Manage subscription is not available for this account yet." }, 400);
     }
 
     await syncPaddleCustomerIdentity(c.env, customerId, user.email, user.name);
 
-    const response = await fetch(`${paddleBaseUrl(readPaddleEnvironment(c.env))}/customers/${customerId}/portal-sessions`, {
+    const environment = readPaddleEnvironment(c.env);
+    const url = `${paddleBaseUrl(environment)}/customers/${customerId}/portal-sessions`;
+
+    console.log("PADDLE_PORTAL_SESSION_START", {
+      environment,
+      customerId,
+      subscriptionId,
+      url
+    });
+
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${c.env.PADDLE_API_KEY}`,
@@ -2907,6 +2960,13 @@ app.post("/v1/billing/manage", async (c) => {
           errors?: Array<{ detail?: string; message?: string }>;
         }
       | null;
+
+    console.log("PADDLE_PORTAL_SESSION_RESULT", {
+      customerId,
+      subscriptionId,
+      status: response.status,
+      payload
+    });
 
     const manageUrl =
       payload?.data?.urls?.subscriptions?.[0]?.overview
