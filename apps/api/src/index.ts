@@ -756,6 +756,20 @@ function serializePaddleUpdateSummary(summary: unknown) {
   };
 }
 
+function readAbsoluteHttpUrl(value: unknown) {
+  const url = getPaddleString(value);
+  if (!url) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function buildYearlyUpgradeItems(subscription: Record<string, unknown>, env: Bindings) {
   const existingItems = Array.isArray(subscription.items) ? subscription.items : [];
 
@@ -3067,10 +3081,18 @@ app.post("/v1/billing/manage", async (c) => {
 
     const user = c.get("user");
     const linkage = await readBillingLinkage(c.env, user.id);
-    const customerId = getPaddleString(linkage?.paddle_customer_id);
     const subscriptionId = getPaddleString(linkage?.paddle_subscription_id);
 
-    if (!customerId || !subscriptionId || !c.env.PADDLE_API_KEY) {
+    if (!subscriptionId || !c.env.PADDLE_API_KEY) {
+      return c.json({ error: "Manage subscription is not available for this account yet." }, 400);
+    }
+
+    const subscription = await fetchPaddleSubscription(c.env, subscriptionId);
+    const customerId =
+      getPaddleString(subscription.customer_id)
+      ?? getPaddleString(linkage?.paddle_customer_id);
+
+    if (!customerId) {
       return c.json({ error: "Manage subscription is not available for this account yet." }, 400);
     }
 
@@ -3092,7 +3114,11 @@ app.post("/v1/billing/manage", async (c) => {
           data?: {
             urls?: {
               general?: { overview?: string };
-              subscriptions?: Array<{ overview?: string }>;
+              subscriptions?: Array<{
+                id?: string;
+                cancel_subscription?: string;
+                update_subscription_payment_method?: string;
+              }>;
             };
           };
           error?: { detail?: string; message?: string };
@@ -3100,20 +3126,23 @@ app.post("/v1/billing/manage", async (c) => {
         }
       | null;
 
+    const subscriptionLinks = Array.isArray(payload?.data?.urls?.subscriptions) ? payload?.data?.urls?.subscriptions : [];
+    const matchingSubscriptionLink =
+      subscriptionLinks.find((entry) => getPaddleString(entry?.id) === subscriptionId)
+      ?? subscriptionLinks[0]
+      ?? null;
     const manageUrl =
-      payload?.data?.urls?.subscriptions?.[0]?.overview
-      ?? payload?.data?.urls?.general?.overview
+      readAbsoluteHttpUrl(payload?.data?.urls?.general?.overview)
+      ?? readAbsoluteHttpUrl(matchingSubscriptionLink?.update_subscription_payment_method)
+      ?? readAbsoluteHttpUrl(matchingSubscriptionLink?.cancel_subscription)
+      ?? readAbsoluteHttpUrl((subscription.management_urls as Record<string, unknown> | null | undefined)?.update_payment_method)
+      ?? readAbsoluteHttpUrl((subscription.management_urls as Record<string, unknown> | null | undefined)?.cancel)
       ?? null;
 
     if (!response.ok || !manageUrl) {
       return c.json(
         {
-          error:
-            payload?.errors?.[0]?.detail
-            ?? payload?.errors?.[0]?.message
-            ?? payload?.error?.detail
-            ?? payload?.error?.message
-            ?? "Unable to open the Paddle subscription manager."
+          error: readPaddleApiErrorMessage(payload, "Unable to open the Paddle subscription manager.")
         },
         502
       );
