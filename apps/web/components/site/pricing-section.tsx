@@ -59,7 +59,8 @@ const planCards: PlanCard[] = [
       "Keyword SEO for up to 3 keywords at a time",
       "Keyword rank tracking and dashboard history",
       "Unlimited SEO Health runs",
-      "Full Search Indexing and Premium workspace access"
+      "Full Search Indexing and Premium workspace access",
+      "Future new features"
     ]
   },
   {
@@ -73,9 +74,10 @@ const planCards: PlanCard[] = [
       "Everything in Premium Monthly",
       "Lower effective monthly cost",
       "Best fit for long-term keyword tracking",
-      "Annual billing for a simpler renewal cycle"
+      "Annual billing for a simpler renewal cycle",
+      "Future new features"
     ]
-  }
+  },
 ];
 
 const compareRows: CompareRow[] = [
@@ -103,14 +105,21 @@ const compareRows: CompareRow[] = [
   {
     feature: "Keyword Tracking",
     description: "Saves a keyword for ongoing rank tracking so you can monitor movement over time.",
-    free: "—",
+    free: "???",
     monthly: "Included",
     yearly: "Included"
   },
   {
     feature: "Keyword rankings dashboard",
     description: "Shows ranking history and trend data for the keywords you choose to track.",
-    free: "—",
+    free: "???",
+    monthly: "Included",
+    yearly: "Included"
+  },
+  {
+    feature: "Future new features",
+    description: "New Premium capabilities released later are included while your Premium plan stays active.",
+    free: "???",
     monthly: "Included",
     yearly: "Included"
   }
@@ -306,6 +315,12 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
     }
 
     const interval = plan.key === "yearly" ? "yearly" : "monthly";
+    const buttonLabel =
+      plan.key === "yearly"
+        ? activePremiumPlanKey === "monthly"
+          ? "Upgrade to Yearly"
+          : "Choose yearly"
+        : "Upgrade to Premium";
 
     return (
       <button
@@ -321,7 +336,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
         onClick={() => void handleCheckout(interval)}
         type="button"
       >
-        {loadingPlan === interval ? "Preparing..." : plan.key === "yearly" ? "Choose yearly" : "Upgrade to Premium"}
+        {loadingPlan === interval ? "Preparing..." : buttonLabel}
       </button>
     );
   }
