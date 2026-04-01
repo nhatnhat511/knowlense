@@ -36,6 +36,12 @@ export type YearlyUpgradePreview = {
     resultTotal: string | null;
   } | null;
   consentRequirementsCount: number;
+  paymentMethodSummary: {
+    type: string | null;
+    brand: string | null;
+    last4: string | null;
+    label: string | null;
+  } | null;
 };
 
 export async function createCheckout(accessToken: string, interval: BillingInterval) {

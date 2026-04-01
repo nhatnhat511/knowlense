@@ -10,6 +10,7 @@ import {
   markBillingProfileFree,
   readBillingLinkage,
   readBillingProfile,
+  readRawBillingProfile,
   readSubscriptionIdForUser,
   recordProcessedPaddleWebhookEvent,
   resolveBillingUserId,
@@ -345,6 +346,48 @@ async function fetchPaddleSubscription(env: Bindings, subscriptionId: string) {
       ?? payload?.error?.message
       ?? "Unable to load the Paddle subscription."
     );
+  }
+
+  return payload.data;
+}
+
+async function fetchPaddleTransaction(env: Bindings, transactionId: string) {
+  if (!env.PADDLE_API_KEY) {
+    throw new Error("Paddle checkout is not configured.");
+  }
+
+  const environment = readPaddleEnvironment(env);
+  const url = `${paddleBaseUrl(environment)}/transactions/${transactionId}`;
+
+  console.log("PADDLE_TXN_FETCH_START", {
+    environment,
+    transactionId,
+    url
+  });
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${env.PADDLE_API_KEY}`,
+      Accept: "application/json"
+    }
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        data?: Record<string, unknown>;
+        error?: { detail?: string; message?: string };
+        errors?: Array<{ detail?: string; message?: string }>;
+      }
+    | null;
+
+  console.log("PADDLE_TXN_FETCH_RESULT", {
+    transactionId,
+    status: response.status,
+    payload
+  });
+
+  if (!response.ok || !payload?.data) {
+    throw new Error(readPaddleApiErrorMessage(payload, "Unable to retrieve the Paddle transaction."));
   }
 
   return payload.data;
@@ -804,6 +847,67 @@ function serializePaddleUpdateSummary(summary: unknown) {
     resultTotal:
       readPaddleMoneyValue(row, ["result", "totals", "total"])
       ?? readPaddleMoneyValue(row, ["result", "total"])
+  };
+}
+
+function formatStoredPaymentMethodLabel(type: string | null, brand: string | null, last4: string | null) {
+  if (last4) {
+    const primaryLabel = brand ?? type ?? "Card";
+    return `${primaryLabel.charAt(0).toUpperCase()}${primaryLabel.slice(1)} ending in ${last4}`;
+  }
+
+  if (brand) {
+    return `${brand.charAt(0).toUpperCase()}${brand.slice(1)}`;
+  }
+
+  if (type === "card") {
+    return "Saved card";
+  }
+
+  if (!type) {
+    return null;
+  }
+
+  return `${type.charAt(0).toUpperCase()}${type.slice(1)}`;
+}
+
+function serializePaddlePaymentMethodSummary(transaction: Record<string, unknown> | null) {
+  if (!transaction) {
+    return null;
+  }
+
+  const payments = Array.isArray(transaction.payments) ? transaction.payments : [];
+  const payment = payments.find((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"));
+
+  if (!payment) {
+    return null;
+  }
+
+  const methodDetails = payment.method_details && typeof payment.method_details === "object"
+    ? (payment.method_details as Record<string, unknown>)
+    : null;
+  const cardDetails = methodDetails?.card && typeof methodDetails.card === "object"
+    ? (methodDetails.card as Record<string, unknown>)
+    : null;
+  const type =
+    getPaddleString(methodDetails?.type)
+    ?? getPaddleString(payment.type)
+    ?? getPaddleString(payment.payment_method_type);
+  const brand =
+    getPaddleString(cardDetails?.brand)
+    ?? getPaddleString(methodDetails?.brand)
+    ?? getPaddleString(methodDetails?.card_brand)
+    ?? getPaddleString(payment.payment_method);
+  const last4 =
+    getPaddleString(cardDetails?.last4)
+    ?? getPaddleString(methodDetails?.last4)
+    ?? getPaddleString(methodDetails?.card_last4);
+
+  return {
+    type,
+    brand,
+    last4,
+    label: formatStoredPaymentMethodLabel(type, brand, last4)
   };
 }
 
@@ -2963,6 +3067,8 @@ app.post("/v1/billing/upgrade-yearly/preview", async (c) => {
 
     const existingSubscription = await fetchPaddleSubscription(c.env, subscriptionId);
     const items = buildYearlyUpgradeItems(existingSubscription, c.env);
+    const rawBilling = await readRawBillingProfile(c.env, user.id);
+    const latestTransactionId = getPaddleString(rawBilling?.paddle_transaction_id);
 
     if (!items.length) {
       return c.json({ error: "This subscription does not contain any updatable Paddle items." }, 400);
@@ -3015,6 +3121,9 @@ app.post("/v1/billing/upgrade-yearly/preview", async (c) => {
     }
 
     const preview = payload.data;
+    const latestTransaction = latestTransactionId
+      ? await fetchPaddleTransaction(c.env, latestTransactionId).catch(() => null)
+      : null;
 
     return c.json({
       ok: true,
@@ -3025,7 +3134,8 @@ app.post("/v1/billing/upgrade-yearly/preview", async (c) => {
         immediateTransaction: serializePaddleTransactionPreview(preview.immediate_transaction),
         recurringTransaction: serializePaddleRecurringTransactionDetails(preview.recurring_transaction_details, preview),
         updateSummary: serializePaddleUpdateSummary(preview.update_summary),
-        consentRequirementsCount: Array.isArray(preview.consent_requirements) ? preview.consent_requirements.length : 0
+        consentRequirementsCount: Array.isArray(preview.consent_requirements) ? preview.consent_requirements.length : 0,
+        paymentMethodSummary: serializePaddlePaymentMethodSummary(latestTransaction)
       }
     });
   } catch (error) {

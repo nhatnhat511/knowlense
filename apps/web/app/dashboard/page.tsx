@@ -464,6 +464,12 @@ function DashboardContent() {
     yearlyUpgradePreview?.currencyCode ?? null
   );
   const previewNextBillingLabel = formatBillingDate(yearlyUpgradePreview?.nextBilledAt ?? null);
+  const previewPaymentMethodLabel =
+    yearlyUpgradePreview?.collectionMode === "automatic"
+      ? yearlyUpgradePreview.paymentMethodSummary?.label ?? "Saved payment method"
+      : yearlyUpgradePreview?.collectionMode === "manual"
+        ? "Manual collection"
+        : "Unavailable";
   const sidebarCollapsed = true;
   const signInMethod = user?.signInMethod ?? "unknown";
   const signInMethodMeta = getSignInMethodMeta(signInMethod);
@@ -1910,7 +1916,7 @@ function DashboardContent() {
                   <div className={cn("text-[0.78rem] font-semibold uppercase tracking-[0.18em]", dark ? "text-white/35" : "text-[#8b7f70]")}>Billing confirmation</div>
                   <h2 className={cn("mt-2 text-[1.55rem] font-bold tracking-[-0.03em]", dark ? "text-white" : "text-gray-900")}>Confirm your yearly upgrade</h2>
                   <p className={cn("mt-2 text-sm leading-6", dark ? "text-white/60" : "text-gray-600")}>
-                    This preview is generated from Paddle before the subscription update is applied. Confirm only if you want us to charge the saved payment method on this subscription now.
+                    This estimate is provided by Paddle before the plan change is applied. Confirm to charge the payment method on file now and move future renewals to annual billing.
                   </p>
                 </div>
                 <button
@@ -1937,8 +1943,8 @@ function DashboardContent() {
                   <div className={cn("mt-1 text-base font-semibold", dark ? "text-white" : "text-gray-900")}>{previewNextBillingLabel ?? "Unavailable"}</div>
                 </div>
                 <div className={cn("rounded-[22px] border px-4 py-3", dark ? "border-white/10 bg-white/5" : "border-black/8 bg-[#fafafa]")}>
-                  <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-white/45" : "text-neutral-500")}>Collection method</div>
-                  <div className={cn("mt-1 text-base font-semibold", dark ? "text-white" : "text-gray-900")}>{yearlyUpgradePreview.collectionMode === "automatic" ? "Saved payment method" : yearlyUpgradePreview.collectionMode === "manual" ? "Manual collection" : "Unavailable"}</div>
+                  <div className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", dark ? "text-white/45" : "text-neutral-500")}>Payment method on file</div>
+                  <div className={cn("mt-1 text-base font-semibold", dark ? "text-white" : "text-gray-900")}>{previewPaymentMethodLabel}</div>
                 </div>
               </div>
 
