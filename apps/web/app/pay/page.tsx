@@ -40,10 +40,7 @@ function PaddlePaymentLinkContent() {
   const [status, setStatus] = useState("Preparing secure checkout...");
   const [error, setError] = useState("");
 
-  const clientToken = useMemo(
-    () => process.env.NEXT_PUBLIC_PADDLE_CLIENT_SIDE_TOKEN ?? process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN ?? "",
-    []
-  );
+  const clientToken = useMemo(() => process.env.NEXT_PUBLIC_PADDLE_CLIENT_SIDE_TOKEN ?? "", []);
 
   useEffect(() => {
     const currentTransactionId = transactionId;
