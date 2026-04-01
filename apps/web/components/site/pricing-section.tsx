@@ -207,7 +207,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
       return;
     }
 
-    function handlePointerDown(event: MouseEvent) {
+    function handleDocumentClick(event: MouseEvent) {
       const target = event.target;
       if (target instanceof Element && target.closest("[data-compare-hint-root='true']")) {
         return;
@@ -216,9 +216,9 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
       setOpenCompareHint(null);
     }
 
-    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("click", handleDocumentClick);
     return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("click", handleDocumentClick);
     };
   }, [openCompareHint]);
 
@@ -343,7 +343,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
 
   function renderCompareValue(value: string) {
     if (value === "-") {
-      return <span className={cn("font-semibold tracking-[0.08em]", dark ? "text-white/40" : "text-neutral-500")}>---</span>;
+      return <span aria-hidden className={cn("inline-block h-[2px] w-5 rounded-full", dark ? "bg-white/35" : "bg-neutral-400")} />;
     }
 
     return (
@@ -431,12 +431,18 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
               <div
                 className={cn(
                   "grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] border-t text-sm",
-                  dark ? "border-white/10 bg-[#111318] text-white/72" : "border-black/8 bg-white text-neutral-700",
-                  index % 2 === 1 && (dark ? "bg-white/[0.03]" : "bg-[#fcfaf6]")
+                  dark ? "border-white/10 text-white/72" : "border-black/8 text-neutral-700"
                 )}
                 key={row.feature}
               >
-                <div className={cn("flex items-center gap-2 px-4 py-3 font-medium", index === compareRows.length - 1 && "rounded-bl-[21px]", dark ? "text-white" : "text-gray-900")}>
+                <div
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-3 font-medium",
+                    dark ? "bg-[#111318] text-white" : "bg-white text-gray-900",
+                    index % 2 === 1 && (dark ? "bg-white/[0.03]" : "bg-[#fcfaf6]"),
+                    index === compareRows.length - 1 && "rounded-bl-[21px]"
+                  )}
+                >
                   <span>{row.feature}</span>
                   <div className="relative" data-compare-hint-root="true">
                     <button
@@ -446,9 +452,12 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
                         "inline-flex h-4.5 w-4.5 items-center justify-center rounded-full border bg-transparent text-[10px] font-semibold leading-none",
                         dark ? "border-white/25 text-white/60 hover:border-white/40 hover:text-white/80" : "border-neutral-300 text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"
                       )}
-                      onClick={() => setOpenCompareHint((current) => current === row.feature ? null : row.feature)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenCompareHint((current) => current === row.feature ? null : row.feature);
+                      }}
                       type="button"
-                  >
+                    >
                       !
                     </button>
                     {openCompareHint === row.feature ? (
@@ -457,15 +466,25 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
                           "absolute bottom-[calc(100%+10px)] left-[calc(100%-16px)] z-30 w-64 rounded-2xl border px-3 py-2 text-xs font-normal leading-5 shadow-[0_18px_40px_rgba(15,23,42,0.12)]",
                           dark ? "border-white/10 bg-[#161a22] text-white/72" : "border-[#ebe3d6] bg-white text-neutral-600"
                         )}
+                        onClick={(event) => event.stopPropagation()}
                       >
                         {row.description}
                       </div>
                     ) : null}
                   </div>
                 </div>
-                <div className="px-4 py-3">{renderCompareValue(row.free)}</div>
-                <div className="px-4 py-3">{renderCompareValue(row.monthly)}</div>
-                <div className={cn("px-4 py-3", index === compareRows.length - 1 && "rounded-br-[21px]")}>{renderCompareValue(row.yearly)}</div>
+                <div className={cn("px-4 py-3", dark ? "bg-[#111318]" : "bg-white", index % 2 === 1 && (dark ? "bg-white/[0.03]" : "bg-[#fcfaf6]"))}>{renderCompareValue(row.free)}</div>
+                <div className={cn("px-4 py-3", dark ? "bg-[#111318]" : "bg-white", index % 2 === 1 && (dark ? "bg-white/[0.03]" : "bg-[#fcfaf6]"))}>{renderCompareValue(row.monthly)}</div>
+                <div
+                  className={cn(
+                    "px-4 py-3",
+                    dark ? "bg-[#111318]" : "bg-white",
+                    index % 2 === 1 && (dark ? "bg-white/[0.03]" : "bg-[#fcfaf6]"),
+                    index === compareRows.length - 1 && "rounded-br-[21px]"
+                  )}
+                >
+                  {renderCompareValue(row.yearly)}
+                </div>
               </div>
             ))}
           </div>
