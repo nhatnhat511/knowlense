@@ -624,6 +624,161 @@ function readPaddleStartedAt(data: Record<string, unknown> | null | undefined) {
   return getPaddleString(data?.started_at);
 }
 
+function readPaddleApiErrorMessage(
+  payload:
+    | {
+        error?: { detail?: string; message?: string };
+        errors?: Array<{ detail?: string; message?: string }>;
+      }
+    | null
+    | undefined,
+  fallback: string
+) {
+  return (
+    payload?.errors?.[0]?.detail
+    ?? payload?.errors?.[0]?.message
+    ?? payload?.error?.detail
+    ?? payload?.error?.message
+    ?? fallback
+  );
+}
+
+function readPaddleMoneyValue(data: Record<string, unknown> | null | undefined, path: string[]) {
+  let current: unknown = data;
+
+  for (const key of path) {
+    if (!current || typeof current !== "object") {
+      return null;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+
+  return getPaddleString(current);
+}
+
+function sumPaddleMoneyValues(records: unknown, field: string) {
+  if (!Array.isArray(records)) {
+    return null;
+  }
+
+  let total = 0;
+  let matched = false;
+
+  for (const record of records) {
+    if (!record || typeof record !== "object") {
+      continue;
+    }
+
+    const amount = readPaddleMoneyValue(record as Record<string, unknown>, ["totals", field]);
+    if (!amount) {
+      continue;
+    }
+
+    const numericAmount = Number(amount);
+    if (!Number.isFinite(numericAmount)) {
+      continue;
+    }
+
+    total += numericAmount;
+    matched = true;
+  }
+
+  return matched ? String(total) : null;
+}
+
+function serializePaddleTransactionPreview(transaction: unknown) {
+  if (!transaction || typeof transaction !== "object") {
+    return null;
+  }
+
+  const row = transaction as Record<string, unknown>;
+  return {
+    total:
+      readPaddleMoneyValue(row, ["details", "totals", "total"])
+      ?? readPaddleMoneyValue(row, ["details", "adjusted_totals", "total"]),
+    subtotal:
+      readPaddleMoneyValue(row, ["details", "totals", "subtotal"])
+      ?? readPaddleMoneyValue(row, ["details", "adjusted_totals", "subtotal"]),
+    tax:
+      readPaddleMoneyValue(row, ["details", "totals", "tax"])
+      ?? readPaddleMoneyValue(row, ["details", "adjusted_totals", "tax"])
+  };
+}
+
+function serializePaddleRecurringTransactionDetails(details: unknown, subscription: Record<string, unknown>) {
+  if (!details || typeof details !== "object") {
+    return null;
+  }
+
+  const row = details as Record<string, unknown>;
+  const billingCycle = subscription.billing_cycle && typeof subscription.billing_cycle === "object"
+    ? (subscription.billing_cycle as Record<string, unknown>)
+    : null;
+  const frequencyValue = billingCycle?.frequency;
+
+  return {
+    total:
+      readPaddleMoneyValue(row, ["totals", "total"])
+      ?? sumPaddleMoneyValues(row.tax_rates_used, "total"),
+    subtotal:
+      readPaddleMoneyValue(row, ["totals", "subtotal"])
+      ?? sumPaddleMoneyValues(row.tax_rates_used, "subtotal"),
+    tax:
+      readPaddleMoneyValue(row, ["totals", "tax"])
+      ?? sumPaddleMoneyValues(row.tax_rates_used, "tax"),
+    interval: getPaddleString(billingCycle?.interval),
+    frequency:
+      typeof frequencyValue === "number"
+        ? frequencyValue
+        : Number.isFinite(Number(frequencyValue))
+          ? Number(frequencyValue)
+          : null
+  };
+}
+
+function serializePaddleUpdateSummary(summary: unknown) {
+  if (!summary || typeof summary !== "object") {
+    return null;
+  }
+
+  const row = summary as Record<string, unknown>;
+
+  return {
+    chargeTotal:
+      readPaddleMoneyValue(row, ["charge", "totals", "total"])
+      ?? readPaddleMoneyValue(row, ["charge", "details", "totals", "total"]),
+    creditTotal:
+      readPaddleMoneyValue(row, ["credit", "totals", "total"])
+      ?? readPaddleMoneyValue(row, ["credit", "details", "totals", "total"]),
+    resultTotal:
+      readPaddleMoneyValue(row, ["result", "totals", "total"])
+      ?? readPaddleMoneyValue(row, ["result", "total"])
+  };
+}
+
+function buildYearlyUpgradeItems(subscription: Record<string, unknown>, env: Bindings) {
+  const existingItems = Array.isArray(subscription.items) ? subscription.items : [];
+
+  return existingItems
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const row = item as Record<string, unknown>;
+      const currentPriceId =
+        getPaddleString(row.price_id)
+        ?? (row.price && typeof row.price === "object" ? getPaddleString((row.price as Record<string, unknown>).id) : null);
+      const quantityValue = typeof row.quantity === "number" ? row.quantity : Number(row.quantity ?? 1);
+
+      return {
+        price_id: currentPriceId === env.PADDLE_PRICE_ID_MONTHLY ? env.PADDLE_PRICE_ID_YEARLY : currentPriceId,
+        quantity: Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1
+      };
+    })
+    .filter((item): item is { price_id: string; quantity: number } => Boolean(item?.price_id));
+}
+
 function getPremiumPlanName(interval: PaddleBillingInterval | null) {
   return interval === "yearly" ? "Premium Yearly" : "Premium Monthly";
 }
@@ -2725,6 +2880,90 @@ app.post("/v1/billing/checkout", async (c) => {
   }
 });
 
+app.post("/v1/billing/upgrade-yearly/preview", async (c) => {
+  c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  c.header("Pragma", "no-cache");
+
+  try {
+    const authResult = await authenticateRequest(c);
+    if (authResult) {
+      return c.json({ error: authResult.error }, authResult.status);
+    }
+
+    const user = c.get("user");
+    const billing = await readBillingProfile(c.env, user.id);
+
+    if (billing.status !== "active" || billing.billingInterval !== "monthly") {
+      return c.json({ error: "Only active monthly subscriptions can be upgraded to yearly." }, 400);
+    }
+
+    const subscriptionId = getPaddleString(await readSubscriptionIdForUser(c.env, user.id));
+
+    if (!subscriptionId || !c.env.PADDLE_API_KEY || !c.env.PADDLE_PRICE_ID_YEARLY) {
+      return c.json({ error: "Yearly upgrade is not configured for this account." }, 500);
+    }
+
+    const existingSubscription = await fetchPaddleSubscription(c.env, subscriptionId);
+    const items = buildYearlyUpgradeItems(existingSubscription, c.env);
+
+    if (!items.length) {
+      return c.json({ error: "This subscription does not contain any updatable Paddle items." }, 400);
+    }
+
+    const response = await fetch(`${paddleBaseUrl(readPaddleEnvironment(c.env))}/subscriptions/${subscriptionId}/preview`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${c.env.PADDLE_API_KEY}`,
+        ...jsonHeaders()
+      },
+      body: JSON.stringify({
+        items,
+        proration_billing_mode: "prorated_immediately",
+        on_payment_failure: "prevent_change"
+      })
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          data?: Record<string, unknown>;
+          error?: { detail?: string; message?: string };
+          errors?: Array<{ detail?: string; message?: string }>;
+        }
+      | null;
+
+    if (!response.ok || !payload?.data) {
+      return c.json(
+        {
+          error: readPaddleApiErrorMessage(payload, "Unable to preview this subscription upgrade.")
+        },
+        502
+      );
+    }
+
+    const preview = payload.data;
+
+    return c.json({
+      ok: true,
+      preview: {
+        currencyCode: getPaddleString(preview.currency_code),
+        collectionMode: getPaddleString(preview.collection_mode),
+        nextBilledAt: readPaddleNextBilledAt(preview),
+        immediateTransaction: serializePaddleTransactionPreview(preview.immediate_transaction),
+        recurringTransaction: serializePaddleRecurringTransactionDetails(preview.recurring_transaction_details, preview),
+        updateSummary: serializePaddleUpdateSummary(preview.update_summary),
+        consentRequirementsCount: Array.isArray(preview.consent_requirements) ? preview.consent_requirements.length : 0
+      }
+    });
+  } catch (error) {
+    return c.json(
+      {
+        error: error instanceof Error ? error.message : "Unable to preview this subscription upgrade."
+      },
+      500
+    );
+  }
+});
+
 app.post("/v1/billing/upgrade-yearly", async (c) => {
   c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   c.header("Pragma", "no-cache");
@@ -2749,25 +2988,7 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
     }
 
     const existingSubscription = await fetchPaddleSubscription(c.env, subscriptionId);
-    const existingItems = Array.isArray(existingSubscription.items) ? existingSubscription.items : [];
-    const items = existingItems
-      .map((item) => {
-        if (!item || typeof item !== "object") {
-          return null;
-        }
-
-        const row = item as Record<string, unknown>;
-        const currentPriceId =
-          getPaddleString(row.price_id)
-          ?? (row.price && typeof row.price === "object" ? getPaddleString((row.price as Record<string, unknown>).id) : null);
-        const quantityValue = typeof row.quantity === "number" ? row.quantity : Number(row.quantity ?? 1);
-
-        return {
-          price_id: currentPriceId === c.env.PADDLE_PRICE_ID_MONTHLY ? c.env.PADDLE_PRICE_ID_YEARLY : currentPriceId,
-          quantity: Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1
-        };
-      })
-      .filter((item): item is { price_id: string; quantity: number } => Boolean(item?.price_id));
+    const items = buildYearlyUpgradeItems(existingSubscription, c.env);
 
     if (!items.length) {
       return c.json({ error: "This subscription does not contain any updatable Paddle items." }, 400);
@@ -2781,7 +3002,8 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
       },
       body: JSON.stringify({
         items,
-        proration_billing_mode: "prorated_immediately"
+        proration_billing_mode: "prorated_immediately",
+        on_payment_failure: "prevent_change"
       })
     });
 
@@ -2796,12 +3018,7 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
     if (!response.ok || !payload?.data) {
       return c.json(
         {
-          error:
-            payload?.errors?.[0]?.detail
-            ?? payload?.errors?.[0]?.message
-            ?? payload?.error?.detail
-            ?? payload?.error?.message
-            ?? "Unable to upgrade this subscription to yearly billing."
+          error: readPaddleApiErrorMessage(payload, "Unable to upgrade this subscription to yearly billing.")
         },
         502
       );
