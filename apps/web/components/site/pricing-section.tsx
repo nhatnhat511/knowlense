@@ -105,21 +105,21 @@ const compareRows: CompareRow[] = [
   {
     feature: "Keyword Tracking",
     description: "Saves a keyword for ongoing rank tracking so you can monitor movement over time.",
-    free: "???",
+    free: "-",
     monthly: "Included",
     yearly: "Included"
   },
   {
     feature: "Keyword rankings dashboard",
     description: "Shows ranking history and trend data for the keywords you choose to track.",
-    free: "???",
+    free: "-",
     monthly: "Included",
     yearly: "Included"
   },
   {
     feature: "Future new features",
     description: "New Premium capabilities released later are included while your Premium plan stays active.",
-    free: "???",
+    free: "-",
     monthly: "Included",
     yearly: "Included"
   }
@@ -422,10 +422,10 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
           </div>
           <div className="mt-5 overflow-visible rounded-[22px] border">
             <div className={cn("grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] text-sm font-semibold", dark ? "border-white/10 bg-white/5 text-white" : "border-black/8 bg-[#faf6ee] text-gray-900")}>
-              <div className="px-4 py-3">Feature</div>
+              <div className="rounded-tl-[21px] px-4 py-3">Feature</div>
               <div className="px-4 py-3">Free</div>
               <div className="px-4 py-3">Monthly</div>
-              <div className="px-4 py-3">Yearly</div>
+              <div className="rounded-tr-[21px] px-4 py-3">Yearly</div>
             </div>
             {compareRows.map((row, index) => (
               <div
@@ -436,7 +436,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
                 )}
                 key={row.feature}
               >
-                <div className={cn("flex items-center gap-2 px-4 py-3 font-medium", dark ? "text-white" : "text-gray-900")}>
+                <div className={cn("flex items-center gap-2 px-4 py-3 font-medium", index === compareRows.length - 1 && "rounded-bl-[21px]", dark ? "text-white" : "text-gray-900")}>
                   <span>{row.feature}</span>
                   <div className="relative" data-compare-hint-root="true">
                     <button
@@ -465,7 +465,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
                 </div>
                 <div className="px-4 py-3">{renderCompareValue(row.free)}</div>
                 <div className="px-4 py-3">{renderCompareValue(row.monthly)}</div>
-                <div className="px-4 py-3">{renderCompareValue(row.yearly)}</div>
+                <div className={cn("px-4 py-3", index === compareRows.length - 1 && "rounded-br-[21px]")}>{renderCompareValue(row.yearly)}</div>
               </div>
             ))}
           </div>
