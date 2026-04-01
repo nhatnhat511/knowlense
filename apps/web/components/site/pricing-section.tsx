@@ -193,6 +193,26 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
     };
   }, [supabase]);
 
+  useEffect(() => {
+    if (!openCompareHint) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-compare-hint-root='true']")) {
+        return;
+      }
+
+      setOpenCompareHint(null);
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [openCompareHint]);
+
   async function handleCheckout(interval: BillingInterval) {
     if (loadingPlan) {
       return;
@@ -222,6 +242,9 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
       plan.key !== "free" &&
       billing?.status === "active" &&
       (activePremiumPlanKey ? plan.key === activePremiumPlanKey : false);
+    const isClosedOption =
+      (plan.key === "free" && billing?.status === "active") ||
+      (plan.key === "monthly" && activePremiumPlanKey === "yearly");
 
     if (isFreeCurrent) {
       return (
@@ -246,6 +269,25 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
         >
           Current plan
         </div>
+      );
+    }
+
+    if (isClosedOption) {
+      const label = plan.key === "free" ? "Start free" : "Upgrade to Premium";
+
+      return (
+        <button
+          className={cn(
+            "inline-flex h-11 w-full items-center justify-center rounded-full text-sm font-semibold",
+            dark
+              ? "cursor-not-allowed border border-white/10 bg-white/5 text-white/35"
+              : "cursor-not-allowed border border-black/10 bg-neutral-100 text-neutral-400"
+          )}
+          disabled
+          type="button"
+        >
+          {label}
+        </button>
       );
     }
 
@@ -363,7 +405,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
             </div>
             <div className={cn("text-sm", dark ? "text-white/50" : "text-neutral-500")}>Free gives access. Premium unlocks tracking and scale.</div>
           </div>
-          <div className="mt-5 overflow-hidden rounded-[22px] border">
+          <div className="mt-5 overflow-visible rounded-[22px] border">
             <div className={cn("grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] text-sm font-semibold", dark ? "border-white/10 bg-white/5 text-white" : "border-black/8 bg-[#faf6ee] text-gray-900")}>
               <div className="px-4 py-3">Feature</div>
               <div className="px-4 py-3">Free</div>
@@ -381,7 +423,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
               >
                 <div className={cn("flex items-center gap-2 px-4 py-3 font-medium", dark ? "text-white" : "text-gray-900")}>
                   <span>{row.feature}</span>
-                  <div className="relative">
+                  <div className="relative" data-compare-hint-root="true">
                     <button
                       aria-expanded={openCompareHint === row.feature}
                       aria-label={`Learn more about ${row.feature}`}
@@ -391,13 +433,13 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
                       )}
                       onClick={() => setOpenCompareHint((current) => current === row.feature ? null : row.feature)}
                       type="button"
-                    >
+                  >
                       !
                     </button>
                     {openCompareHint === row.feature ? (
                       <div
                         className={cn(
-                          "absolute bottom-[calc(100%+10px)] left-[calc(100%-16px)] z-10 w-64 rounded-2xl border px-3 py-2 text-xs font-normal leading-5 shadow-[0_18px_40px_rgba(15,23,42,0.12)]",
+                          "absolute bottom-[calc(100%+10px)] left-[calc(100%-16px)] z-30 w-64 rounded-2xl border px-3 py-2 text-xs font-normal leading-5 shadow-[0_18px_40px_rgba(15,23,42,0.12)]",
                           dark ? "border-white/10 bg-[#161a22] text-white/72" : "border-[#ebe3d6] bg-white text-neutral-600"
                         )}
                       >
