@@ -1381,7 +1381,7 @@ function DashboardContent() {
               <BrandLockup compact dark={dark} href="/" iconOnly subtitle="" />
             </div>
             <div className="hidden 2xl:flex">
-              <BrandLockup compact dark={dark} href="/" subtitle="Seller insight layer for TPT" />
+              <BrandLockup compact dark={dark} href="/" subtitle="Boost Your TPT Rankings & Sales" />
             </div>
           </div>
           <div className="pt-2 2xl:pt-3"><p className={cn("hidden px-3 text-[11px] font-semibold uppercase tracking-[0.16em] 2xl:block", dark ? "text-white/30" : "text-[#8b7f70]")}>Workspace</p><nav className="mt-3 space-y-1"><SidebarItem active={section === "overview"} dark={dark} icon={<LayoutGrid size={16} />} iconOnly={sidebarCollapsed} label="Dashboard" onClick={() => setSection("overview")} /><SidebarItem active={section === "rankings"} dark={dark} icon={<Sparkles size={16} />} iconOnly={sidebarCollapsed} label="Keyword Rankings" onClick={() => setSection("rankings")} /><SidebarItem active={section === "account"} dark={dark} icon={<UserRound size={16} />} iconOnly={sidebarCollapsed} label="Account" onClick={() => setSection("account")} /><SidebarItem active={section === "subscription"} dark={dark} icon={<CreditCard size={16} />} iconOnly={sidebarCollapsed} label="Subscription" onClick={() => setSection("subscription")} /></nav></div>
