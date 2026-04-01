@@ -10,7 +10,6 @@ import {
   markBillingProfileFree,
   readBillingLinkage,
   readBillingProfile,
-  readSubscriptionIdForUser,
   recordProcessedPaddleWebhookEvent,
   resolveBillingUserId,
   startTrialBillingProfile,
@@ -368,6 +367,42 @@ async function fetchPaddleCustomer(env: Bindings, customerId: string) {
   return payload.data;
 }
 
+async function listPaddleSubscriptionsForCustomer(env: Bindings, customerId: string) {
+  if (!env.PADDLE_API_KEY) {
+    throw new Error("Paddle checkout is not configured.");
+  }
+
+  const response = await fetch(
+    `${paddleBaseUrl(readPaddleEnvironment(env))}/subscriptions?customer_id=${encodeURIComponent(customerId)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${env.PADDLE_API_KEY}`,
+        Accept: "application/json"
+      }
+    }
+  );
+
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        data?: Array<Record<string, unknown>>;
+        error?: { detail?: string; message?: string };
+        errors?: Array<{ detail?: string; message?: string }>;
+      }
+    | null;
+
+  if (!response.ok) {
+    throw new Error(
+      payload?.errors?.[0]?.detail
+      ?? payload?.errors?.[0]?.message
+      ?? payload?.error?.detail
+      ?? payload?.error?.message
+      ?? "Unable to list Paddle subscriptions for this customer."
+    );
+  }
+
+  return Array.isArray(payload?.data) ? payload.data : [];
+}
+
 async function findPaddleCustomerByEmail(env: Bindings, email: string) {
   if (!env.PADDLE_API_KEY) {
     throw new Error("Paddle checkout is not configured.");
@@ -510,6 +545,105 @@ async function syncPaddleCustomerIdentity(env: Bindings, customerId: string, ema
   }
 
   return updatePaddleCustomer(env, customerId, email, name);
+}
+
+async function resolvePaddleSubscriptionForUser(
+  env: Bindings,
+  options: {
+    userId: string;
+    email: string | null;
+    name: string | null;
+    billingInterval: PaddleBillingInterval | null;
+  }
+) {
+  const linkage = await readBillingLinkage(env, options.userId);
+  const storedSubscriptionId = getPaddleString(linkage?.paddle_subscription_id);
+  const storedCustomerId = getPaddleString(linkage?.paddle_customer_id);
+
+  if (storedSubscriptionId) {
+    const directSubscription = await fetchPaddleSubscription(env, storedSubscriptionId).catch(() => null);
+    if (directSubscription) {
+      const directCustomerId = getPaddleString(directSubscription.customer_id) ?? storedCustomerId;
+      return {
+        linkage,
+        subscription: directSubscription,
+        subscriptionId: storedSubscriptionId,
+        customerId: directCustomerId
+      };
+    }
+  }
+
+  let resolvedCustomerId = storedCustomerId;
+
+  if (!resolvedCustomerId && options.email) {
+    const customer = await findPaddleCustomerByEmail(env, options.email).catch(() => null);
+    resolvedCustomerId = getPaddleString(customer?.id);
+  }
+
+  if (!resolvedCustomerId) {
+    throw new Error("We could not locate a valid Paddle customer for this account.");
+  }
+
+  const subscriptions = await listPaddleSubscriptionsForCustomer(env, resolvedCustomerId);
+  const rankedSubscriptions = subscriptions
+    .map((subscription) => {
+      const status = getPaddleString(subscription.status)?.toLowerCase() ?? "";
+      const updatedAt = getPaddleString(subscription.updated_at) ?? getPaddleString(subscription.created_at) ?? "";
+      const interval = resolveBillingIntervalFromPaddle(subscription, env);
+      const score =
+        status === "active" ? 4 :
+        status === "trialing" ? 3 :
+        status === "past_due" ? 2 :
+        status === "paused" ? 1 :
+        0;
+
+      return {
+        subscription,
+        interval,
+        score,
+        updatedAt
+      };
+    })
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      if (options.billingInterval && left.interval !== right.interval) {
+        return left.interval === options.billingInterval ? -1 : right.interval === options.billingInterval ? 1 : 0;
+      }
+
+      return right.updatedAt.localeCompare(left.updatedAt);
+    });
+
+  const resolvedSubscription = rankedSubscriptions[0]?.subscription ?? null;
+  const resolvedSubscriptionId = getPaddleString(resolvedSubscription?.id);
+
+  if (!resolvedSubscription || !resolvedSubscriptionId) {
+    throw new Error("We could not locate a valid Paddle subscription for this account.");
+  }
+
+  await upsertPremiumBillingProfile(env, options.userId, {
+    interval:
+      resolveBillingIntervalFromPaddle(resolvedSubscription, env)
+      ?? options.billingInterval,
+    customerId: resolvedCustomerId,
+    subscriptionId: resolvedSubscriptionId,
+    transactionId: null,
+    priceId: readPaddlePriceId(resolvedSubscription),
+    startedAt: readPaddleStartedAt(resolvedSubscription),
+    nextBilledAt: readPaddleNextBilledAt(resolvedSubscription),
+    occurredAt: new Date().toISOString()
+  });
+
+  await syncPaddleCustomerIdentity(env, resolvedCustomerId, options.email, options.name).catch(() => null);
+
+  return {
+    linkage,
+    subscription: resolvedSubscription,
+    subscriptionId: resolvedSubscriptionId,
+    customerId: resolvedCustomerId
+  };
 }
 
 function parsePaddleSignature(header: string | undefined) {
@@ -2911,13 +3045,16 @@ app.post("/v1/billing/upgrade-yearly/preview", async (c) => {
       return c.json({ error: "Only active monthly subscriptions can be upgraded to yearly." }, 400);
     }
 
-    const subscriptionId = getPaddleString(await readSubscriptionIdForUser(c.env, user.id));
-
-    if (!subscriptionId || !c.env.PADDLE_API_KEY || !c.env.PADDLE_PRICE_ID_YEARLY) {
+    if (!c.env.PADDLE_API_KEY || !c.env.PADDLE_PRICE_ID_YEARLY) {
       return c.json({ error: "Yearly upgrade is not configured for this account." }, 500);
     }
 
-    const existingSubscription = await fetchPaddleSubscription(c.env, subscriptionId);
+    const { subscription: existingSubscription, subscriptionId } = await resolvePaddleSubscriptionForUser(c.env, {
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      billingInterval: "monthly"
+    });
     const items = buildYearlyUpgradeItems(existingSubscription, c.env);
 
     if (!items.length) {
@@ -2995,13 +3132,16 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
       return c.json({ error: "Only active monthly subscriptions can be upgraded to yearly." }, 400);
     }
 
-    const subscriptionId = getPaddleString(await readSubscriptionIdForUser(c.env, user.id));
-
-    if (!subscriptionId || !c.env.PADDLE_API_KEY || !c.env.PADDLE_PRICE_ID_YEARLY) {
+    if (!c.env.PADDLE_API_KEY || !c.env.PADDLE_PRICE_ID_YEARLY) {
       return c.json({ error: "Yearly upgrade is not configured for this account." }, 500);
     }
 
-    const existingSubscription = await fetchPaddleSubscription(c.env, subscriptionId);
+    const { subscription: existingSubscription, subscriptionId } = await resolvePaddleSubscriptionForUser(c.env, {
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      billingInterval: "monthly"
+    });
     const items = buildYearlyUpgradeItems(existingSubscription, c.env);
 
     if (!items.length) {
@@ -3080,23 +3220,21 @@ app.post("/v1/billing/manage", async (c) => {
     }
 
     const user = c.get("user");
-    const linkage = await readBillingLinkage(c.env, user.id);
-    const subscriptionId = getPaddleString(linkage?.paddle_subscription_id);
-
-    if (!subscriptionId || !c.env.PADDLE_API_KEY) {
+    if (!c.env.PADDLE_API_KEY) {
       return c.json({ error: "Manage subscription is not available for this account yet." }, 400);
     }
 
-    const subscription = await fetchPaddleSubscription(c.env, subscriptionId);
-    const customerId =
-      getPaddleString(subscription.customer_id)
-      ?? getPaddleString(linkage?.paddle_customer_id);
-
-    if (!customerId) {
-      return c.json({ error: "Manage subscription is not available for this account yet." }, 400);
-    }
-
-    await syncPaddleCustomerIdentity(c.env, customerId, user.email, user.name);
+    const {
+      linkage,
+      subscription,
+      subscriptionId,
+      customerId
+    } = await resolvePaddleSubscriptionForUser(c.env, {
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      billingInterval: null
+    });
 
     const response = await fetch(`${paddleBaseUrl(readPaddleEnvironment(c.env))}/customers/${customerId}/portal-sessions`, {
       method: "POST",
