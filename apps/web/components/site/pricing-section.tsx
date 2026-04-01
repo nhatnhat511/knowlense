@@ -342,8 +342,8 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
   }
 
   function renderCompareValue(value: string) {
-    if (value === "—") {
-      return <span className={dark ? "text-white/40" : "text-neutral-400"}>—</span>;
+    if (value === "-") {
+      return <span className={cn("font-semibold tracking-[0.08em]", dark ? "text-white/40" : "text-neutral-500")}>---</span>;
     }
 
     return (
@@ -421,11 +421,11 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
             <div className={cn("text-sm", dark ? "text-white/50" : "text-neutral-500")}>Free gives access. Premium unlocks tracking and scale.</div>
           </div>
           <div className="mt-5 overflow-visible rounded-[22px] border">
-            <div className={cn("grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] text-sm font-semibold", dark ? "border-white/10 bg-white/5 text-white" : "border-black/8 bg-[#faf6ee] text-gray-900")}>
-              <div className="rounded-tl-[21px] px-4 py-3">Feature</div>
+            <div className={cn("grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] overflow-hidden rounded-t-[21px] text-sm font-semibold", dark ? "border-white/10 bg-white/5 text-white" : "border-black/8 bg-[#faf6ee] text-gray-900")}>
+              <div className="px-4 py-3">Feature</div>
               <div className="px-4 py-3">Free</div>
               <div className="px-4 py-3">Monthly</div>
-              <div className="rounded-tr-[21px] px-4 py-3">Yearly</div>
+              <div className="px-4 py-3">Yearly</div>
             </div>
             {compareRows.map((row, index) => (
               <div
