@@ -16,7 +16,7 @@ import {
   upsertPremiumBillingProfile
 } from "./lib/billingStore";
 import { analyzeProductSeoHealth, type ProductSeoAuditSnapshot } from "./lib/seoAuditor";
-import { generateProductRewrite } from "./lib/productRewriter";
+import { GeminiRequestError, generateProductRewrite } from "./lib/productRewriter";
 
 type Bindings = {
   CORS_ORIGIN?: string;
@@ -2818,6 +2818,10 @@ app.post("/v1/product-seo-health/rewrite", async (c) => {
       }
     });
   } catch (error) {
+    if (error instanceof GeminiRequestError) {
+      return c.json({ error: error.message }, { status: error.status as 400 | 401 | 403 | 429 | 500 | 502 | 503 });
+    }
+
     return c.json({ error: error instanceof Error ? error.message : "Knowlense could not generate AI Rewrite." }, 500);
   }
 });

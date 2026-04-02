@@ -9,7 +9,22 @@ type RewriteOptions = {
   userId: string;
 };
 
+export class GeminiRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status = 500) {
+    super(message);
+    this.name = "GeminiRequestError";
+    this.status = status;
+  }
+}
+
 type GeminiGenerateContentResponse = {
+  error?: {
+    code?: number;
+    message?: string;
+    status?: string;
+  };
   candidates?: Array<{
     content?: {
       parts?: Array<{
@@ -381,16 +396,21 @@ async function callGemini(options: RewriteOptions) {
   const payload = (await response.json().catch(() => null)) as GeminiGenerateContentResponse | null;
 
   if (!response.ok) {
-    throw new Error("Knowlense could not reach Gemini for this rewrite.");
+    const message = payload?.error?.message?.trim();
+    if (message) {
+      throw new GeminiRequestError(message, response.status);
+    }
+
+    throw new GeminiRequestError("Knowlense could not reach Gemini for this rewrite.", response.status);
   }
 
   if (payload?.promptFeedback?.blockReason) {
-    throw new Error("Gemini blocked this rewrite request.");
+    throw new GeminiRequestError("Gemini blocked this rewrite request.", 400);
   }
 
   const rawText = payload?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim();
   if (!rawText) {
-    throw new Error("Gemini did not return rewrite content.");
+    throw new GeminiRequestError("Gemini did not return rewrite content.", 502);
   }
 
   const parsed = JSON.parse(rawText) as RawRewriteResponse;
@@ -423,7 +443,7 @@ export async function generateProductRewrite(options: RewriteOptions): Promise<P
   ]);
 
   if (!titleOptions.length && !descriptionOptions.length) {
-    throw new Error("Knowlense could not build rewrite options from Gemini.");
+    throw new GeminiRequestError("Knowlense could not build rewrite options from Gemini.", 502);
   }
 
   return {
