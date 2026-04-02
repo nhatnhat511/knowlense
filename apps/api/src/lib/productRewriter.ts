@@ -1,12 +1,18 @@
 import { analyzeProductSeoHealth, type ProductSeoAuditSnapshot } from "./seoAuditor";
 
 type RewriteOptions = {
-  apiKey: string;
   model?: string;
   snapshot: ProductSeoAuditSnapshot;
   primaryKeyword?: string | null;
   db: D1Database;
   userId: string;
+  vertex?: {
+    projectId: string;
+    clientEmail: string;
+    privateKey: string;
+    location: string;
+    tokenUri?: string;
+  } | null;
 };
 
 export class GeminiRequestError extends Error {
@@ -19,7 +25,7 @@ export class GeminiRequestError extends Error {
   }
 }
 
-type GeminiGenerateContentResponse = {
+type GenerateContentErrorResponse = {
   error?: {
     code?: number;
     message?: string;
@@ -324,76 +330,176 @@ function buildUserPrompt(snapshot: ProductSeoAuditSnapshot, primaryKeyword: stri
   ].join("\n");
 }
 
-async function callGemini(options: RewriteOptions) {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(options.model || "gemini-2.5-flash")}:generateContent`,
+function toBase64Url(bytes: Uint8Array) {
+  let binary = "";
+  const chunkSize = 0x8000;
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function stringToBase64Url(value: string) {
+  return toBase64Url(new TextEncoder().encode(value));
+}
+
+function pemToArrayBuffer(pem: string) {
+  const normalized = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+    .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/\s+/g, "");
+  const binary = atob(normalized);
+  const output = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    output[index] = binary.charCodeAt(index);
+  }
+
+  return output.buffer;
+}
+
+async function signJwt(privateKey: string, header: Record<string, unknown>, payload: Record<string, unknown>) {
+  const encodedHeader = stringToBase64Url(JSON.stringify(header));
+  const encodedPayload = stringToBase64Url(JSON.stringify(payload));
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+
+  const cryptoKey = await crypto.subtle.importKey(
+    "pkcs8",
+    pemToArrayBuffer(privateKey),
     {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": options.apiKey
-      },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [
-            {
-              text: buildSystemInstruction()
-            }
-          ]
-        },
-        contents: [
-          {
-            parts: [
-              {
-                text: buildUserPrompt(options.snapshot, options.primaryKeyword?.trim() || null)
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          responseMimeType: "application/json",
-          responseJsonSchema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              titleOptions: {
-                type: "array",
-                minItems: 3,
-                maxItems: 3,
-                items: {
-                  type: "object",
-                  additionalProperties: false,
-                  properties: {
-                    value: { type: "string" },
-                    rationale: { type: "string" }
-                  },
-                  required: ["value", "rationale"]
-                }
-              },
-              descriptionOptions: {
-                type: "array",
-                minItems: 2,
-                maxItems: 2,
-                items: {
-                  type: "object",
-                  additionalProperties: false,
-                  properties: {
-                    value: { type: "string" },
-                    rationale: { type: "string" }
-                  },
-                  required: ["value", "rationale"]
-                }
-              }
-            },
-            required: ["titleOptions", "descriptionOptions"]
-          }
-        }
-      })
+      name: "RSASSA-PKCS1-v1_5",
+      hash: "SHA-256"
+    },
+    false,
+    ["sign"]
+  );
+
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    cryptoKey,
+    new TextEncoder().encode(signingInput)
+  );
+
+  return `${signingInput}.${toBase64Url(new Uint8Array(signature))}`;
+}
+
+async function getVertexAccessToken(vertex: NonNullable<RewriteOptions["vertex"]>) {
+  const now = Math.floor(Date.now() / 1000);
+  const assertion = await signJwt(
+    vertex.privateKey,
+    { alg: "RS256", typ: "JWT" },
+    {
+      iss: vertex.clientEmail,
+      scope: "https://www.googleapis.com/auth/cloud-platform",
+      aud: vertex.tokenUri || "https://oauth2.googleapis.com/token",
+      exp: now + 3600,
+      iat: now
     }
   );
 
-  const payload = (await response.json().catch(() => null)) as GeminiGenerateContentResponse | null;
+  const response = await fetch(vertex.tokenUri || "https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion
+    }).toString()
+  });
+
+  const payload = (await response.json().catch(() => null)) as {
+    access_token?: string;
+    error?: string;
+    error_description?: string;
+  } | null;
+
+  if (!response.ok || !payload?.access_token) {
+    throw new GeminiRequestError(payload?.error_description || "Vertex AI authentication failed.", response.status || 500);
+  }
+
+  return payload.access_token;
+}
+
+function buildGenerateContentBody(snapshot: ProductSeoAuditSnapshot, primaryKeyword: string | null) {
+  return {
+    systemInstruction: {
+      parts: [
+        {
+          text: buildSystemInstruction()
+        }
+      ]
+    },
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: buildUserPrompt(snapshot, primaryKeyword)
+          }
+        ]
+      }
+    ],
+    generationConfig: {
+      temperature: 0.7,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          titleOptions: {
+            type: "ARRAY",
+            minItems: 3,
+            maxItems: 3,
+            items: {
+              type: "OBJECT",
+              properties: {
+                value: { type: "STRING" },
+                rationale: { type: "STRING" }
+              },
+              required: ["value", "rationale"]
+            }
+          },
+          descriptionOptions: {
+            type: "ARRAY",
+            minItems: 2,
+            maxItems: 2,
+            items: {
+              type: "OBJECT",
+              properties: {
+                value: { type: "STRING" },
+                rationale: { type: "STRING" }
+              },
+              required: ["value", "rationale"]
+            }
+          }
+        },
+        required: ["titleOptions", "descriptionOptions"]
+      }
+    }
+  };
+}
+
+async function callVertexAi(options: RewriteOptions) {
+  if (!options.vertex) {
+    throw new GeminiRequestError("Vertex AI is not configured for AI Rewrite.", 503);
+  }
+
+  const accessToken = await getVertexAccessToken(options.vertex);
+  const model = options.model || "gemini-2.5-flash";
+  const endpoint = `https://${options.vertex.location}-aiplatform.googleapis.com/v1/projects/${encodeURIComponent(options.vertex.projectId)}/locations/${encodeURIComponent(options.vertex.location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(buildGenerateContentBody(options.snapshot, options.primaryKeyword?.trim() || null))
+  });
+
+  const payload = (await response.json().catch(() => null)) as GenerateContentErrorResponse | null;
 
   if (!response.ok) {
     const message = payload?.error?.message?.trim();
@@ -401,16 +507,16 @@ async function callGemini(options: RewriteOptions) {
       throw new GeminiRequestError(message, response.status);
     }
 
-    throw new GeminiRequestError("Knowlense could not reach Gemini for this rewrite.", response.status);
+    throw new GeminiRequestError("Knowlense could not reach Vertex AI for this rewrite.", response.status);
   }
 
   if (payload?.promptFeedback?.blockReason) {
-    throw new GeminiRequestError("Gemini blocked this rewrite request.", 400);
+    throw new GeminiRequestError("Vertex AI blocked this rewrite request.", 400);
   }
 
   const rawText = payload?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim();
   if (!rawText) {
-    throw new GeminiRequestError("Gemini did not return rewrite content.", 502);
+    throw new GeminiRequestError("Vertex AI did not return rewrite content.", 502);
   }
 
   const parsed = JSON.parse(rawText) as RawRewriteResponse;
@@ -420,6 +526,14 @@ async function callGemini(options: RewriteOptions) {
   };
 }
 
+async function callModelProvider(options: RewriteOptions) {
+  if (!options.vertex) {
+    throw new GeminiRequestError("Vertex AI is not configured for AI Rewrite.", 503);
+  }
+
+  return callVertexAi(options);
+}
+
 export async function generateProductRewrite(options: RewriteOptions): Promise<ProductRewriteResult> {
   const primaryKeyword = options.primaryKeyword?.trim() || null;
   const baselineAnalysis = await analyzeProductSeoHealth(options.snapshot, {
@@ -427,7 +541,7 @@ export async function generateProductRewrite(options: RewriteOptions): Promise<P
     userId: options.userId
   });
   const baselineScore = baselineAnalysis.health.seoHealthScore;
-  const rawResponse = await callGemini(options);
+  const rawResponse = await callModelProvider(options);
 
   const [titleOptions, descriptionOptions] = await Promise.all([
     Promise.all(
@@ -443,13 +557,13 @@ export async function generateProductRewrite(options: RewriteOptions): Promise<P
   ]);
 
   if (!titleOptions.length && !descriptionOptions.length) {
-    throw new GeminiRequestError("Knowlense could not build rewrite options from Gemini.", 502);
+    throw new GeminiRequestError("Knowlense could not build rewrite options from the AI provider.", 502);
   }
 
   return {
     primaryKeyword,
     titleOptions,
     descriptionOptions,
-    note: "Knowlense rewrites are generated with Gemini and then checked again against the current SEO Health rules before they are shown in the extension."
+    note: "Knowlense rewrites are generated by the configured AI provider and then checked again against the current SEO Health rules before they are shown in the extension."
   };
 }

@@ -21,8 +21,9 @@ import { GeminiRequestError, generateProductRewrite } from "./lib/productRewrite
 type Bindings = {
   CORS_ORIGIN?: string;
   DB: D1Database;
-  GEMINI_API_KEY?: string;
-  GEMINI_MODEL?: string;
+  VERTEX_AI_LOCATION?: string;
+  VERTEX_AI_MODEL?: string;
+  VERTEX_SERVICE_ACCOUNT_JSON?: string;
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   PADDLE_ENVIRONMENT?: "sandbox" | "production";
@@ -2773,7 +2774,34 @@ app.post("/v1/product-seo-health/rewrite", async (c) => {
       return c.json({ error: "Invalid rewrite payload." }, 400);
     }
 
-    if (!c.env.GEMINI_API_KEY) {
+    let vertexConfig: {
+      projectId: string;
+      clientEmail: string;
+      privateKey: string;
+      location: string;
+      tokenUri?: string;
+    } | null = null;
+
+    if (c.env.VERTEX_SERVICE_ACCOUNT_JSON?.trim()) {
+      const parsed = JSON.parse(c.env.VERTEX_SERVICE_ACCOUNT_JSON) as {
+        project_id?: string;
+        client_email?: string;
+        private_key?: string;
+        token_uri?: string;
+      };
+
+      if (parsed.project_id && parsed.client_email && parsed.private_key) {
+        vertexConfig = {
+          projectId: parsed.project_id,
+          clientEmail: parsed.client_email,
+          privateKey: parsed.private_key,
+          tokenUri: parsed.token_uri,
+          location: c.env.VERTEX_AI_LOCATION || "us-central1"
+        };
+      }
+    }
+
+    if (!vertexConfig) {
       return c.json({ error: "AI rewrite is not configured yet." }, 503);
     }
 
@@ -2795,12 +2823,12 @@ app.post("/v1/product-seo-health/rewrite", async (c) => {
     }
 
     const rewrite = await generateProductRewrite({
-      apiKey: c.env.GEMINI_API_KEY,
-      model: c.env.GEMINI_MODEL || "gemini-2.5-flash",
+      model: c.env.VERTEX_AI_MODEL || "gemini-2.5-flash",
       snapshot,
       primaryKeyword: primaryKeyword || null,
       db: c.env.DB,
-      userId: user.id
+      userId: user.id,
+      vertex: vertexConfig
     });
 
     if (!isPremium) {
