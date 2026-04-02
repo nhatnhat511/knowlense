@@ -134,6 +134,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
   const router = useRouter();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [accessToken, setAccessToken] = useState("");
+  const [authReady, setAuthReady] = useState(false);
   const [billing, setBilling] = useState<DashboardMetrics["billing"] | null>(null);
   const [loadingPlan, setLoadingPlan] = useState<BillingInterval | "">("");
   const [status, setStatus] = useState("");
@@ -170,6 +171,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
 
       const nextToken = session?.access_token ?? "";
       setAccessToken(nextToken);
+      setAuthReady(true);
 
       if (!nextToken) {
         setBilling(null);
@@ -195,6 +197,7 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
     } = client.auth.onAuthStateChange((_event, session) => {
       const nextToken = session?.access_token ?? "";
       setAccessToken(nextToken);
+      setAuthReady(true);
       if (!nextToken) {
         setBilling(null);
       }
@@ -282,14 +285,31 @@ export function PricingSection({ embedded = false, dark = false, hideCompare = f
   }
 
   function planAction(plan: PlanCard) {
-    const isFreeCurrent = plan.key === "free" && billing?.status !== "active";
+    const hasSession = Boolean(accessToken);
+    const billingResolved = !hasSession || billing !== null;
+    const isFreeCurrent = plan.key === "free" && hasSession && billingResolved && billing?.status !== "active";
     const isPremiumCurrent =
       plan.key !== "free" &&
+      hasSession &&
+      billingResolved &&
       billing?.status === "active" &&
       (activePremiumPlanKey ? plan.key === activePremiumPlanKey : false);
     const isClosedOption =
-      (plan.key === "free" && billing?.status === "active") ||
+      (plan.key === "free" && hasSession && billingResolved && billing?.status === "active") ||
       (plan.key === "monthly" && activePremiumPlanKey === "yearly");
+
+    if (hasSession && !billingResolved && authReady) {
+      return (
+        <div
+          className={cn(
+            "inline-flex h-11 w-full items-center justify-center rounded-full text-sm font-semibold",
+            dark ? "border border-white/10 bg-white/8 text-white/65" : "border border-black/10 bg-[#faf6ee] text-neutral-500"
+          )}
+        >
+          Loading...
+        </div>
+      );
+    }
 
     if (isFreeCurrent) {
       return (

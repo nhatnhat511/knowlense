@@ -213,7 +213,7 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
         <BrandLockup className="brand-lockup" compact subtitle={tag} />
 
         <nav aria-label="Primary navigation" className="nav nav-desktop">
-          {(isSignedIn ? signedOutNavItems : navItems).map((item) => (
+          {(isSignedIn ? signedOutNavItems : signedOutNavItems).map((item) => (
             <Link
               aria-current={pathname === item.href ? "page" : undefined}
               className={`nav-link${/sign in|login/i.test(item.label) ? " nav-link-utility" : " nav-link-text"}`}
@@ -289,7 +289,7 @@ export function SiteHeader({ tag, navItems = [], primaryCta }: SiteHeaderProps) 
 
         <div aria-label="Mobile navigation" className={`mobile-menu${menuOpen ? " open" : ""}`} id={menuId}>
           <nav className="mobile-menu-list">
-            {(isSignedIn ? signedOutNavItems : navItems).map((item) => (
+            {(isSignedIn ? signedOutNavItems : signedOutNavItems).map((item) => (
               <Link
                 aria-current={pathname === item.href ? "page" : undefined}
                 className="mobile-menu-link"
