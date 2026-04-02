@@ -437,7 +437,7 @@ function DashboardContent() {
       : billing?.planName?.toLowerCase().includes("monthly")
         ? "monthly"
         : billing?.billingInterval;
-  const planLabel = billing?.status === "active" ? "Premium" : billing?.status === "trial" ? "Premium Trial" : billing?.status === "expired" ? "Trial expired" : "Free";
+  const planLabel = billing?.status === "active" ? "Premium" : "Free";
   const billingCycleLabel = normalizedBillingInterval === "yearly" ? "Yearly" : normalizedBillingInterval === "monthly" ? "Monthly" : null;
   const startedBillingLabel =
     billing?.startedAt

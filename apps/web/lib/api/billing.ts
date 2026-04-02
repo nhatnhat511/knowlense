@@ -4,14 +4,11 @@ import { getApiBaseUrl } from "./profile";
 
 export type BillingInterval = "monthly" | "yearly";
 export type BillingState = {
-  status: "free" | "active" | "expired" | "setup" | "trial";
+  status: "free" | "active" | "setup";
   planName: string;
   billingInterval: "monthly" | "yearly" | null;
   startedAt: string | null;
   nextBilledAt: string | null;
-  trialEligible: boolean;
-  trialActive: boolean;
-  trialDaysRemaining: number;
 };
 
 export type YearlyUpgradePreview = {

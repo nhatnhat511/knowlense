@@ -8,14 +8,11 @@ export type BillingStoreBindings = {
 };
 
 export type BillingProfileState = {
-  status: "free" | "active" | "expired" | "trial";
+  status: "free" | "active";
   planName: string;
   billingInterval: PaddleBillingInterval | null;
   startedAt: string | null;
   nextBilledAt: string | null;
-  trialEligible: boolean;
-  trialActive: boolean;
-  trialDaysRemaining: number;
 };
 
 type BillingProfileRow = {
@@ -56,11 +53,6 @@ type BillingFreeOptions = {
   customerId?: string | null;
   subscriptionId?: string | null;
   occurredAt?: string | null;
-};
-
-type TrialBillingOptions = {
-  startedAt: string;
-  endsAt: string;
 };
 
 function createBillingAdminClient(env: BillingStoreBindings): SupabaseClient {
@@ -118,32 +110,6 @@ async function readBillingProfileRow(env: BillingStoreBindings, userId: string) 
 
 export async function ensureBillingTables(_env: BillingStoreBindings) {
   // Supabase schema is managed ahead of time via SQL migrations.
-}
-
-export async function startTrialBillingProfile(
-  env: BillingStoreBindings,
-  userId: string,
-  options: TrialBillingOptions
-) {
-  await ensureBillingTables(env);
-
-  const supabase = createBillingAdminClient(env);
-  await requireVoidResult(
-    supabase.from("billing_profiles").upsert(
-      {
-        user_id: userId,
-        status: "trial",
-        plan_name: "Premium Trial",
-        trial_started_at: options.startedAt,
-        trial_ends_at: options.endsAt,
-        billing_interval: null,
-        updated_at: options.startedAt
-      },
-      {
-        onConflict: "user_id"
-      }
-    )
-  );
 }
 
 export async function upsertPremiumBillingProfile(
@@ -214,26 +180,6 @@ export async function markBillingProfileFree(
         onConflict: "user_id"
       }
     )
-  );
-}
-
-export async function clearTrialBillingProfile(
-  env: BillingStoreBindings,
-  userId: string,
-  updatedAt = new Date().toISOString()
-) {
-  const supabase = createBillingAdminClient(env);
-  await requireVoidResult(
-    supabase
-      .from("billing_profiles")
-      .update({
-        status: "free",
-        plan_name: "Free",
-        trial_started_at: null,
-        trial_ends_at: null,
-        updated_at: updatedAt
-      })
-      .eq("user_id", userId)
   );
 }
 
@@ -357,7 +303,7 @@ export async function readBillingProfile(env: BillingStoreBindings, userId: stri
   const row = await requireSingleRow(
     supabase
       .from("billing_profiles")
-      .select("user_id, status, plan_name, trial_started_at, trial_ends_at, billing_interval, started_at, next_billed_at, updated_at")
+      .select("user_id, status, plan_name, trial_started_at, trial_ends_at, billing_interval, paddle_customer_id, paddle_subscription_id, started_at, next_billed_at, updated_at")
       .eq("user_id", userId)
       .maybeSingle<{
         user_id: string;
@@ -366,6 +312,8 @@ export async function readBillingProfile(env: BillingStoreBindings, userId: stri
         trial_started_at: string | null;
         trial_ends_at: string | null;
         billing_interval: string | null;
+        paddle_customer_id: string | null;
+        paddle_subscription_id: string | null;
         started_at: string | null;
         next_billed_at: string | null;
         updated_at: string;
@@ -378,40 +326,7 @@ export async function readBillingProfile(env: BillingStoreBindings, userId: stri
       planName: "Free",
       billingInterval: null,
       startedAt: null,
-      nextBilledAt: null,
-      trialEligible: true,
-      trialActive: false,
-      trialDaysRemaining: 0
-    };
-  }
-
-  if (row.status === "trial" && row.trial_ends_at) {
-    const remainingMs = new Date(row.trial_ends_at).getTime() - Date.now();
-
-    if (remainingMs <= 0) {
-      await clearTrialBillingProfile(env, userId);
-
-      return {
-        status: "expired",
-        planName: "Free",
-        billingInterval: null,
-        startedAt: null,
-        nextBilledAt: null,
-        trialEligible: false,
-        trialActive: false,
-        trialDaysRemaining: 0
-      };
-    }
-
-    return {
-      status: "trial",
-      planName: "Premium Trial",
-      billingInterval: null,
-      startedAt: row.trial_started_at,
-      nextBilledAt: row.trial_ends_at,
-      trialEligible: false,
-      trialActive: true,
-      trialDaysRemaining: Math.max(Math.ceil(remainingMs / (1000 * 60 * 60 * 24)), 1)
+      nextBilledAt: null
     };
   }
 
@@ -421,22 +336,24 @@ export async function readBillingProfile(env: BillingStoreBindings, userId: stri
       planName: row.plan_name || "Premium",
       billingInterval: row.billing_interval === "monthly" || row.billing_interval === "yearly" ? row.billing_interval : null,
       startedAt: row.started_at,
-      nextBilledAt: row.next_billed_at,
-      trialEligible: false,
-      trialActive: false,
-      trialDaysRemaining: 0
+      nextBilledAt: row.next_billed_at
     };
   }
 
+  if (row.status === "trial" || row.status === "expired") {
+    await markBillingProfileFree(env, userId, {
+      customerId: row.paddle_customer_id,
+      subscriptionId: row.paddle_subscription_id,
+      occurredAt: new Date().toISOString()
+    });
+  }
+
   return {
-    status: row.status === "expired" ? "expired" : "free",
-    planName: row.plan_name || "Free",
+    status: "free",
+    planName: "Free",
     billingInterval: null,
     startedAt: null,
-    nextBilledAt: null,
-    trialEligible: row.trial_started_at == null,
-    trialActive: false,
-    trialDaysRemaining: 0
+    nextBilledAt: null
   };
 }
 

@@ -8,14 +8,11 @@ export type DashboardMetrics = {
     delta: string;
   };
   billing: {
-    status: "free" | "active" | "expired" | "setup" | "trial";
+    status: "free" | "active" | "setup";
     planName: string;
     billingInterval: "monthly" | "yearly" | null;
     startedAt: string | null;
     nextBilledAt: string | null;
-    trialEligible: boolean;
-    trialActive: boolean;
-    trialDaysRemaining: number;
     readiness: string;
     ctaLabel: string;
     delta: string;
@@ -170,27 +167,5 @@ export async function fetchExtensionStatus(accessToken: string) {
     status: "active" | "alert";
     label: string;
     connected: boolean;
-  };
-}
-
-export async function startDashboardTrial(accessToken: string) {
-  const response = await fetch(`${getApiBaseUrl()}/v1/dashboard/trial/start`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json"
-    }
-  });
-
-  const payload = await response.json().catch(() => null);
-
-  if (!response.ok || !payload?.trial) {
-    throw new Error(payload?.error ?? "Unable to start your trial.");
-  }
-
-  return payload.trial as {
-    status: "trial";
-    planName: string;
-    trialDaysRemaining: number;
   };
 }

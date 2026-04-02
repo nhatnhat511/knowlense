@@ -14,7 +14,6 @@ import {
   readSubscriptionIdForUser,
   recordProcessedPaddleWebhookEvent,
   resolveBillingUserId,
-  startTrialBillingProfile,
   type PaddleBillingInterval,
   upsertPremiumBillingProfile
 } from "./lib/billingStore";
@@ -311,10 +310,9 @@ async function fetchPaddleSubscription(env: Bindings, subscriptionId: string) {
   const environment = readPaddleEnvironment(env);
   const url = `${paddleBaseUrl(environment)}/subscriptions/${subscriptionId}`;
 
-  console.log("PADDLE_SUB_FETCH_START", {
+  logPaddleEvent("PADDLE_SUB_FETCH_START", {
     environment,
-    subscriptionId,
-    url
+    subscriptionId: maskLoggedId(subscriptionId)
   });
 
   const response = await fetch(url, {
@@ -332,10 +330,10 @@ async function fetchPaddleSubscription(env: Bindings, subscriptionId: string) {
       }
     | null;
 
-  console.log("PADDLE_SUB_FETCH_RESULT", {
-    subscriptionId,
+  logPaddleEvent("PADDLE_SUB_FETCH_RESULT", {
+    subscriptionId: maskLoggedId(subscriptionId),
     status: response.status,
-    payload
+    errorCode: readPaddleErrorCode(payload)
   });
 
   if (!response.ok || !payload?.data) {
@@ -359,10 +357,9 @@ async function fetchPaddleTransaction(env: Bindings, transactionId: string) {
   const environment = readPaddleEnvironment(env);
   const url = `${paddleBaseUrl(environment)}/transactions/${transactionId}`;
 
-  console.log("PADDLE_TXN_FETCH_START", {
+  logPaddleEvent("PADDLE_TXN_FETCH_START", {
     environment,
-    transactionId,
-    url
+    transactionId: maskLoggedId(transactionId)
   });
 
   const response = await fetch(url, {
@@ -380,10 +377,10 @@ async function fetchPaddleTransaction(env: Bindings, transactionId: string) {
       }
     | null;
 
-  console.log("PADDLE_TXN_FETCH_RESULT", {
-    transactionId,
+  logPaddleEvent("PADDLE_TXN_FETCH_RESULT", {
+    transactionId: maskLoggedId(transactionId),
     status: response.status,
-    payload
+    errorCode: readPaddleErrorCode(payload)
   });
 
   if (!response.ok || !payload?.data) {
@@ -729,6 +726,44 @@ function sumPaddleMoneyValues(records: unknown, field: string) {
   return matched ? String(total) : null;
 }
 
+function maskLoggedId(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  if (value.length <= 8) {
+    return `${value.slice(0, 2)}***${value.slice(-2)}`;
+  }
+
+  return `${value.slice(0, 4)}***${value.slice(-4)}`;
+}
+
+function readPaddleErrorCode(
+  payload:
+    | {
+        error?: Record<string, unknown>;
+        errors?: Array<Record<string, unknown>>;
+      }
+    | null
+    | undefined
+) {
+  const firstErrorCode = payload?.errors?.[0]?.code;
+  if (typeof firstErrorCode === "string" && firstErrorCode.trim()) {
+    return firstErrorCode;
+  }
+
+  const rootErrorCode = payload?.error?.code;
+  if (typeof rootErrorCode === "string" && rootErrorCode.trim()) {
+    return rootErrorCode;
+  }
+
+  return null;
+}
+
+function logPaddleEvent(event: string, details: Record<string, unknown>) {
+  console.log(event, details);
+}
+
 function readPaddlePriceId(data: Record<string, unknown> | null | undefined) {
   const items = Array.isArray(data?.items) ? data.items : [];
 
@@ -936,6 +971,145 @@ function buildYearlyUpgradeItems(subscription: Record<string, unknown>, env: Bin
 
 function getPremiumPlanName(interval: PaddleBillingInterval | null) {
   return interval === "yearly" ? "Premium Yearly" : "Premium Monthly";
+}
+
+type PendingBillingCheckout = {
+  user_id: string;
+  billing_interval: PaddleBillingInterval;
+  idempotency_key: string;
+  transaction_id: string | null;
+  checkout_url: string | null;
+  created_at: string;
+  expires_at: string;
+};
+
+const BILLING_CHECKOUT_TTL_MINUTES = 15;
+
+async function ensureBillingCheckoutSupport(db: D1Database) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS billing_pending_checkouts (
+      user_id TEXT NOT NULL,
+      billing_interval TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      transaction_id TEXT,
+      checkout_url TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expires_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, billing_interval)
+    );
+  `);
+}
+
+function createBillingCheckoutIdempotencyKey(userId: string, interval: PaddleBillingInterval) {
+  return `billing_checkout:${userId}:${interval}:${crypto.randomUUID()}`;
+}
+
+async function readPendingBillingCheckout(db: D1Database, userId: string, interval: PaddleBillingInterval) {
+  await ensureBillingCheckoutSupport(db);
+
+  const row = await db.prepare(
+    `SELECT user_id, billing_interval, idempotency_key, transaction_id, checkout_url, created_at, expires_at
+     FROM billing_pending_checkouts
+     WHERE user_id = ?1
+       AND billing_interval = ?2
+     LIMIT 1`
+  )
+    .bind(userId, interval)
+    .first<PendingBillingCheckout>();
+
+  if (!row) {
+    return null;
+  }
+
+  if (new Date(row.expires_at).getTime() <= Date.now()) {
+    await db.prepare(
+      `DELETE FROM billing_pending_checkouts
+       WHERE user_id = ?1
+         AND billing_interval = ?2`
+    )
+      .bind(userId, interval)
+      .run()
+      .catch(() => null);
+
+    return null;
+  }
+
+  return row;
+}
+
+async function upsertPendingBillingCheckout(
+  db: D1Database,
+  options: {
+    userId: string;
+    interval: PaddleBillingInterval;
+    idempotencyKey: string;
+    transactionId?: string | null;
+    checkoutUrl?: string | null;
+    expiresAt?: string;
+  }
+) {
+  await ensureBillingCheckoutSupport(db);
+
+  const createdAt = new Date().toISOString();
+  await db.prepare(
+    `INSERT INTO billing_pending_checkouts (
+       user_id, billing_interval, idempotency_key, transaction_id, checkout_url, created_at, expires_at
+     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+     ON CONFLICT(user_id, billing_interval) DO UPDATE SET
+       idempotency_key = excluded.idempotency_key,
+       transaction_id = excluded.transaction_id,
+       checkout_url = excluded.checkout_url,
+       created_at = excluded.created_at,
+       expires_at = excluded.expires_at`
+  )
+    .bind(
+      options.userId,
+      options.interval,
+      options.idempotencyKey,
+      options.transactionId ?? null,
+      options.checkoutUrl ?? null,
+      createdAt,
+      options.expiresAt ?? isoFromNow(BILLING_CHECKOUT_TTL_MINUTES)
+    )
+    .run();
+}
+
+async function clearPendingBillingCheckout(db: D1Database, userId: string, interval: PaddleBillingInterval | null) {
+  await ensureBillingCheckoutSupport(db);
+
+  if (interval) {
+    await db.prepare(
+      `DELETE FROM billing_pending_checkouts
+       WHERE user_id = ?1
+         AND billing_interval = ?2`
+    )
+      .bind(userId, interval)
+      .run()
+      .catch(() => null);
+    return;
+  }
+
+  await db.prepare(
+    `DELETE FROM billing_pending_checkouts
+     WHERE user_id = ?1`
+  )
+    .bind(userId)
+    .run()
+    .catch(() => null);
+}
+
+function isBlockingPaddleSubscriptionStatus(status: string | null) {
+  return status === "active" || status === "trialing" || status === "past_due" || status === "paused";
+}
+
+function normalizePaddleSubscriptionStatus(data: Record<string, unknown> | null | undefined) {
+  const status = getPaddleString(data?.status)?.toLowerCase() ?? null;
+
+  if (status === "active" || status === "trialing" || status === "past_due" || status === "paused" || status === "canceled") {
+    return status;
+  }
+
+  return null;
 }
 
 async function hashToken(token: string) {
@@ -1159,9 +1333,6 @@ function getDefaultDashboardMetrics(billingConfigured: boolean) {
         billingInterval: null,
         startedAt: null,
         nextBilledAt: null,
-        trialEligible: true,
-        trialActive: false,
-        trialDaysRemaining: 0,
         readiness: billingConfigured ? "Upgrade" : "Setup",
         ctaLabel: billingConfigured ? "Upgrade" : "Configure",
         delta: billingConfigured ? "--" : "Action needed"
@@ -1196,6 +1367,21 @@ async function syncActiveBillingProfileFromPaddle(env: Bindings, userId: string,
 
   const subscription = await fetchPaddleSubscription(env, subscriptionId).catch(() => null);
   if (!subscription) {
+    return billingState;
+  }
+
+  const subscriptionStatus = normalizePaddleSubscriptionStatus(subscription);
+  if (subscriptionStatus === "paused" || subscriptionStatus === "past_due" || subscriptionStatus === "canceled") {
+    await markBillingProfileFree(env, userId, {
+      customerId: getPaddleString(subscription.customer_id) ?? getPaddleString(linkage?.paddle_customer_id),
+      subscriptionId,
+      occurredAt: new Date().toISOString()
+    });
+
+    return readBillingProfile(env, userId);
+  }
+
+  if (subscriptionStatus !== "active" && subscriptionStatus !== "trialing") {
     return billingState;
   }
 
@@ -1710,9 +1896,9 @@ app.get("/v1/me", async (c) => {
       billing: {
         status: "free" as const,
         planName: "Free",
-        trialEligible: true,
-        trialActive: false,
-        trialDaysRemaining: 0
+        billingInterval: null,
+        startedAt: null,
+        nextBilledAt: null
       },
       warning: "Billing status is temporarily unavailable."
     });
@@ -2358,7 +2544,7 @@ app.post("/v1/product-seo-health/analyze", async (c) => {
 
   const user = c.get("user");
   const billing = await readBillingProfile(c.env, user.id);
-  const isPremium = billing.status === "active" || billing.status === "trial";
+  const isPremium = billing.status === "active";
 
   if (!isPremium) {
     const usageCount = await countSeoHealthUsageLast24Hours(c.env.DB, user.id);
@@ -2431,7 +2617,7 @@ app.post("/v1/rank-tracking/targets", async (c) => {
 
   const user = c.get("user");
   const billing = await readBillingProfile(c.env, user.id);
-  const isPremium = billing.status === "active" || billing.status === "trial";
+  const isPremium = billing.status === "active";
 
   if (!isPremium) {
     return c.json(
@@ -2525,6 +2711,23 @@ app.use("/v1/dashboard/*", async (c, next) => {
   await next();
 });
 
+app.use("/v1/billing/*", async (c, next) => {
+  c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  c.header("Pragma", "no-cache");
+
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  const user = c.get("user");
+  if (user.authType !== "supabase") {
+    return c.json({ error: "Billing requires a website account session." }, 403);
+  }
+
+  await next();
+});
+
 app.get("/v1/dashboard/metrics", async (c) => {
   const user = c.get("user");
   const billingConfigured = Boolean(c.env.PADDLE_PRICE_ID_MONTHLY && c.env.PADDLE_PRICE_ID_YEARLY);
@@ -2561,31 +2764,19 @@ app.get("/v1/dashboard/metrics", async (c) => {
           billingInterval: billingState.billingInterval,
           startedAt: billingState.startedAt,
           nextBilledAt: billingState.nextBilledAt,
-          trialEligible: billingState.trialEligible,
-          trialActive: billingState.trialActive,
-          trialDaysRemaining: billingState.trialDaysRemaining,
           readiness:
             billingState.status === "active"
               ? "Premium"
-              : billingState.status === "trial"
-                ? `${billingState.trialDaysRemaining} day trial`
-                : billingConfigured
-                  ? "Upgrade"
-                  : "Setup",
+              : billingConfigured
+                ? "Upgrade"
+                : "Setup",
           ctaLabel:
             billingState.status === "active"
               ? "Manage"
-              : billingState.status === "trial"
-                ? "Upgrade"
-                : billingConfigured
-                  ? "Upgrade"
-                  : "Configure",
-          delta:
-            billingState.status === "trial"
-              ? `${billingState.trialDaysRemaining} days left`
               : billingConfigured
-                ? "+4.35%"
-                : "Action needed"
+                ? "Upgrade"
+                : "Configure",
+          delta: billingConfigured ? "+4.35%" : "Action needed"
         },
         keywordRuns: {
           used: runsUsed,
@@ -2842,8 +3033,8 @@ app.get("/v1/dashboard/overview", async (c) => {
           value:
             !extensionActive
               ? "Connect"
-              : billingState.status === "free" || billingState.status === "expired"
-                ? "Start trial"
+              : billingState.status === "free"
+                ? "Upgrade"
                 : runsUsed >= runsLimit
                   ? "Upgrade"
                   : recentRuns.length > 0
@@ -2866,51 +3057,6 @@ app.get("/v1/dashboard/overview", async (c) => {
   }
 });
 
-app.post("/v1/dashboard/trial/start", async (c) => {
-  const authResult = await authenticateRequest(c);
-  if (authResult) {
-    return c.json({ error: authResult.error }, authResult.status);
-  }
-
-  const user = c.get("user");
-
-  try {
-    const billingState = await readBillingProfile(c.env, user.id);
-
-    if (billingState.status === "active") {
-      return c.json({ error: "Premium is already active for this account." }, 400);
-    }
-
-    if (billingState.status === "trial") {
-      return c.json({
-        trial: {
-          status: "trial",
-          planName: billingState.planName,
-          trialDaysRemaining: billingState.trialDaysRemaining
-        }
-      });
-    }
-
-    const startedAt = new Date().toISOString();
-    const endsAt = isoFromNow(60 * 24 * 7);
-
-    await startTrialBillingProfile(c.env, user.id, {
-      startedAt,
-      endsAt
-    });
-
-    return c.json({
-      trial: {
-        status: "trial",
-        planName: "Premium Trial",
-        trialDaysRemaining: 7
-      }
-    });
-  } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : "Unable to start trial." }, 500);
-  }
-});
-
 app.post("/v1/billing/checkout", async (c) => {
   try {
     c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
@@ -2928,6 +3074,20 @@ app.post("/v1/billing/checkout", async (c) => {
       return c.json({ error: "Invalid billing interval." }, 400);
     }
 
+    const billingState = await readBillingProfile(c.env, user.id);
+    if (billingState.status === "active") {
+      if (billingState.billingInterval === interval) {
+        return c.json({ error: `Premium ${interval} is already active for this account.` }, 409);
+      }
+
+      return c.json({
+        error:
+          interval === "yearly" && billingState.billingInterval === "monthly"
+            ? "This account already has Premium Monthly. Use the yearly upgrade flow instead of starting a new checkout."
+            : "This account already has an active Premium subscription. Manage or update the existing subscription instead of starting a new checkout."
+      }, 409);
+    }
+
     const priceId = interval === "monthly" ? c.env.PADDLE_PRICE_ID_MONTHLY : c.env.PADDLE_PRICE_ID_YEARLY;
     const apiKey = c.env.PADDLE_API_KEY;
     const checkoutOrigin =
@@ -2940,7 +3100,42 @@ app.post("/v1/billing/checkout", async (c) => {
       return c.json({ error: "Paddle checkout is not configured." }, 500);
     }
 
+    const linkedSubscriptionId = getPaddleString(await readSubscriptionIdForUser(c.env, user.id));
+    if (linkedSubscriptionId) {
+      const existingSubscription = await fetchPaddleSubscription(c.env, linkedSubscriptionId).catch(() => null);
+      const existingSubscriptionStatus = getPaddleString(existingSubscription?.status)?.toLowerCase() ?? null;
+
+      if (isBlockingPaddleSubscriptionStatus(existingSubscriptionStatus)) {
+        return c.json({
+          error: "This account already has a Paddle subscription in progress or active. Manage the existing subscription instead of starting a new checkout."
+        }, 409);
+      }
+    }
+
     const baseUrl = paddleBaseUrl(readPaddleEnvironment(c.env));
+    const existingPendingCheckout = await readPendingBillingCheckout(c.env.DB, user.id, interval);
+    const idempotencyKey = existingPendingCheckout?.idempotency_key ?? createBillingCheckoutIdempotencyKey(user.id, interval);
+
+    if (existingPendingCheckout?.checkout_url) {
+      return c.json(
+        {
+          checkoutUrl: existingPendingCheckout.checkout_url,
+          interval,
+          environment: readPaddleEnvironment(c.env),
+          reused: true
+        },
+        200
+      );
+    }
+
+    if (!existingPendingCheckout) {
+      await upsertPendingBillingCheckout(c.env.DB, {
+        userId: user.id,
+        interval,
+        idempotencyKey
+      });
+    }
+
     const paddleCustomer =
       user.email
         ? await ensurePaddleCustomerForUser(c.env, user.email, user.name)
@@ -2951,6 +3146,7 @@ app.post("/v1/billing/checkout", async (c) => {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
+        "Idempotency-Key": idempotencyKey,
         ...jsonHeaders()
       },
       body: JSON.stringify({
@@ -2974,6 +3170,7 @@ app.post("/v1/billing/checkout", async (c) => {
     const payload = (await response.json().catch(() => null)) as
       | {
           data?: {
+            id?: string;
             checkout?: {
               url?: string;
             };
@@ -2990,6 +3187,7 @@ app.post("/v1/billing/checkout", async (c) => {
         }
       | null;
       const checkoutUrl = payload?.data?.checkout?.url;
+      const transactionId = getPaddleString(payload?.data?.id);
       const paddleError =
         payload?.errors?.[0]?.detail
         ?? payload?.errors?.[0]?.message
@@ -3016,6 +3214,14 @@ app.post("/v1/billing/checkout", async (c) => {
         502
       );
     }
+
+    await upsertPendingBillingCheckout(c.env.DB, {
+      userId: user.id,
+      interval,
+      idempotencyKey,
+      transactionId,
+      checkoutUrl
+    });
 
     return c.json(
       {
@@ -3058,11 +3264,9 @@ app.post("/v1/billing/upgrade-yearly/preview", async (c) => {
       return c.json({ error: "Yearly upgrade is not configured for this account." }, 500);
     }
 
-    console.log("BILLING_UPGRADE_PREVIEW_INPUT", {
-      userId: user.id,
-      subscriptionId,
-      monthlyPriceId: c.env.PADDLE_PRICE_ID_MONTHLY ?? null,
-      yearlyPriceId: c.env.PADDLE_PRICE_ID_YEARLY
+    logPaddleEvent("BILLING_UPGRADE_PREVIEW_INPUT", {
+      userId: maskLoggedId(user.id),
+      subscriptionId: maskLoggedId(subscriptionId)
     });
 
     const existingSubscription = await fetchPaddleSubscription(c.env, subscriptionId);
@@ -3077,11 +3281,10 @@ app.post("/v1/billing/upgrade-yearly/preview", async (c) => {
     const environment = readPaddleEnvironment(c.env);
     const url = `${paddleBaseUrl(environment)}/subscriptions/${subscriptionId}/preview`;
 
-    console.log("PADDLE_SUB_PREVIEW_START", {
+    logPaddleEvent("PADDLE_SUB_PREVIEW_START", {
       environment,
-      subscriptionId,
-      url,
-      items
+      subscriptionId: maskLoggedId(subscriptionId),
+      itemCount: items.length
     });
 
     const response = await fetch(url, {
@@ -3105,10 +3308,10 @@ app.post("/v1/billing/upgrade-yearly/preview", async (c) => {
         }
       | null;
 
-    console.log("PADDLE_SUB_PREVIEW_RESULT", {
-      subscriptionId,
+    logPaddleEvent("PADDLE_SUB_PREVIEW_RESULT", {
+      subscriptionId: maskLoggedId(subscriptionId),
       status: response.status,
-      payload
+      errorCode: readPaddleErrorCode(payload)
     });
 
     if (!response.ok || !payload?.data) {
@@ -3171,11 +3374,9 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
       return c.json({ error: "Yearly upgrade is not configured for this account." }, 500);
     }
 
-    console.log("BILLING_UPGRADE_INPUT", {
-      userId: user.id,
-      subscriptionId,
-      monthlyPriceId: c.env.PADDLE_PRICE_ID_MONTHLY ?? null,
-      yearlyPriceId: c.env.PADDLE_PRICE_ID_YEARLY
+    logPaddleEvent("BILLING_UPGRADE_INPUT", {
+      userId: maskLoggedId(user.id),
+      subscriptionId: maskLoggedId(subscriptionId)
     });
 
     const existingSubscription = await fetchPaddleSubscription(c.env, subscriptionId);
@@ -3188,11 +3389,10 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
     const environment = readPaddleEnvironment(c.env);
     const url = `${paddleBaseUrl(environment)}/subscriptions/${subscriptionId}`;
 
-    console.log("PADDLE_SUB_UPDATE_START", {
+    logPaddleEvent("PADDLE_SUB_UPDATE_START", {
       environment,
-      subscriptionId,
-      url,
-      items
+      subscriptionId: maskLoggedId(subscriptionId),
+      itemCount: items.length
     });
 
     const response = await fetch(url, {
@@ -3216,10 +3416,10 @@ app.post("/v1/billing/upgrade-yearly", async (c) => {
         }
       | null;
 
-    console.log("PADDLE_SUB_UPDATE_RESULT", {
-      subscriptionId,
+    logPaddleEvent("PADDLE_SUB_UPDATE_RESULT", {
+      subscriptionId: maskLoggedId(subscriptionId),
       status: response.status,
-      payload
+      errorCode: readPaddleErrorCode(payload)
     });
 
     if (!response.ok || !payload?.data) {
@@ -3277,9 +3477,10 @@ app.post("/v1/billing/manage", async (c) => {
     const customerId = getPaddleString(linkage?.paddle_customer_id);
     const subscriptionId = getPaddleString(linkage?.paddle_subscription_id);
 
-    console.log("BILLING_MANAGE_INPUT", {
-      userId: user.id,
-      linkage
+    logPaddleEvent("BILLING_MANAGE_INPUT", {
+      userId: maskLoggedId(user.id),
+      customerId: maskLoggedId(customerId),
+      subscriptionId: maskLoggedId(subscriptionId)
     });
 
     if (!customerId || !subscriptionId || !c.env.PADDLE_API_KEY) {
@@ -3289,11 +3490,10 @@ app.post("/v1/billing/manage", async (c) => {
     const environment = readPaddleEnvironment(c.env);
     const url = `${paddleBaseUrl(environment)}/customers/${customerId}/portal-sessions`;
 
-    console.log("PADDLE_PORTAL_SESSION_START", {
+    logPaddleEvent("PADDLE_PORTAL_SESSION_START", {
       environment,
-      customerId,
-      subscriptionId,
-      url
+      customerId: maskLoggedId(customerId),
+      subscriptionId: maskLoggedId(subscriptionId)
     });
 
     const response = await fetch(url, {
@@ -3322,17 +3522,18 @@ app.post("/v1/billing/manage", async (c) => {
         }
       | null;
 
-    console.log("PADDLE_PORTAL_SESSION_RESULT", {
-      customerId,
-      subscriptionId,
-      status: response.status,
-      payload
-    });
-
     const manageUrl =
       payload?.data?.urls?.subscriptions?.[0]?.overview
       ?? payload?.data?.urls?.general?.overview
       ?? null;
+
+    logPaddleEvent("PADDLE_PORTAL_SESSION_RESULT", {
+      customerId: maskLoggedId(customerId),
+      subscriptionId: maskLoggedId(subscriptionId),
+      status: response.status,
+      errorCode: readPaddleErrorCode(payload),
+      hasManageUrl: Boolean(manageUrl)
+    });
 
     if (!response.ok || !manageUrl) {
       return c.json(
@@ -3454,6 +3655,7 @@ app.post("/v1/billing/confirm", async (c) => {
       nextBilledAt,
       occurredAt: new Date().toISOString()
     });
+    await clearPendingBillingCheckout(c.env.DB, user.id, interval);
 
     const billing = await readBillingProfile(c.env, user.id);
 
