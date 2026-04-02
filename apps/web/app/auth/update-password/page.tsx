@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { validatePassword } from "@/lib/auth/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -22,7 +22,7 @@ function hasRecoveryContext(searchParams: ReturnType<typeof useSearchParams>) {
   return hashType === "recovery" || (Boolean(hashParams.get("access_token")) && Boolean(hashParams.get("refresh_token")));
 }
 
-export default function UpdatePasswordPage() {
+function UpdatePasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
@@ -207,5 +207,13 @@ export default function UpdatePasswordPage() {
         </button>
       </form>
     </AuthShell>
+  );
+}
+
+export default function UpdatePasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <UpdatePasswordContent />
+    </Suspense>
   );
 }
