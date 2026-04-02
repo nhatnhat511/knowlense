@@ -6,20 +6,22 @@ const PANEL_STATE = {
   mountedUrl: null,
   bubble: null,
   panel: null,
-  activeTab: "keyword-seo",
-  keywordInput: null,
-  keywordAction: null,
-  keywordError: null,
-  keywordStatus: null,
-  keywordResults: null,
   healthAction: null,
   healthStatus: null,
   healthResults: null,
-  indexingAction: null,
-  indexingStatus: null,
-  indexingResults: null,
   productMetaValue: null
 };
+
+function syncPanelVisibility(isOpen) {
+  if (!PANEL_STATE.panel || !PANEL_STATE.bubble) {
+    return;
+  }
+
+  PANEL_STATE.panel.hidden = !isOpen;
+  PANEL_STATE.bubble.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  PANEL_STATE.bubble.setAttribute("aria-label", isOpen ? "Close Knowlense SEO Health" : "Open Knowlense SEO Health");
+  PANEL_STATE.bubble.classList.toggle("is-open", isOpen);
+}
 
 function textFromNode(node) {
   return node?.textContent?.replace(/\s+/g, " ").trim() ?? "";
@@ -31,6 +33,15 @@ function textFromRoot(root = document) {
 
 function normalizeText(value) {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function normalizeProductUrl(value) {
@@ -784,255 +795,6 @@ function extractProductSnapshot(root = document) {
   };
 }
 
-function decodeHtmlHref(value) {
-  return value
-    ?.replace(/&amp;/g, "&")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
-}
-
-function isLikelySearchResultContainer(container) {
-  const text = textFromNode(container);
-  if (!text) {
-    return false;
-  }
-
-  return /\$\d+(?:\.\d{2})?/.test(text) || /add to cart/i.test(text) || /wish list/i.test(text);
-}
-
-function hasProductLink(container) {
-  return Boolean(container?.querySelector("a[href*='/Product/']"));
-}
-
-function hasCommerceSignals(container) {
-  const text = textFromNode(container);
-  return /\$\d+(?:\.\d{2})?/.test(text) || /add to cart/i.test(text);
-}
-
-function findResultContainerFromActionNode(node) {
-  let current = node?.parentElement;
-  while (current && current !== current.ownerDocument.body) {
-    if (hasProductLink(current) && hasCommerceSignals(current)) {
-      return current;
-    }
-    current = current.parentElement;
-  }
-  return null;
-}
-
-function findSearchResultContainer(link, root) {
-  const explicit = link.closest(
-    "article, li, [data-resource-id], [data-product-id], .SearchResultsPage__result, .product-list-item, [class*='search-result'], [class*='SearchResult']"
-  );
-  if (explicit && isLikelySearchResultContainer(explicit)) {
-    return explicit;
-  }
-
-  let node = link.parentElement;
-  while (node && node !== root.body) {
-    if (isLikelySearchResultContainer(node)) {
-      return node;
-    }
-    node = node.parentElement;
-  }
-
-  return null;
-}
-
-function buildSearchResultFromContainer(container) {
-  const anchors = [...container.querySelectorAll("a[href*='/Product/']")];
-  if (anchors.length === 0) {
-    return null;
-  }
-
-  const candidates = anchors
-    .map((anchor, index) => {
-      const href = decodeHtmlHref(anchor.getAttribute("href"));
-      if (!href) {
-        return null;
-      }
-
-      const absolute = new URL(href, window.location.origin).toString();
-      const text = textFromNode(anchor);
-      const ancestorText = textFromNode(anchor.parentElement);
-      return {
-        index,
-        anchor,
-        productUrl: absolute,
-        normalizedUrl: normalizeProductUrl(absolute),
-        title: text,
-        inBundleMeta: /also included in|bundle/i.test(ancestorText)
-      };
-    })
-    .filter(Boolean);
-
-  if (candidates.length === 0) {
-    return null;
-  }
-
-  const primaryCandidates = candidates.filter((candidate) => !candidate.inBundleMeta);
-  const meaningfulPrimaryCandidates = primaryCandidates.filter((candidate) => candidate.title && candidate.title.length >= 8);
-  const meaningfulCandidates = candidates.filter((candidate) => candidate.title && candidate.title.length >= 8);
-
-  const best =
-    meaningfulPrimaryCandidates[0] ||
-    meaningfulCandidates[0] ||
-    primaryCandidates[0] ||
-    candidates[0];
-
-  if (!best?.title) {
-    return null;
-  }
-
-  return {
-    productUrl: best.productUrl,
-    normalizedUrl: best.normalizedUrl,
-    title: best.title,
-    shopName:
-      [...container.querySelectorAll("a[href^='/store/'], a[href*='/store/']")]
-        .map((anchor) => textFromNode(anchor))
-        .find(Boolean) || "",
-    priceText: textFromNode(container).match(/\$\d+(?:\.\d{2})?/)?.[0] || "",
-    snippet:
-      textFromNode(container)
-        .split(/\n|\s{2,}/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .find((line) => line !== best.title && !/\$\d+(?:\.\d{2})?/.test(line) && line.length > 24) || ""
-  };
-}
-
-function parseSearchResultsFromHtml(html) {
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  const actionNodes = [...doc.querySelectorAll("button, a, span, div")].filter((node) => /add to cart/i.test(textFromNode(node)));
-  const seenContainers = new Set();
-  const seenUrls = new Set();
-  const results = [];
-
-  actionNodes.forEach((node) => {
-    const container = findResultContainerFromActionNode(node);
-    if (!container) {
-      return;
-    }
-
-    const containerKey =
-      container.getAttribute("data-resource-id") ||
-      container.getAttribute("data-product-id") ||
-      `${container.tagName}:${textFromNode(container).slice(0, 160)}`;
-
-    if (seenContainers.has(containerKey)) {
-      return;
-    }
-
-    const result = buildSearchResultFromContainer(container);
-    if (!result || seenUrls.has(result.normalizedUrl)) {
-      return;
-    }
-
-    seenContainers.add(containerKey);
-    seenUrls.add(result.normalizedUrl);
-    results.push({
-      productUrl: result.productUrl,
-      title: result.title
-    });
-  });
-
-  if (results.length > 0) {
-    return results;
-  }
-
-  const productLinks = [...doc.querySelectorAll("a[href*='/Product/']")];
-  productLinks.forEach((link) => {
-    const container = findSearchResultContainer(link, doc);
-    if (!container) {
-      return;
-    }
-
-    const containerKey =
-      container.getAttribute("data-resource-id") ||
-      container.getAttribute("data-product-id") ||
-      `${container.tagName}:${textFromNode(container).slice(0, 160)}`;
-
-    if (seenContainers.has(containerKey)) {
-      return;
-    }
-
-    const result = buildSearchResultFromContainer(container);
-    if (!result || seenUrls.has(result.normalizedUrl)) {
-      return;
-    }
-
-    seenContainers.add(containerKey);
-    seenUrls.add(result.normalizedUrl);
-    results.push({
-      productUrl: result.productUrl,
-      title: result.title
-    });
-  });
-
-  return results;
-}
-
-async function scanKeywordSearch(productUrl, keyword) {
-  const currentProduct = normalizeProductUrl(productUrl);
-  const searchUrl = `${window.location.origin}/browse?search=${encodeURIComponent(keyword)}`;
-  const serpTitles = [];
-  const results = [];
-  let rank = {
-    status: "beyond_page_3",
-    position: 74,
-    resultPage: null,
-    pagePosition: null,
-    searchUrl
-  };
-
-  for (let page = 1; page <= 3; page += 1) {
-    const pageUrl = page === 1 ? searchUrl : `${searchUrl}&page=${page}`;
-    const response = await fetch(pageUrl, { credentials: "include" });
-    if (!response.ok) {
-      continue;
-    }
-
-      const html = await response.text();
-      const searchResults = parseSearchResultsFromHtml(html);
-      serpTitles.push(...searchResults.map((result) => result.title));
-      searchResults.forEach((result, index) => {
-        results.push({
-          position: (page - 1) * 18 + index + 1,
-          title: result.title,
-          productUrl: result.productUrl,
-          shopName: result.shopName || "",
-          priceText: result.priceText || "",
-          snippet: result.snippet || ""
-        });
-      });
-
-      if (rank.status !== "ranked") {
-        for (let index = 0; index < searchResults.length; index += 1) {
-          if (normalizeProductUrl(searchResults[index].productUrl) === currentProduct) {
-            const pagePosition = index + 1;
-            rank = {
-              status: "ranked",
-            position: pagePosition,
-            resultPage: page,
-            pagePosition,
-            searchUrl
-          };
-          break;
-        }
-      }
-    }
-  }
-
-  return {
-    rank,
-    serpTitles: serpTitles.slice(0, 48),
-    results: results.slice(0, 54)
-  };
-}
-
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) {
     return;
@@ -1043,58 +805,78 @@ function injectStyles() {
   style.textContent = `
     #${BUBBLE_ID} {
       position: fixed;
-      top: 146px;
-      right: 18px;
+      top: 50%;
+      right: 0;
+      transform: translateY(-50%);
       z-index: 2147483645;
-      width: 50px;
-      height: 50px;
+      width: 56px;
+      height: 128px;
       border: 1px solid rgba(15, 23, 42, 0.1);
-      border-radius: 999px;
+      border-right: 0;
+      border-radius: 18px 0 0 18px;
       background: rgba(255, 255, 255, 0.98);
-      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+      box-shadow: -16px 16px 40px rgba(15, 23, 42, 0.14);
       display: flex;
+      flex-direction: column;
+      gap: 10px;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+      transition: box-shadow 160ms ease, background 160ms ease;
       backdrop-filter: blur(10px);
     }
 
     #${BUBBLE_ID}:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+      box-shadow: -18px 18px 42px rgba(15, 23, 42, 0.18);
       background: #ffffff;
     }
 
     #${BUBBLE_ID} svg {
-      width: 30px;
-      height: 30px;
+      width: 22px;
+      height: 22px;
       color: #6d5efc;
+    }
+
+    #${BUBBLE_ID} .knowlense-bubble-copy {
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      font-size: 11px;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #0f172a;
+    }
+
+    #${BUBBLE_ID}.is-open svg {
+      transform: rotate(180deg);
     }
 
     #${PANEL_ID} {
       position: fixed;
-      top: 146px;
-      right: 76px;
+      top: 0;
+      right: 0;
+      bottom: 0;
       z-index: 2147483644;
-      width: min(320px, calc(100vw - 112px));
-      max-height: calc(100vh - 176px);
+      width: clamp(340px, 20vw, 460px);
+      height: 100vh;
       border: 1px solid rgba(15, 23, 42, 0.08);
-      border-radius: 20px;
+      border-right: 0;
+      border-radius: 24px 0 0 24px;
       background: rgba(255, 255, 255, 0.98);
-      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.16);
+      box-shadow: -24px 0 60px rgba(15, 23, 42, 0.16);
       backdrop-filter: blur(10px);
       font-family: Plus Jakarta Sans, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: #0f172a;
       overflow: hidden;
-      transform-origin: top right;
+      transform-origin: right center;
       transition: opacity 160ms ease, transform 160ms ease;
     }
 
     #${PANEL_ID}[hidden] {
       display: block !important;
       opacity: 0;
-      transform: translateY(-6px) scale(0.98);
+      transform: translateX(calc(100% - 12px));
       pointer-events: none;
       visibility: hidden;
     }
@@ -1106,11 +888,11 @@ function injectStyles() {
     .knowlense-shell {
       display: flex;
       flex-direction: column;
-      max-height: calc(100vh - 176px);
+      height: 100vh;
     }
 
     .knowlense-header {
-      padding: 14px 14px 10px;
+      padding: 22px 20px 16px;
       border-bottom: 1px solid rgba(148, 163, 184, 0.16);
     }
 
@@ -1129,26 +911,29 @@ function injectStyles() {
 
     .knowlense-title {
       margin: 10px 0 0;
-      font-size: 16px;
+      font-size: 22px;
       line-height: 1.1;
       font-weight: 800;
       letter-spacing: -0.04em;
     }
 
     .knowlense-body {
-      padding: 12px;
+      padding: 18px 20px 22px;
+      display: grid;
+      align-content: start;
+      gap: 16px;
       overflow-y: auto;
       overscroll-behavior: contain;
+      flex: 1;
     }
 
     .knowlense-product-meta {
       display: grid;
       gap: 8px;
-      padding: 10px 12px;
+      padding: 16px;
       border: 1px solid rgba(148, 163, 184, 0.14);
-      border-radius: 16px;
+      border-radius: 18px;
       background: #ffffff;
-      margin-bottom: 12px;
     }
 
     .knowlense-meta-label {
@@ -1166,38 +951,11 @@ function injectStyles() {
       font-weight: 700;
     }
 
-    .knowlense-tabs {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 6px;
-      margin-bottom: 10px;
-    }
-
-    .knowlense-tab {
-      min-height: 38px;
-      border: 1px solid rgba(148, 163, 184, 0.16);
-      border-radius: 12px;
-      background: #ffffff;
-      padding: 8px;
-      font-size: 11px;
-      line-height: 1.25;
-      font-weight: 700;
-      color: #475569;
-      cursor: pointer;
-      transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
-    }
-
-    .knowlense-tab.is-active {
-      background: #f8f7ff;
-      border-color: rgba(109, 94, 252, 0.22);
-      color: #111827;
-    }
-
     .knowlense-tab-panel {
-      display: none;
-      padding: 12px;
+      display: block;
+      padding: 18px;
       border: 1px solid rgba(148, 163, 184, 0.14);
-      border-radius: 16px;
+      border-radius: 18px;
       background: #ffffff;
     }
 
@@ -1500,68 +1258,70 @@ function injectStyles() {
     }
 
     .knowlense-panel-heading {
-      font-size: 14px;
+      font-size: 18px;
       line-height: 1.3;
       font-weight: 800;
       letter-spacing: -0.03em;
-      margin: 0 0 6px;
+      margin: 0 0 8px;
     }
 
     .knowlense-panel-copy {
       margin: 0;
-      font-size: 12px;
+      font-size: 13px;
       line-height: 1.55;
       color: #64748b;
     }
 
     @media (max-width: 1180px) {
       #${BUBBLE_ID} {
+        width: 52px;
+        height: 112px;
+      }
+
+      #${PANEL_ID} {
+        width: min(420px, calc(100vw - 40px));
+      }
+    }
+
+    @media (max-width: 820px) {
+      #${BUBBLE_ID} {
         top: auto;
-        right: 14px;
         bottom: 18px;
+        right: 0;
+        transform: none;
+        width: 124px;
+        height: 52px;
+        border-right: 0;
+        border-radius: 16px 0 0 16px;
+      }
+
+      #${BUBBLE_ID} .knowlense-bubble-copy {
+        writing-mode: horizontal-tb;
+        transform: none;
+        letter-spacing: 0.08em;
       }
 
       #${PANEL_ID} {
         top: auto;
-        right: 14px;
-        bottom: 78px;
-        width: min(320px, calc(100vw - 28px));
-        max-height: min(72vh, 560px);
+        bottom: 0;
+        width: 100vw;
+        height: min(82vh, 900px);
+        border-radius: 24px 24px 0 0;
+        border-right: 1px solid rgba(15, 23, 42, 0.08);
+        box-shadow: 0 -24px 60px rgba(15, 23, 42, 0.16);
+      }
+
+      #${PANEL_ID}[hidden] {
+        transform: translateY(calc(100% - 14px));
       }
 
       .knowlense-shell {
-        max-height: min(72vh, 560px);
+        height: 100%;
       }
     }
   `;
 
   (document.head || document.documentElement || document.body).appendChild(style);
-}
-
-function setActiveTab(tabId) {
-  PANEL_STATE.activeTab = tabId;
-  if (!PANEL_STATE.panel) {
-    return;
-  }
-
-  PANEL_STATE.panel.querySelectorAll(".knowlense-tab").forEach((button) => {
-    const active = button.getAttribute("data-tab") === tabId;
-    button.classList.toggle("is-active", active);
-    button.setAttribute("aria-selected", active ? "true" : "false");
-  });
-
-  PANEL_STATE.panel.querySelectorAll(".knowlense-tab-panel").forEach((panel) => {
-    panel.classList.toggle("is-active", panel.getAttribute("data-panel") === tabId);
-  });
-}
-
-function setKeywordError(message) {
-  if (!PANEL_STATE.keywordError) {
-    return;
-  }
-
-  PANEL_STATE.keywordError.textContent = message || "";
-  PANEL_STATE.keywordError.classList.toggle("is-visible", Boolean(message));
 }
 
 function setPanelStatus(node, message, tone = "info") {
@@ -1573,68 +1333,8 @@ function setPanelStatus(node, message, tone = "info") {
   node.classList.toggle("is-error", tone === "error");
 }
 
-function setKeywordStatus(message, tone = "info") {
-  setPanelStatus(PANEL_STATE.keywordStatus, message, tone);
-}
-
 function setHealthStatus(message, tone = "info") {
   setPanelStatus(PANEL_STATE.healthStatus, message, tone);
-}
-
-function setIndexingStatus(message, tone = "info") {
-  setPanelStatus(PANEL_STATE.indexingStatus, message, tone);
-}
-
-function isPremiumSession(session) {
-  const status = session?.billing?.status;
-  return status === "active" || status === "trial";
-}
-
-function parseKeywordInput(rawValue, productTitle, maxKeywords) {
-  const normalizedTitle = normalizeText(productTitle);
-  const keywords = rawValue
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  if (!keywords.length) {
-    return { ok: false, error: "Enter at least one keyword." };
-  }
-
-  if (keywords.length > maxKeywords) {
-    return {
-      ok: false,
-      error:
-        maxKeywords === 1
-          ? "Free plan supports 1 keyword at a time. Upgrade to Premium to analyze up to 3 keywords at once."
-          : `You can analyze up to ${maxKeywords} keywords at a time.`
-    };
-  }
-
-  const deduped = [];
-  const seen = new Set();
-
-  for (const keyword of keywords) {
-    const normalized = normalizeText(keyword);
-    if (normalized.length < 3) {
-      return { ok: false, error: `Keyword "${keyword}" is too short.` };
-    }
-
-    if (keyword.length > 60 || normalized.split(" ").length > 8) {
-      return { ok: false, error: `Keyword "${keyword}" is too long. Keep it concise.` };
-    }
-
-    if (normalized === normalizedTitle) {
-      return { ok: false, error: `Keyword "${keyword}" cannot be identical to the full product title.` };
-    }
-
-    if (!seen.has(normalized)) {
-      seen.add(normalized);
-      deduped.push(keyword);
-    }
-  }
-
-  return { ok: true, keywords: deduped };
 }
 
 async function loadExtensionSession() {
@@ -1675,54 +1375,16 @@ async function loadExtensionSession() {
 async function refreshPanelConnectionState() {
   const sessionState = await loadExtensionSession().catch(() => ({ session: null }));
   const isConnected = Boolean(sessionState?.session?.sessionToken);
-  const isPremium = isPremiumSession(sessionState?.session);
 
   if (PANEL_STATE.healthAction) {
     PANEL_STATE.healthAction.disabled = false;
     PANEL_STATE.healthAction.removeAttribute("title");
   }
 
-  if (PANEL_STATE.keywordAction) {
-    PANEL_STATE.keywordAction.disabled = false;
-    PANEL_STATE.keywordAction.removeAttribute("title");
-  }
-
-  if (PANEL_STATE.indexingAction) {
-    PANEL_STATE.indexingAction.disabled = false;
-    PANEL_STATE.indexingAction.removeAttribute("title");
-  }
-
   if (PANEL_STATE.healthStatus && !isConnected && !PANEL_STATE.healthResults?.innerHTML) {
     setHealthStatus("Connect your account from the website before using SEO Health.", "error");
   } else if (PANEL_STATE.healthStatus && isConnected && !PANEL_STATE.healthResults?.innerHTML) {
     setHealthStatus("Check the full product quality, metadata, media, description, reviews, and store signals.");
-  }
-
-  if (PANEL_STATE.keywordStatus && !isConnected && !PANEL_STATE.keywordResults?.innerHTML) {
-    setKeywordStatus("Connect your account from the website before using Keyword SEO.", "error");
-  } else if (PANEL_STATE.keywordStatus && isConnected && !PANEL_STATE.keywordResults?.innerHTML) {
-    setKeywordStatus(isPremium
-      ? "Check rank, title placement, description placement, and related keyword suggestions for up to 3 keywords."
-      : "Check rank, title placement, description placement, and related keyword suggestions for 1 keyword at a time on Free.");
-  }
-
-  if (PANEL_STATE.indexingStatus && !isConnected && !PANEL_STATE.indexingResults?.innerHTML) {
-    setIndexingStatus("Connect your account from the website before using Search Indexing.", "error");
-  } else if (PANEL_STATE.indexingStatus && isConnected && !PANEL_STATE.indexingResults?.innerHTML) {
-    setIndexingStatus("Check this product across major search engines and see where it is indexed.");
-  }
-
-  if (PANEL_STATE.keywordInput) {
-    PANEL_STATE.keywordInput.placeholder = isPremium
-      ? "Enter up to 3 keywords, separated by commas"
-      : "Enter 1 keyword";
-  }
-
-  const keywordHelp = PANEL_STATE.panel?.querySelector(".knowlense-keyword-help");
-  if (keywordHelp) {
-    keywordHelp.textContent = isPremium
-      ? "Use up to 3 concise keywords. Separate them with commas."
-      : "Free plan supports 1 concise keyword at a time. Upgrade to Premium to analyze up to 3.";
   }
 }
 
@@ -1746,359 +1408,14 @@ function refreshMountedProductMeta() {
   }
 }
 
-function buildKeywordCheck(message, passed) {
+function buildKeywordCheck(message, passed, options = {}) {
+  const renderedMessage = options.allowHtml ? String(message ?? "") : escapeHtml(message);
   return `
     <div class="knowlense-check-row">
-      <span class="knowlense-check-mark ${passed ? "good" : "bad"}">${passed ? "✓" : "×"}</span>
-      <span class="knowlense-check-copy">${message}</span>
+      <span class="knowlense-check-mark ${passed ? "good" : "bad"}">${passed ? "&#10003;" : "&#215;"}</span>
+      <span class="knowlense-check-copy">${renderedMessage}</span>
     </div>
   `;
-}
-
-function renderSearchIndexingResult(result) {
-  if (!PANEL_STATE.indexingResults) {
-    return;
-  }
-
-  if (!result?.checks?.length) {
-    PANEL_STATE.indexingResults.innerHTML = "";
-    return;
-  }
-
-  const passedCount = result.checks.filter((item) => item.passed).length;
-  const checks = result.checks.map((item) => buildKeywordCheck(item.message, item.passed)).join("");
-
-  PANEL_STATE.indexingResults.innerHTML = `
-    <div class="knowlense-keyword-card">
-      <div class="knowlense-keyword-card-head">
-        <div class="knowlense-keyword-name">Search Indexing</div>
-        <div class="knowlense-keyword-score">${passedCount}/${result.checks.length}</div>
-      </div>
-      <div class="knowlense-check-group">
-        <div class="knowlense-check-group-head">
-          <div class="knowlense-check-group-title">Search Engine Coverage</div>
-          <div class="knowlense-check-group-summary">${passedCount} of ${result.checks.length} checks passed</div>
-        </div>
-        <div class="knowlense-check-list">${checks}</div>
-      </div>
-    </div>
-  `;
-}
-
-async function runSearchIndexingAudit() {
-  const extracted = extractProductSnapshot();
-  if (!extracted.ok) {
-    throw new Error(extracted.error);
-  }
-
-  await requireConnectedExtensionSession("Search Indexing");
-
-  const cacheKey = `knowlense_search_indexing_cache_${normalizeProductUrl(extracted.snapshot.productUrl)}`;
-  const cached = await chrome.storage.local.get(cacheKey).catch(() => ({}));
-  const cachedEntry = cached?.[cacheKey];
-  if (cachedEntry?.timestamp && Date.now() - cachedEntry.timestamp < 6 * 60 * 60 * 1000 && cachedEntry?.result?.checks?.length) {
-    return cachedEntry.result;
-  }
-
-  const response = await chrome.runtime.sendMessage({
-    type: "knowlense.searchIndexing.check",
-    productUrl: extracted.snapshot.productUrl
-  }).catch(() => null);
-
-  if (!response?.ok || !response.result?.checks?.length) {
-    throw new Error(response?.error || "Knowlense could not run the search indexing check.");
-  }
-
-  await chrome.storage.local
-    .set({
-      [cacheKey]: {
-        timestamp: Date.now(),
-        result: response.result
-      }
-    })
-    .catch(() => null);
-
-  return response.result;
-}
-
-function countPhraseOccurrences(text, phrase) {
-  const normalizedText = normalizeText(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const normalizedPhrase = normalizeText(phrase).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-  if (!normalizedText || !normalizedPhrase) {
-    return 0;
-  }
-
-  const matches = normalizeText(text).match(new RegExp(`\\b${normalizedPhrase}\\b`, "g"));
-  return matches?.length ?? 0;
-}
-
-function firstWords(text, limit) {
-  return (text || "")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, limit)
-    .join(" ")
-    .trim();
-}
-
-function analyzeDescriptionPlacement(descriptionExcerpt, keyword) {
-  const leadingDescription = (descriptionExcerpt || "").slice(0, 300);
-  const mentionCount = countPhraseOccurrences(leadingDescription, keyword);
-
-  if (mentionCount === 0) {
-    return {
-      mentionCount,
-      status: "missing",
-      message: `The description does not reference "${keyword}" at the beginning. Placing the keyword earlier can strengthen search relevance and improve ranking potential for this query.`,
-      containsKeyword: false,
-      overused: false
-    };
-  }
-
-  if (mentionCount <= 3) {
-    return {
-      mentionCount,
-      status: "good",
-      message: `The description references "${keyword}" at the beginning, which supports stronger search relevance and ranking potential for this query.`,
-      containsKeyword: true,
-      overused: false
-    };
-  }
-
-  return {
-    mentionCount,
-    status: "stuffed",
-    message: `The description repeats "${keyword}" too heavily at the beginning. Keep the keyword early, but use it more naturally to preserve readability and balanced optimization.`,
-    containsKeyword: true,
-    overused: true
-  };
-}
-
-async function fetchTrackedKeywordTargets(baseUrl, sessionToken, snapshot) {
-  const productUrl = encodeURIComponent(snapshot.productUrl || "");
-  const productId = encodeURIComponent(snapshot.productId || "");
-  const response = await fetch(
-    `${baseUrl}/v1/rank-tracking/targets?activeOnly=true&productUrl=${productUrl}${productId ? `&productId=${productId}` : ""}`,
-    {
-      headers: {
-        Authorization: `Bearer ${sessionToken}`
-      }
-    }
-  );
-  const payload = await response.json().catch(() => null);
-
-  if (!response.ok || !Array.isArray(payload?.targets)) {
-    return new Map();
-  }
-
-  return new Map(payload.targets.map((target) => [normalizeText(target.keyword), target]));
-}
-
-function bindKeywordTrackingToggles(items, snapshot, session) {
-  if (!PANEL_STATE.keywordResults) {
-    return;
-  }
-
-  const isPremium = isPremiumSession(session);
-  const itemMap = new Map(items.map((item) => [normalizeText(item.keyword), item]));
-  PANEL_STATE.keywordResults.querySelectorAll("[data-track-keyword]").forEach((input) => {
-    if (!isPremium) {
-      input.disabled = true;
-      const metaNode = input
-        .closest(".knowlense-track-toggle")
-        ?.querySelector(".knowlense-track-toggle-meta");
-      if (metaNode) {
-        metaNode.textContent = "Premium required to use keyword tracking.";
-      }
-      return;
-    }
-
-    input.addEventListener("change", async (event) => {
-      const checkbox = event.currentTarget;
-      const keyword = checkbox.getAttribute("data-track-keyword") || "";
-      const normalizedKeyword = normalizeText(keyword);
-      const item = itemMap.get(normalizedKeyword);
-      const metaNode = checkbox
-        .closest(".knowlense-track-toggle")
-        ?.querySelector(".knowlense-track-toggle-meta");
-
-      if (!item) {
-        checkbox.checked = false;
-        return;
-      }
-
-      checkbox.disabled = true;
-      const sessionState = await loadExtensionSession().catch(() => ({ session: null, apiUrl: "" }));
-      const sessionToken = sessionState.session?.sessionToken;
-      const baseUrl = sessionState.apiUrl?.replace(/\/$/, "");
-
-      if (!sessionToken || !baseUrl) {
-        checkbox.checked = false;
-        checkbox.disabled = false;
-        if (metaNode) {
-          metaNode.textContent = "Connect the extension first.";
-        }
-        return;
-      }
-
-      try {
-        if (checkbox.checked) {
-          const response = await fetch(`${baseUrl}/v1/rank-tracking/targets`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${sessionToken}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              productId: snapshot.productId,
-              productUrl: snapshot.productUrl,
-              productTitle: snapshot.title,
-              sellerName: snapshot.sellerName,
-              keyword: item.keyword,
-              initialCheck: {
-                checkedAt: new Date().toISOString(),
-                status: item.liveRank.status,
-                resultPage: item.liveRank.resultPage,
-                pagePosition: item.liveRank.pagePosition,
-                searchUrl: item.liveRank.searchUrl
-              }
-            })
-          });
-          const payload = await response.json().catch(() => null);
-
-          if (!response.ok || !payload?.target) {
-            throw new Error(payload?.error || `Knowlense could not start tracking "${item.keyword}".`);
-          }
-
-          checkbox.setAttribute("data-target-id", payload.target.id);
-          await chrome.runtime.sendMessage({
-            type: "knowlense.rankTracking.upsertTarget",
-            target: payload.target
-          }).catch(() => null);
-          if (metaNode) {
-            metaNode.textContent = `Tracking active since ${new Date(payload.target.startedAt).toLocaleDateString()}.`;
-          }
-        } else {
-          const targetId = checkbox.getAttribute("data-target-id");
-          if (targetId) {
-            const response = await fetch(`${baseUrl}/v1/rank-tracking/targets/${targetId}`, {
-              method: "DELETE",
-              headers: {
-                Authorization: `Bearer ${sessionToken}`
-              }
-            });
-            if (!response.ok) {
-              const payload = await response.json().catch(() => null);
-              throw new Error(payload?.error || `Knowlense could not stop tracking "${item.keyword}".`);
-            }
-          }
-          if (targetId) {
-            await chrome.runtime.sendMessage({
-              type: "knowlense.rankTracking.removeTarget",
-              targetId
-            }).catch(() => null);
-          }
-          checkbox.removeAttribute("data-target-id");
-          if (metaNode) {
-            metaNode.textContent = "Tracking is off.";
-          }
-        }
-      } catch (error) {
-        checkbox.checked = !checkbox.checked;
-        if (metaNode) {
-          metaNode.textContent = error instanceof Error ? error.message : "Tracking could not be updated.";
-        }
-      } finally {
-        checkbox.disabled = false;
-      }
-    });
-  });
-}
-
-function renderKeywordResults(items) {
-  if (!PANEL_STATE.keywordResults) {
-    return;
-  }
-
-  if (!items.length) {
-    PANEL_STATE.keywordResults.innerHTML = "";
-    return;
-  }
-
-  PANEL_STATE.keywordResults.innerHTML = items
-    .map(({ keyword, audit, liveRank, tracking }) => {
-      const titleGood = audit.counts.titleKeywordMentions === 1;
-      const titleMessage =
-        audit.titlePlacement?.message ||
-        (titleGood
-          ? "The title mentions this keyword exactly once."
-          : audit.counts.titleKeywordMentions === 0
-            ? "The title does not mention this keyword."
-            : "The title repeats this keyword too often.");
-      const descriptionGood = audit.descriptionPlacement?.status === "good";
-      const rankText =
-        liveRank.status === "ranked"
-          ? `Page ${liveRank.resultPage}, position ${liveRank.pagePosition}`
-          : "Outside the first 3 pages. Average position >73.";
-      const showTrophy =
-        liveRank.status === "ranked" &&
-        liveRank.resultPage === 1 &&
-        typeof liveRank.pagePosition === "number" &&
-        liveRank.pagePosition >= 1 &&
-        liveRank.pagePosition <= 3;
-      const rankMessage = `Current rank: ${rankText}${
-        showTrophy
-          ? ' <span class="knowlense-rank-trophy" aria-label="Top 3 result" title="Top 3 result"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5.5h8v2.2c0 2.8-1.8 5.2-4.4 6.1V16h2.8a1 1 0 0 1 1 1V18H8.6v-1a1 1 0 0 1 1-1h2.8v-2.2C9.8 12.9 8 10.5 8 7.7V5.5Z" fill="currentColor"></path><path d="M16 6h2.2a.8.8 0 0 1 .8.8c0 2.4-1.3 4.2-3.4 4.9M8 6H5.8a.8.8 0 0 0-.8.8c0 2.4 1.3 4.2 3.4 4.9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9.4 20h5.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></span>'
-          : ""
-      }`;
-      const suggestions = audit.relatedSuggestions?.length
-        ? audit.relatedSuggestions.map((item) => `<span class="knowlense-chip">${item}</span>`).join("")
-        : '<span class="knowlense-chip">No related keyword suggestions are available right now.</span>';
-      const trackingMeta = tracking?.id
-        ? `Tracking active since ${new Date(tracking.startedAt).toLocaleDateString()}.`
-        : "Tracking is off.";
-
-      return `
-        <div class="knowlense-keyword-card">
-          <div class="knowlense-keyword-card-head">
-            <div class="knowlense-keyword-name">${keyword}</div>
-            <div class="knowlense-keyword-score">${audit.seoScore}/100</div>
-          </div>
-          <div class="knowlense-check-list">
-            ${buildKeywordCheck(rankMessage, liveRank.status === "ranked")}
-            ${buildKeywordCheck(
-              titleMessage,
-              titleGood
-            )}
-            ${buildKeywordCheck(
-              descriptionGood
-                ? audit.descriptionPlacement.message
-                : audit.descriptionPlacement?.message ||
-                  "The description is not optimized near the start for this keyword.",
-              descriptionGood
-            )}
-          </div>
-          <div class="knowlense-suggestion-block">
-            <div class="knowlense-suggestion-label">Related keyword suggestions</div>
-            <div class="knowlense-chip-list">${suggestions}</div>
-          </div>
-          <div class="knowlense-track-toggle">
-            <label class="knowlense-track-toggle-label">
-              <input
-                type="checkbox"
-                data-track-keyword="${keyword}"
-                ${tracking?.id ? "checked" : ""}
-                ${tracking?.id ? `data-target-id="${tracking.id}"` : ""}
-              />
-              <span>Track this keyword</span>
-            </label>
-            <div class="knowlense-track-toggle-meta">${trackingMeta}</div>
-          </div>
-        </div>
-      `;
-    })
-    .join("");
 }
 
 function renderSeoHealthResult(analysis) {
@@ -2219,98 +1536,6 @@ async function runSeoHealthAudit() {
   return payload.analysis;
 }
 
-async function runKeywordAudit() {
-  const extracted = extractProductSnapshot();
-  if (!extracted.ok) {
-    throw new Error(extracted.error);
-  }
-
-  const sessionState = await requireConnectedExtensionSession("Keyword SEO");
-
-  const parsed = parseKeywordInput(
-    PANEL_STATE.keywordInput?.value ?? "",
-    extracted.snapshot.title,
-    isPremiumSession(sessionState.session) ? 3 : 1
-  );
-  if (!parsed.ok) {
-    throw new Error(parsed.error);
-  }
-
-  const baseUrl = sessionState.apiUrl.replace(/\/$/, "");
-  const requests = parsed.keywords.map(async (keyword) => {
-    const searchScan = await scanKeywordSearch(extracted.snapshot.productUrl, keyword);
-    const localDescription = analyzeDescriptionPlacement(extracted.snapshot.descriptionExcerpt, keyword);
-    const { descriptionExcerpt, ...snapshotForApi } = extracted.snapshot;
-    const response = await fetch(`${baseUrl}/v1/product-seo-audit/analyze`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${sessionState.session.sessionToken}`,
-        "Content-Type": "application/json"
-      },
-        body: JSON.stringify({
-          ...snapshotForApi,
-          auditKeyword: keyword,
-          serpTitles: searchScan.serpTitles,
-          liveRank: {
-            status: searchScan.rank.status,
-            resultPage: searchScan.rank.resultPage,
-            pagePosition: searchScan.rank.pagePosition
-          },
-          descriptionAudit: {
-            mentionCount: localDescription.mentionCount,
-            status: localDescription.status,
-            containsKeyword: localDescription.containsKeyword,
-            overused: localDescription.overused,
-            message: localDescription.message
-          }
-        })
-      });
-
-    const payload = await response.json().catch(() => null);
-
-    if (response.status === 401) {
-      await chrome.storage.local.remove("knowlense_extension_session");
-      throw new Error("Your extension session expired. Reconnect it from the website and try again.");
-    }
-
-    if (!response.ok || !payload?.analysis?.audit) {
-      throw new Error(payload?.error || `Knowlense could not analyze "${keyword}".`);
-    }
-
-    const mergedAudit = {
-      ...payload.analysis.audit,
-      descriptionPlacement: {
-        mentionCount: localDescription.mentionCount,
-        status: localDescription.status,
-        message: localDescription.message
-      },
-      checks: {
-        ...payload.analysis.audit.checks,
-        descriptionContainsKeyword: localDescription.containsKeyword,
-        descriptionKeywordOverused: localDescription.overused
-      },
-        counts: {
-          ...payload.analysis.audit.counts,
-          descriptionKeywordMentions: localDescription.mentionCount
-        }
-      };
-
-    return {
-      keyword,
-      liveRank: searchScan.rank,
-      audit: mergedAudit
-    };
-  });
-  const results = await Promise.all(requests);
-  const trackedMap = await fetchTrackedKeywordTargets(baseUrl, sessionState.session.sessionToken, extracted.snapshot);
-  const enrichedResults = results.map((result) => ({
-    ...result,
-    tracking: trackedMap.get(normalizeText(result.keyword)) || null
-  }));
-
-  return { results: enrichedResults, snapshot: extracted.snapshot, session: sessionState.session };
-}
-
 function createPanelShell() {
   injectStyles();
 
@@ -2324,16 +1549,13 @@ function createPanelShell() {
   const bubble = document.createElement("button");
   bubble.id = BUBBLE_ID;
   bubble.type = "button";
-  bubble.setAttribute("aria-label", "Open Knowlense product tools");
+  bubble.setAttribute("aria-controls", PANEL_ID);
+  bubble.setAttribute("aria-label", "Open Knowlense SEO Health");
+  bubble.setAttribute("aria-expanded", "false");
   bubble.innerHTML = `
+    <span class="knowlense-bubble-copy">SEO Health</span>
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="3.8" y="3.8" width="16.4" height="16.4" rx="4.8" stroke="currentColor" stroke-width="1.9"></rect>
-      <path d="M7.4 15.8 10.55 12.65 12.9 15 16.55 10.9" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"></path>
-      <path d="M14.95 10.9h2v2" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"></path>
-      <circle cx="7.4" cy="15.8" r="1.1" fill="currentColor"></circle>
-      <circle cx="10.55" cy="12.65" r="1.1" fill="currentColor"></circle>
-      <circle cx="12.9" cy="15" r="1.1" fill="currentColor"></circle>
-      <circle cx="16.55" cy="10.9" r="1.1" fill="currentColor"></circle>
+      <path d="M8 5.5 15 12 8 18.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>
     </svg>
   `;
 
@@ -2350,42 +1572,15 @@ function createPanelShell() {
         <div class="knowlense-product-meta">
           <div>
             <div class="knowlense-meta-label">Product</div>
-            <div class="knowlense-meta-value">${meta.title}</div>
+            <div class="knowlense-meta-value">${escapeHtml(meta.title)}</div>
           </div>
         </div>
-        <div class="knowlense-tabs" role="tablist" aria-label="Knowlense product tabs">
-          <button class="knowlense-tab is-active" type="button" data-tab="keyword-seo" role="tab" aria-selected="true">Keyword SEO</button>
-            <button class="knowlense-tab" type="button" data-tab="criteria-seo" role="tab" aria-selected="false">SEO Health</button>
-          <button class="knowlense-tab" type="button" data-tab="opportunity-finder" role="tab" aria-selected="false">Search Indexing</button>
-        </div>
-        <div class="knowlense-tab-panel is-active" data-panel="keyword-seo">
-          <h4 class="knowlense-panel-heading">Keyword SEO Audit</h4>
-          <label class="knowlense-input-label" for="knowlense-keyword-input">Target keywords</label>
-          <textarea
-            id="knowlense-keyword-input"
-            class="knowlense-keyword-input"
-            rows="3"
-            placeholder="Enter up to 3 keywords, separated by commas"
-          ></textarea>
-          <div class="knowlense-keyword-help">Use up to 3 concise keywords. Separate them with commas.</div>
-          <div class="knowlense-keyword-error"></div>
-          <button class="knowlense-keyword-action" type="button">Run keyword audit</button>
-          <div class="knowlense-keyword-status">Check rank, title placement, description placement, and related keyword suggestions.</div>
-          <div class="knowlense-keyword-results"></div>
-        </div>
-        <div class="knowlense-tab-panel" data-panel="criteria-seo">
+        <div class="knowlense-tab-panel is-active" data-panel="criteria-seo">
           <h4 class="knowlense-panel-heading">SEO Health Audit</h4>
           <p class="knowlense-panel-copy">Review the full product page against the main TPT product SEO criteria.</p>
           <button class="knowlense-keyword-action knowlense-health-action" type="button">Run SEO Health</button>
           <div class="knowlense-keyword-status knowlense-health-status">Check the full product quality, metadata, media, description, reviews, and store signals.</div>
           <div class="knowlense-health-results"></div>
-        </div>
-        <div class="knowlense-tab-panel" data-panel="opportunity-finder">
-          <h4 class="knowlense-panel-heading">Search Indexing</h4>
-          <p class="knowlense-panel-copy">Check whether this product currently appears on major search engines using URL-based indexing checks.</p>
-          <button class="knowlense-keyword-action knowlense-indexing-action" type="button">Check search indexing</button>
-          <div class="knowlense-keyword-status knowlense-indexing-status">Review current indexing visibility across major search engines.</div>
-          <div class="knowlense-indexing-results"></div>
         </div>
       </div>
     </div>
@@ -2395,53 +1590,18 @@ function createPanelShell() {
   mountRoot.appendChild(panel);
 
   bubble.addEventListener("click", () => {
-    panel.hidden = !panel.hidden;
-  });
-
-  panel.querySelectorAll(".knowlense-tab").forEach((button) => {
-    button.addEventListener("click", () => {
-      setActiveTab(button.getAttribute("data-tab"));
-    });
+    syncPanelVisibility(panel.hidden);
   });
 
   PANEL_STATE.bubble = bubble;
   PANEL_STATE.panel = panel;
-  PANEL_STATE.keywordInput = panel.querySelector(".knowlense-keyword-input");
-  PANEL_STATE.keywordAction = panel.querySelector(".knowlense-keyword-action");
-  PANEL_STATE.keywordError = panel.querySelector(".knowlense-keyword-error");
-  PANEL_STATE.keywordStatus = panel.querySelector(".knowlense-keyword-status");
-  PANEL_STATE.keywordResults = panel.querySelector(".knowlense-keyword-results");
   PANEL_STATE.healthAction = panel.querySelector(".knowlense-health-action");
   PANEL_STATE.healthStatus = panel.querySelector(".knowlense-health-status");
   PANEL_STATE.healthResults = panel.querySelector(".knowlense-health-results");
-  PANEL_STATE.indexingAction = panel.querySelector(".knowlense-indexing-action");
-  PANEL_STATE.indexingStatus = panel.querySelector(".knowlense-indexing-status");
-  PANEL_STATE.indexingResults = panel.querySelector(".knowlense-indexing-results");
   PANEL_STATE.productMetaValue = panel.querySelector(".knowlense-meta-value");
-  setActiveTab(PANEL_STATE.activeTab);
+  syncPanelVisibility(false);
   refreshMountedProductMeta();
   refreshPanelConnectionState();
-
-  PANEL_STATE.keywordAction?.addEventListener("click", async () => {
-    setKeywordError("");
-    renderKeywordResults([]);
-    PANEL_STATE.keywordAction.disabled = true;
-    PANEL_STATE.keywordAction.textContent = "Analyzing...";
-    setKeywordStatus("Running audits for the current keywords...");
-
-    try {
-      const { results, snapshot, session } = await runKeywordAudit();
-      renderKeywordResults(results);
-      bindKeywordTrackingToggles(results, snapshot, session);
-      setKeywordStatus(`Audit complete for ${results.length} keyword${results.length === 1 ? "" : "s"}.`);
-    } catch (error) {
-      setKeywordError(error instanceof Error ? error.message : "Knowlense could not run the keyword audit.");
-      setKeywordStatus("Fix the issue above and try again.");
-    } finally {
-      PANEL_STATE.keywordAction.disabled = false;
-      PANEL_STATE.keywordAction.textContent = "Run keyword audit";
-    }
-  });
 
   PANEL_STATE.healthAction?.addEventListener("click", async () => {
     renderSeoHealthResult(null);
@@ -2461,24 +1621,6 @@ function createPanelShell() {
     }
   });
 
-  PANEL_STATE.indexingAction?.addEventListener("click", async () => {
-    renderSearchIndexingResult(null);
-    PANEL_STATE.indexingAction.disabled = true;
-    PANEL_STATE.indexingAction.textContent = "Checking...";
-    setIndexingStatus("Checking this product across major search engines...");
-
-    try {
-      const result = await runSearchIndexingAudit();
-      renderSearchIndexingResult(result);
-      setIndexingStatus(`Search indexing check completed for ${result.checks.length} search engine${result.checks.length === 1 ? "" : "s"}.`);
-    } catch (error) {
-      setIndexingStatus(error instanceof Error ? error.message : "Knowlense could not run the search indexing check.", "error");
-    } finally {
-      PANEL_STATE.indexingAction.disabled = false;
-      PANEL_STATE.indexingAction.textContent = "Check search indexing";
-    }
-  });
-
 }
 
 function unmountPanelShell() {
@@ -2492,17 +1634,9 @@ function unmountPanelShell() {
     PANEL_STATE.panel = null;
   }
 
-  PANEL_STATE.keywordInput = null;
-  PANEL_STATE.keywordAction = null;
-  PANEL_STATE.keywordError = null;
-  PANEL_STATE.keywordStatus = null;
-  PANEL_STATE.keywordResults = null;
   PANEL_STATE.healthAction = null;
   PANEL_STATE.healthStatus = null;
   PANEL_STATE.healthResults = null;
-  PANEL_STATE.indexingAction = null;
-  PANEL_STATE.indexingStatus = null;
-  PANEL_STATE.indexingResults = null;
   PANEL_STATE.productMetaValue = null;
 
   PANEL_STATE.mountedUrl = null;
@@ -2537,7 +1671,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 mountProductPanel();
-void chrome.runtime.sendMessage({ type: "knowlense.rankTracking.wakeup" }).catch(() => null);
 setInterval(() => {
   if (document.visibilityState !== "visible") {
     return;

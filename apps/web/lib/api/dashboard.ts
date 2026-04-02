@@ -65,46 +65,6 @@ export type DashboardOverview = {
   };
 };
 
-export type RankTrackingDashboard = {
-  summary: {
-    activeTargets: number;
-    baselinePending: number;
-    improving: number;
-    declining: number;
-    stable: number;
-  };
-  filters: {
-    selectedRange: "7d" | "30d" | "90d" | "all";
-    selectedTargetId: string | null;
-    targets: Array<{
-      id: string;
-      label: string;
-      productTitle: string;
-      keyword: string;
-    }>;
-  };
-  chart: {
-    targetId: string | null;
-    title: string;
-    keyword: string;
-    baselineReady: boolean;
-    baselineProgress: number;
-    rangeLabel: string;
-    insight: string;
-    currentRankLabel: string;
-    bestRankLabel: string;
-    points: Array<{
-      checkedAt: string;
-      dayLabel: string;
-      rankValue: number;
-      rankLabel: string;
-      status: "ranked" | "beyond_page_3";
-      resultPage: number | null;
-      pagePosition: number | null;
-    }>;
-  };
-};
-
 async function fetchDashboardResource<T>(accessToken: string, path: string, key: string) {
   const response = await fetch(`${getApiBaseUrl()}${path}`, {
     cache: "no-store",
@@ -128,25 +88,6 @@ export function fetchDashboardMetrics(accessToken: string) {
 
 export function fetchDashboardOverview(accessToken: string) {
   return fetchDashboardResource<DashboardOverview>(accessToken, "/v1/dashboard/overview", "overview");
-}
-
-export async function fetchRankTrackingDashboard(
-  accessToken: string,
-  params?: { range?: "7d" | "30d" | "90d" | "all"; targetId?: string | null }
-) {
-  const query = new URLSearchParams();
-  if (params?.range) {
-    query.set("range", params.range);
-  }
-  if (params?.targetId) {
-    query.set("targetId", params.targetId);
-  }
-
-  return fetchDashboardResource<RankTrackingDashboard>(
-    accessToken,
-    `/v1/dashboard/rank-tracking${query.toString() ? `?${query.toString()}` : ""}`,
-    "rankTracking"
-  );
 }
 
 export async function fetchExtensionStatus(accessToken: string) {

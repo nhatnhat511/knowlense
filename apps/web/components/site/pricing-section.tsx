@@ -43,9 +43,10 @@ const planCards: PlanCard[] = [
     description: "A clear starting point for testing the Knowlense workflow before paying.",
     note: "Best for getting familiar with the extension.",
     features: [
-      "Keyword SEO audit for 1 keyword at a time",
-      "Full Search Indexing checks",
-      "SEO Health access with 10 runs in 24 hours"
+      "SEO Health access with 10 runs in 24 hours",
+      "TPT product-page audit panel inside the extension",
+      "Website-managed account and extension connection",
+      "Core workspace access",
     ]
   },
   {
@@ -53,14 +54,14 @@ const planCards: PlanCard[] = [
     name: "Premium Monthly",
     price: "$4.99",
     cadence: "/month",
-    description: "Unlock the full extension workflow with tracking and recurring research.",
+    description: "Unlock the full extension workflow with unlimited SEO Health and recurring workspace access.",
     note: "Billed monthly",
     popular: true,
     features: [
-      "Keyword SEO for up to 3 keywords at a time",
-      "Keyword rank tracking and dashboard history",
       "Unlimited SEO Health runs",
-      "Full Search Indexing and Premium workspace access",
+      "Full extension workspace access",
+      "Account, billing, and browser management dashboard",
+      "Priority access to future Premium improvements",
       "Future new features"
     ]
   },
@@ -69,12 +70,12 @@ const planCards: PlanCard[] = [
     name: "Premium Yearly",
     price: "$41.90",
     cadence: "/year",
-    description: "The same Premium access with a lower annual cost for steady TPT research.",
+    description: "The same Premium access with a lower annual cost for steady TPT optimization.",
     note: "Save 30% with annual billing",
     features: [
       "Everything in Premium Monthly",
       "Lower effective monthly cost",
-      "Best fit for long-term keyword tracking",
+      "Best fit for long-term workflow consistency",
       "Annual billing for a simpler renewal cycle",
       "Future new features"
     ]
@@ -83,13 +84,6 @@ const planCards: PlanCard[] = [
 
 const compareRows: CompareRow[] = [
   {
-    feature: "Keyword SEO audit",
-    description: "Checks how your product aligns with a target keyword and highlights the key ranking signals.",
-    free: "1 keyword at a time",
-    monthly: "Up to 3 keywords",
-    yearly: "Up to 3 keywords"
-  },
-  {
     feature: "SEO Health",
     description: "Reviews the product page against Knowlense SEO checks so issues are easier to fix.",
     free: "10 runs in 24 hours",
@@ -97,23 +91,16 @@ const compareRows: CompareRow[] = [
     yearly: "Unlimited"
   },
   {
-    feature: "Search Indexing",
-    description: "Checks whether the product appears across the supported search engines in the extension.",
+    feature: "Extension workspace",
+    description: "Runs the SEO Health audit directly on TPT product pages inside the extension.",
     free: "Included",
     monthly: "Included",
     yearly: "Included"
   },
   {
-    feature: "Keyword Tracking",
-    description: "Saves a keyword for ongoing rank tracking so you can monitor movement over time.",
-    free: "-",
-    monthly: "Included",
-    yearly: "Included"
-  },
-  {
-    feature: "Keyword rankings dashboard",
-    description: "Shows ranking history and trend data for the keywords you choose to track.",
-    free: "-",
+    feature: "Account and billing dashboard",
+    description: "Manage subscription state, connected browsers, and website account settings.",
+    free: "Included",
     monthly: "Included",
     yearly: "Included"
   },

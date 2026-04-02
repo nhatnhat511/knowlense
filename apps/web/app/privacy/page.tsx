@@ -55,8 +55,8 @@ export default function PrivacyPage() {
               <li>
                 <strong>Product and workspace data</strong>
                 <span>
-                  Keyword audit results, SEO Health runs, search indexing checks, tracked keyword records, and related
-                  dashboard summaries created through normal use of the service.
+                  SEO Health runs, product-page audit summaries, and related workspace activity created through normal use of
+                  the service.
                 </span>
               </li>
               <li>

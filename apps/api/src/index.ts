@@ -1,8 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createClient } from "@supabase/supabase-js";
-import { analyzeKeywordSnapshot, type SearchSnapshot } from "./lib/keywordFinder";
-import { analyzeProductKeywords, findRecentProductRun, type ProductKeywordSnapshot } from "./lib/productKeywords";
 import {
   findBillingUserIdByCustomerId,
   findBillingUserIdBySubscriptionId,
@@ -17,16 +15,7 @@ import {
   type PaddleBillingInterval,
   upsertPremiumBillingProfile
 } from "./lib/billingStore";
-import {
-  createOrUpdateRankTrackingTarget,
-  deactivateRankTrackingTarget,
-  listRankTrackingTargets,
-  recordRankTrackingCheck,
-  readRankTrackingDashboard,
-  runScheduledRankTracking,
-  type RankTrackingStatus
-} from "./lib/rankTracking";
-import { analyzeProductSeoAudit, analyzeProductSeoHealth, type ProductSeoAuditSnapshot } from "./lib/seoAuditor";
+import { analyzeProductSeoHealth, type ProductSeoAuditSnapshot } from "./lib/seoAuditor";
 
 type Bindings = {
   CORS_ORIGIN?: string;
@@ -72,122 +61,6 @@ type CachedAuthUser = {
 
 const AUTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const authUserCache = new Map<string, CachedAuthUser>();
-
-type StoredKeywordRun = {
-  id: string;
-  query_text: string;
-  summary: {
-    query: string;
-    normalizedQuery: string;
-    totalResults: number;
-    capturedAt: string;
-    dominantTerms: string[];
-    adjacentModifiers: string[];
-    saturatedPhrases: string[];
-  };
-  keywords: Array<{
-    phrase: string;
-    opportunityScore: number;
-    frequency: number;
-    saturationLevel: "low" | "medium" | "high";
-    reason: string;
-  }>;
-  opportunities: Array<{
-    phrase: string;
-    score: number;
-    type: "adjacent" | "underserved";
-    reason: string;
-  }>;
-  created_at: string;
-};
-
-type StoredProductKeywordRun = {
-  id: string;
-  product_id: string | null;
-  product_url: string;
-  title_text: string;
-  intent: {
-    topics: string[];
-    formats: string[];
-    contexts: string[];
-    grades: string[];
-    subjects: string[];
-    mainSeeds: string[];
-  };
-  summary: {
-    generatedKeywords: number;
-    checkedKeywords: number;
-    rankedKeywords: number;
-    bestRank: number;
-    analyzedAt: string;
-    cooldownMinutes: number;
-    cacheHitCount: number;
-    note: string;
-  };
-  keywords: Array<{
-    keyword: string;
-    score: number;
-    source: "product" | "tpt";
-    rankPosition: number;
-    resultPage: number | null;
-    status: "ranked" | "beyond_page_3";
-    confidence: "high" | "medium" | "low";
-    searchUrl: string;
-    checkedAt: string;
-  }>;
-  created_at: string;
-};
-
-type StoredProductSeoAudit = {
-  id: string;
-  product_id: string | null;
-  product_url: string;
-  title_text: string;
-  primary_keyword: string | null;
-  audit: {
-    keyword: string;
-    seoScore: number;
-    relatedSuggestions: string[];
-    titlePlacement: {
-      mentionCount: number;
-      status: "good" | "missing" | "stuffed";
-      message: string;
-    };
-    descriptionPlacement: {
-      mentionCount: number;
-      status: "good" | "missing" | "stuffed";
-      message: string;
-    };
-    checks: {
-      titleContainsKeyword: boolean;
-      descriptionContainsKeyword: boolean;
-      titleLengthOk: boolean;
-      titleKeywordRepeated: boolean;
-      descriptionKeywordOverused: boolean;
-      subjectsComplete: boolean;
-      tagsComplete: boolean;
-      pagesFilled: boolean;
-      mediaComplete: boolean;
-      discountEnabled: boolean;
-      bundleEnabled: boolean;
-      hasInternalProductLink: boolean;
-    };
-    counts: {
-      titleLength: number;
-      titleKeywordMentions: number;
-      descriptionKeywordMentions: number;
-      subjectsCount: number;
-      tagsCount: number;
-      imageCount: number;
-      hasVideo: boolean;
-      hasReviewSection: boolean;
-    };
-    actionItems: string[];
-    analyzedAt: string;
-    note: string;
-  };
-  created_at: string;
-};
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -1766,8 +1639,8 @@ function getDefaultDashboardOverview(user: Variables["user"]) {
         status: "active"
       },
       latestQuery: {
-        value: "Waiting",
-        status: "waiting" as const,
+        value: "No SEO Health audit yet",
+        status: "completed" as const,
         updatedAt: null
       },
       nextAction: {
@@ -2807,331 +2680,6 @@ app.post("/v1/extension/session/revoke", async (c) => {
   });
 });
 
-app.use("/v1/keyword-finder/*", async (c, next) => {
-  const authResult = await authenticateRequest(c);
-  if (authResult) {
-    return c.json({ error: authResult.error }, authResult.status);
-  }
-
-  await next();
-});
-
-app.use("/v1/product-keywords/*", async (c, next) => {
-  const authResult = await authenticateRequest(c);
-  if (authResult) {
-    return c.json({ error: authResult.error }, authResult.status);
-  }
-
-  await next();
-});
-
-app.post("/v1/keyword-finder/analyze", async (c) => {
-  const body = (await c.req.json().catch(() => null)) as SearchSnapshot | null;
-
-  if (!body?.query || !body?.pageUrl || !Array.isArray(body.results) || body.results.length === 0) {
-    return c.json({ error: "Invalid keyword snapshot payload." }, 400);
-  }
-
-  const user = c.get("user");
-  const analysis = analyzeKeywordSnapshot(body);
-  const snapshotId = crypto.randomUUID();
-  const runId = crypto.randomUUID();
-  const capturedAt = body.capturedAt ?? new Date().toISOString();
-  let persisted = false;
-  let warning: string | null = null;
-
-  try {
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        `INSERT INTO search_snapshots (id, user_id, query_text, page_url, result_count, captured_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
-      ).bind(snapshotId, user.id, body.query, body.pageUrl, body.results.length, capturedAt),
-      ...body.results.map((result) =>
-        c.env.DB.prepare(
-          `INSERT INTO search_results (snapshot_id, position, title, product_url, shop_name, price_text, snippet)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
-        ).bind(
-          snapshotId,
-          result.position,
-          result.title,
-          result.productUrl ?? null,
-          result.shopName ?? null,
-          result.priceText ?? null,
-          result.snippet ?? null
-        )
-      ),
-      c.env.DB.prepare(
-        `INSERT INTO keyword_runs (id, user_id, snapshot_id, query_text, summary_json, keywords_json, opportunities_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
-      ).bind(
-        runId,
-        user.id,
-        snapshotId,
-        body.query,
-        JSON.stringify(analysis.summary),
-        JSON.stringify(analysis.keywords),
-        JSON.stringify(analysis.opportunities)
-      )
-    ]);
-
-    persisted = true;
-  } catch {
-    warning = "Analysis succeeded, but persistence failed. Confirm the D1 binding and migration are applied.";
-  }
-
-  return c.json({
-    persisted,
-    warning,
-    analysis
-  });
-});
-
-app.get("/v1/keyword-finder/runs", async (c) => {
-  const user = c.get("user");
-
-  try {
-    const result = await c.env.DB.prepare(
-      `SELECT id, query_text, summary_json, keywords_json, opportunities_json, created_at
-       FROM keyword_runs
-       WHERE user_id = ?1
-       ORDER BY datetime(created_at) DESC
-       LIMIT 8`
-    )
-      .bind(user.id)
-      .all<{
-        id: string;
-        query_text: string;
-        summary_json: string;
-        keywords_json: string;
-        opportunities_json: string;
-        created_at: string;
-      }>();
-
-    const runs: StoredKeywordRun[] = (result.results ?? []).map((row) => ({
-      id: row.id,
-      query_text: row.query_text,
-      summary: JSON.parse(row.summary_json),
-      keywords: JSON.parse(row.keywords_json),
-      opportunities: JSON.parse(row.opportunities_json),
-      created_at: row.created_at
-    }));
-
-    return c.json({ runs });
-  } catch {
-    return c.json({
-      runs: [],
-      warning: "Keyword Finder history is unavailable until the D1 database is bound and migrated."
-    });
-  }
-});
-
-app.post("/v1/product-keywords/analyze", async (c) => {
-  const body = (await c.req.json().catch(() => null)) as ProductKeywordSnapshot | null;
-
-  if (!body?.productUrl || !body?.title || !body?.descriptionExcerpt) {
-    return c.json({ error: "Invalid product snapshot payload." }, 400);
-  }
-
-  const user = c.get("user");
-  const productId = body.productId ?? body.productUrl.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
-  const recentRun = await findRecentProductRun(c.env.DB, user.id, productId, body.productUrl, 30).catch(() => null);
-
-  if (recentRun) {
-    return c.json({
-      runId: recentRun.runId,
-      persisted: true,
-      cached: true,
-      cooldownMinutes: recentRun.analysis.summary.cooldownMinutes,
-      analysis: recentRun.analysis
-    });
-  }
-
-  const analysis = await analyzeProductKeywords(body, {
-    db: c.env.DB,
-    cooldownMinutes: 30,
-    cacheHours: 24
-  });
-  const runId = crypto.randomUUID();
-  let persisted = false;
-  let warning: string | null = null;
-
-  try {
-    await c.env.DB.prepare(
-      `INSERT INTO product_keyword_runs (id, user_id, product_id, product_url, title_text, snapshot_json, summary_json, keywords_json)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
-    )
-      .bind(
-        runId,
-        user.id,
-        analysis.product.id,
-        analysis.product.url,
-        analysis.product.title,
-        JSON.stringify(body),
-        JSON.stringify({
-          intent: analysis.intent,
-          summary: analysis.summary
-        }),
-        JSON.stringify(analysis.keywords)
-      )
-      .run();
-
-    persisted = true;
-  } catch {
-    warning = "Analysis completed, but persistence failed. Confirm the D1 migration is applied.";
-  }
-
-  return c.json({
-    runId,
-    persisted,
-    cached: false,
-    cooldownMinutes: analysis.summary.cooldownMinutes,
-    warning,
-    analysis
-  });
-});
-
-app.get("/v1/product-keywords/runs", async (c) => {
-  const user = c.get("user");
-
-  try {
-    const result = await c.env.DB.prepare(
-      `SELECT id, product_id, product_url, title_text, summary_json, keywords_json, created_at
-       FROM product_keyword_runs
-       WHERE user_id = ?1
-       ORDER BY datetime(created_at) DESC
-       LIMIT 10`
-    )
-      .bind(user.id)
-      .all<{
-        id: string;
-        product_id: string | null;
-        product_url: string;
-        title_text: string;
-        summary_json: string;
-        keywords_json: string;
-        created_at: string;
-      }>();
-
-    const runs: StoredProductKeywordRun[] = (result.results ?? []).map((row) => ({
-      id: row.id,
-      product_id: row.product_id,
-      product_url: row.product_url,
-      title_text: row.title_text,
-      intent: JSON.parse(row.summary_json).intent,
-      summary: JSON.parse(row.summary_json).summary,
-      keywords: JSON.parse(row.keywords_json),
-      created_at: row.created_at
-    }));
-
-    return c.json({ runs });
-  } catch {
-    return c.json({
-      runs: [],
-      warning: "Product keyword history is unavailable until the D1 migration is applied."
-    });
-  }
-});
-
-app.use("/v1/product-seo-audit/*", async (c, next) => {
-  const authResult = await authenticateRequest(c);
-  if (authResult) {
-    return c.json({ error: authResult.error }, authResult.status);
-  }
-
-  await next();
-});
-
-app.post("/v1/product-seo-audit/analyze", async (c) => {
-  const body = (await c.req.json().catch(() => null)) as ProductSeoAuditSnapshot | null;
-
-  if (!body?.productUrl || !body?.title || !body?.auditKeyword?.trim()) {
-    return c.json({ error: "Invalid SEO audit snapshot payload." }, 400);
-  }
-
-  const user = c.get("user");
-
-  const analysis = await analyzeProductSeoAudit(body, {
-    db: c.env.DB,
-    userId: user.id
-  });
-
-  const runId = crypto.randomUUID();
-  let persisted = false;
-  let warning: string | null = null;
-
-  try {
-    await c.env.DB.prepare(
-      `INSERT INTO product_seo_audits (
-         id, user_id, seller_name, product_id, product_url, title_text, primary_keyword, audit_json
-       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
-    )
-      .bind(
-        runId,
-        user.id,
-        analysis.product.sellerName,
-        analysis.product.id,
-        analysis.product.url,
-        analysis.product.title,
-        analysis.audit.keyword,
-        JSON.stringify(analysis)
-      )
-      .run();
-
-    persisted = true;
-  } catch {
-    warning = "SEO audit completed, but persistence failed. Confirm the D1 migration is applied.";
-  }
-
-  return c.json({
-    runId,
-    persisted,
-    cached: false,
-    warning,
-    analysis
-  });
-});
-
-app.get("/v1/product-seo-audit/runs", async (c) => {
-  const user = c.get("user");
-
-  try {
-    const result = await c.env.DB.prepare(
-      `SELECT id, product_id, product_url, title_text, primary_keyword, audit_json, created_at
-       FROM product_seo_audits
-       WHERE user_id = ?1
-       ORDER BY datetime(created_at) DESC
-       LIMIT 10`
-    )
-      .bind(user.id)
-      .all<{
-        id: string;
-        product_id: string | null;
-        product_url: string;
-        title_text: string;
-        primary_keyword: string | null;
-        audit_json: string;
-        created_at: string;
-      }>();
-
-    const runs: StoredProductSeoAudit[] = (result.results ?? []).map((row) => ({
-      id: row.id,
-      product_id: row.product_id,
-      product_url: row.product_url,
-      title_text: row.title_text,
-      primary_keyword: row.primary_keyword,
-      audit: JSON.parse(row.audit_json).audit,
-      created_at: row.created_at
-    }));
-
-    return c.json({ runs });
-  } catch {
-  return c.json({
-    runs: [],
-    warning: "Product SEO audit history is unavailable until the D1 migration is applied."
-  });
-  }
-});
-
 app.use("/v1/product-seo-health/*", async (c, next) => {
   const authResult = await authenticateRequest(c);
   if (authResult) {
@@ -3176,136 +2724,6 @@ app.post("/v1/product-seo-health/analyze", async (c) => {
   return c.json({ analysis });
 });
 
-app.use("/v1/rank-tracking/*", async (c, next) => {
-  const authResult = await authenticateRequest(c);
-  if (authResult) {
-    return c.json({ error: authResult.error }, authResult.status);
-  }
-
-  await next();
-});
-
-app.get("/v1/rank-tracking/targets", async (c) => {
-  const user = c.get("user");
-  const productId = c.req.query("productId") || null;
-  const productUrl = c.req.query("productUrl") || null;
-  const activeOnly = c.req.query("activeOnly") !== "false";
-  const targets = await listRankTrackingTargets(c.env.DB, user.id, {
-    productId,
-    productUrl,
-    activeOnly
-  });
-
-  return c.json({ targets });
-});
-
-app.post("/v1/rank-tracking/targets", async (c) => {
-  const body = (await c.req.json().catch(() => null)) as
-    | {
-        productId?: string | null;
-        productUrl?: string;
-        productTitle?: string;
-        sellerName?: string | null;
-        keyword?: string;
-        initialCheck?: {
-          checkedAt?: string;
-          status?: RankTrackingStatus;
-          resultPage?: number | null;
-          pagePosition?: number | null;
-          searchUrl?: string | null;
-        };
-      }
-    | null;
-
-  if (!body?.productUrl || !body?.productTitle || !body?.keyword?.trim() || !body.initialCheck?.status) {
-    return c.json({ error: "Invalid rank tracking payload." }, 400);
-  }
-
-  const user = c.get("user");
-  const billing = await readBillingProfile(c.env, user.id);
-  const isPremium = billing.status === "active";
-
-  if (!isPremium) {
-    return c.json(
-      {
-        error: "Keyword tracking is available on Premium. Upgrade to Premium to track rankings over time."
-      },
-      403
-    );
-  }
-
-  const target = await createOrUpdateRankTrackingTarget(c.env.DB, {
-    userId: user.id,
-    productId: body.productId ?? null,
-    productUrl: body.productUrl,
-    productTitle: body.productTitle,
-    sellerName: body.sellerName ?? null,
-    keyword: body.keyword,
-    initialCheck: {
-      checkedAt: body.initialCheck.checkedAt,
-      source: "manual",
-      status: body.initialCheck.status,
-      resultPage: body.initialCheck.resultPage ?? null,
-      pagePosition: body.initialCheck.pagePosition ?? null,
-      searchUrl: body.initialCheck.searchUrl ?? null
-    }
-  });
-
-  return c.json({ target });
-});
-
-app.delete("/v1/rank-tracking/targets/:targetId", async (c) => {
-  const user = c.get("user");
-  const targetId = c.req.param("targetId");
-
-  if (!targetId) {
-    return c.json({ error: "Missing rank tracking target id." }, 400);
-  }
-
-  await deactivateRankTrackingTarget(c.env.DB, user.id, targetId);
-  return c.json({ success: true });
-});
-
-app.post("/v1/rank-tracking/checks", async (c) => {
-  const body = (await c.req.json().catch(() => null)) as
-    | {
-        targetId?: string;
-        check?: {
-          checkedAt?: string;
-          status?: RankTrackingStatus;
-          resultPage?: number | null;
-          pagePosition?: number | null;
-          searchUrl?: string | null;
-        };
-      }
-    | null;
-
-  if (!body?.targetId || !body.check?.status) {
-    return c.json({ error: "Invalid rank tracking check payload." }, 400);
-  }
-
-  const user = c.get("user");
-
-  try {
-    const target = await recordRankTrackingCheck(c.env.DB, {
-      userId: user.id,
-      targetId: body.targetId,
-      check: {
-        checkedAt: body.check.checkedAt,
-        source: "scheduled",
-        status: body.check.status,
-        resultPage: body.check.resultPage ?? null,
-        pagePosition: body.check.pagePosition ?? null,
-        searchUrl: body.check.searchUrl ?? null
-      }
-    });
-
-    return c.json({ target });
-  } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : "Unable to store rank tracking check." }, 404);
-  }
-});
-
 app.use("/v1/dashboard/*", async (c, next) => {
   c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   c.header("Pragma", "no-cache");
@@ -3339,8 +2757,8 @@ app.get("/v1/dashboard/metrics", async (c) => {
   const billingConfigured = Boolean(c.env.PADDLE_PRICE_ID_MONTHLY && c.env.PADDLE_PRICE_ID_YEARLY);
 
   try {
-    const [keywordRunCountResult, extensionSessionCountResult, rawBillingState] = await Promise.all([
-      c.env.DB.prepare(`SELECT COUNT(*) as total FROM keyword_runs WHERE user_id = ?1`).bind(user.id).first<{ total: number | string }>(),
+    const [seoHealthUsageCount, extensionSessionCountResult, rawBillingState] = await Promise.all([
+      countSeoHealthUsageLast24Hours(c.env.DB, user.id),
       c.env.DB.prepare(
         `SELECT COUNT(*) as total
          FROM extension_sessions
@@ -3354,7 +2772,7 @@ app.get("/v1/dashboard/metrics", async (c) => {
     ]);
     const billingState = await syncActiveBillingProfileFromPaddle(c.env, user.id, rawBillingState);
 
-    const runsUsed = Number(keywordRunCountResult?.total ?? 0);
+    const runsUsed = Number(seoHealthUsageCount ?? 0);
     const runsLimit = 10;
     const extensionActive = Number(extensionSessionCountResult?.total ?? 0) > 0;
 
@@ -3546,52 +2964,22 @@ app.post("/v1/dashboard/extension-devices/revoke-others", async (c) => {
   }
 });
 
-app.get("/v1/dashboard/rank-tracking", async (c) => {
-  const user = c.get("user");
-  const range = (c.req.query("range") as "7d" | "30d" | "90d" | "all" | undefined) ?? "30d";
-  const targetId = c.req.query("targetId") || null;
-
-  try {
-    const rankTracking = await readRankTrackingDashboard(c.env.DB, user.id, {
-      range,
-      targetId
-    });
-
-    return c.json({ rankTracking });
-  } catch {
-    return c.json({ error: "Rank tracking dashboard data is temporarily unavailable." }, 500);
-  }
-});
-
 app.get("/v1/dashboard/overview", async (c) => {
   const user = c.get("user");
 
   try {
-    const [latestRunResult, recentRunsResult, extensionSessionCountResult, keywordRunCountResult, billingState] = await Promise.all([
+    await ensureSeoHealthUsageTable(c.env.DB);
+
+    const [latestSeoHealthUsageResult, extensionSessionCountResult, seoHealthUsageCount, billingState] = await Promise.all([
       c.env.DB.prepare(
-        `SELECT id, query_text, summary_json, created_at
-         FROM keyword_runs
+        `SELECT created_at
+         FROM seo_health_usage
          WHERE user_id = ?1
          ORDER BY datetime(created_at) DESC
          LIMIT 1`
       )
         .bind(user.id)
-        .first<{ id: string; query_text: string; summary_json: string; created_at: string }>(),
-      c.env.DB.prepare(
-        `SELECT id, query_text, summary_json, opportunities_json, created_at
-         FROM keyword_runs
-         WHERE user_id = ?1
-         ORDER BY datetime(created_at) DESC
-         LIMIT 4`
-      )
-        .bind(user.id)
-        .all<{
-          id: string;
-          query_text: string;
-          summary_json: string;
-          opportunities_json: string;
-          created_at: string;
-        }>(),
+        .first<{ created_at: string }>(),
       c.env.DB.prepare(
         `SELECT COUNT(*) as total
          FROM extension_sessions
@@ -3601,28 +2989,14 @@ app.get("/v1/dashboard/overview", async (c) => {
       )
         .bind(user.id)
         .first<{ total: number | string }>(),
-      c.env.DB.prepare(`SELECT COUNT(*) as total FROM keyword_runs WHERE user_id = ?1`).bind(user.id).first<{ total: number | string }>(),
+      countSeoHealthUsageLast24Hours(c.env.DB, user.id),
       readBillingProfile(c.env, user.id)
     ]);
 
-    const recentRuns = (recentRunsResult.results ?? []).map((row) => {
-      const summary = JSON.parse(row.summary_json ?? "{}") as StoredKeywordRun["summary"];
-      const opportunities = JSON.parse(row.opportunities_json ?? "[]") as StoredKeywordRun["opportunities"];
-
-      return {
-        id: row.id,
-        createdAt: row.created_at,
-        query: row.query_text,
-        summary,
-        opportunities
-      };
-    });
-
     const extensionActive = Number(extensionSessionCountResult?.total ?? 0) > 0;
-    const runsUsed = Number(keywordRunCountResult?.total ?? 0);
+    const runsUsed = Number(seoHealthUsageCount ?? 0);
     const runsLimit = 10;
-    const latestSummary = latestRunResult ? (JSON.parse(latestRunResult.summary_json ?? "{}") as StoredKeywordRun["summary"]) : null;
-    const latestQueryStatus = latestRunResult ? "completed" : "waiting";
+    const latestQueryStatus = "completed";
 
     return c.json({
       overview: {
@@ -3631,9 +3005,9 @@ app.get("/v1/dashboard/overview", async (c) => {
           status: "active"
         },
         latestQuery: {
-          value: latestSummary?.query ?? "Waiting",
+          value: latestSeoHealthUsageResult ? "SEO Health" : "No SEO Health audit yet",
           status: latestQueryStatus,
-          updatedAt: latestRunResult?.created_at ?? null
+          updatedAt: latestSeoHealthUsageResult?.created_at ?? null
         },
         nextAction: {
           value:
@@ -3643,11 +3017,11 @@ app.get("/v1/dashboard/overview", async (c) => {
                 ? "Upgrade"
                 : runsUsed >= runsLimit
                   ? "Upgrade"
-                  : recentRuns.length > 0
-                    ? "Review runs"
-                    : "Analyze first query"
+                  : latestSeoHealthUsageResult
+                    ? "Review SEO Health"
+                    : "Run SEO Health"
         },
-        recentRuns,
+        recentRuns: [],
         quota: {
           used: runsUsed,
           limit: runsLimit,
@@ -4379,8 +3753,5 @@ app.post("/v1/webhooks/paddle", async (c) => {
 });
 
 export default {
-  fetch: app.fetch,
-  scheduled: async (_controller: ScheduledController, env: Bindings, ctx: ExecutionContext) => {
-    ctx.waitUntil(runScheduledRankTracking(env.DB));
-  }
+  fetch: app.fetch
 };

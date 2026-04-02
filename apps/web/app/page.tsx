@@ -15,25 +15,15 @@ const proofPoints = [
   {
     label: "Website + extension",
     value: "One connected workspace",
-    copy: "Use the extension for fast product checks and the dashboard for account, billing, and keyword history."
+    copy: "Use the extension for fast product checks and the dashboard for account, billing, and workspace management."
   }
 ];
 
 const featureModules = [
   {
     meta: "Extension",
-    title: "Keyword SEO",
-    copy: "Check target keywords directly on a TPT product page and see whether the listing supports the terms you want to rank for."
-  },
-  {
-    meta: "Extension",
     title: "SEO Health",
     copy: "Run a focused listing audit to review the signals that matter most for a stronger, clearer, more searchable product page."
-  },
-  {
-    meta: "Extension",
-    title: "Search Indexing",
-    copy: "See whether a product appears across major search engines so you can confirm visibility beyond the marketplace."
   }
 ];
 
@@ -46,19 +36,19 @@ const workflowSteps = [
   {
     meta: "Step 2",
     title: "Run the right checks",
-    copy: "Review keyword coverage, listing health, and search indexing in one place with guidance that is easy to act on."
+    copy: "Review listing health in one place with guidance that is easy to act on."
   },
   {
     meta: "Step 3",
-    title: "Track what improves",
-    copy: "Move into the dashboard when you want keyword tracking, account management, and a more structured research workflow."
+    title: "Manage the workspace",
+    copy: "Move into the dashboard when you want account management, billing controls, and a cleaner extension workflow."
   }
 ];
 
 const checklist = [
-  "Check keyword positioning on TPT product pages",
   "Run SEO Health reviews in one focused panel",
-  "Confirm search indexing across major engines"
+  "Review TPT listing quality without leaving the product page",
+  "Manage billing and extension access from one workspace"
 ];
 
 export default function HomePage() {
@@ -71,8 +61,8 @@ export default function HomePage() {
           <span className="eyebrow hero-eyebrow">Built for Teachers Pay Teachers sellers</span>
           <h1 className="page-title hero-headline">Boost Your TPT Rankings and Sales with One Clear SEO Workspace.</h1>
           <p className="page-copy hero-copy-text">
-            Knowlense helps TPT sellers audit listings, improve keyword targeting, check search visibility, and track ranking
-            progress without juggling scattered tools.
+            Knowlense helps TPT sellers audit listings, improve product-page quality, and manage extension access without
+            juggling scattered tools.
           </p>
 
           <div className="hero-cta-row">
@@ -81,7 +71,7 @@ export default function HomePage() {
             </Link>
             <div className="hero-cta-note">
               <span>Free plan available.</span>
-              <span>Upgrade when you need tracking and unlimited audits.</span>
+              <span>Upgrade when you need unlimited SEO Health audits.</span>
             </div>
           </div>
         </div>
@@ -101,10 +91,7 @@ export default function HomePage() {
           <div className="stage-sidebar">
             <div className="stage-sidebar-title">Knowlense extension</div>
             <ul className="stage-sidebar-list">
-              <li className="active">Keyword SEO</li>
-              <li>SEO Health</li>
-              <li>Search Indexing</li>
-              <li>Keyword Rankings</li>
+              <li className="active">SEO Health</li>
               <li>Account</li>
             </ul>
           </div>
@@ -122,30 +109,24 @@ export default function HomePage() {
                 <span>Next step</span>
               </div>
               <div className="stage-row">
-                <span>Primary keyword usage</span>
-                <span>Strong</span>
-                <span>Title + intro</span>
-                <span>Ready</span>
-              </div>
-              <div className="stage-row">
                 <span>Listing health review</span>
                 <span>Needs work</span>
                 <span>7 of 10</span>
                 <span>Improve</span>
               </div>
               <div className="stage-row">
-                <span>Search indexing</span>
-                <span>Google found</span>
-                <span>1 of 4</span>
-                <span>Monitor</span>
+                <span>Media coverage</span>
+                <span>Solid</span>
+                <span>Preview + images</span>
+                <span>Keep</span>
               </div>
             </div>
           </div>
 
           <div className="stage-note-card">
             <div className="stage-note-label">Recommended next move</div>
-            <strong>Start tracking your main keyword after improving the listing health score.</strong>
-            <p>Use the dashboard to monitor ranking changes once your product page is aligned with the target term.</p>
+            <strong>Improve the remaining SEO Health checks, then rerun the audit to confirm the page is stronger.</strong>
+            <p>Use the dashboard to manage subscription and extension access once your product workflow is in place.</p>
           </div>
         </div>
       </section>
@@ -188,8 +169,8 @@ export default function HomePage() {
           <span className="section-label">How It Works</span>
           <h2 className="section-title">A simpler path from product page review to ranking improvement.</h2>
           <p className="section-copy">
-            Start with the extension, keep your account and billing on the website, and move into tracking when you need a
-            more advanced workflow.
+            Start with the extension, keep your account and billing on the website, and use one cleaner workflow for ongoing
+            listing improvement.
           </p>
         </div>
 
@@ -209,8 +190,8 @@ export default function HomePage() {
           <span className="section-label">Start Free</span>
           <h2 className="section-title">Run your first listing checks before you commit to Premium.</h2>
           <p className="section-copy">
-            The free plan lets you use core audits inside the extension. Premium unlocks keyword tracking, broader research,
-            and a more complete workflow for long-term growth.
+            The free plan lets you use core audits inside the extension. Premium unlocks unlimited SEO Health usage and a more
+            complete workflow for long-term growth.
           </p>
         </div>
 

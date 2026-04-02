@@ -43,10 +43,16 @@ For the current Knowlense setup, all Paddle variables must come from the same Pa
 - API keys from one account with client-side tokens from another
 - Sandbox IDs or tokens with production IDs or tokens
 
-Create and bind a D1 database for app data, then apply the Keyword Finder migration:
+Create and bind a D1 database for app data, then apply the active Knowlense migrations:
 
-- `apps/api/d1/001_keyword_finder.sql`
 - `apps/api/d1/002_extension_auth.sql`
+- `apps/api/d1/007_extension_session_management.sql`
+- `apps/api/d1/008_extension_device_identity.sql`
+- `apps/api/d1/009_auth_rate_limits.sql`
+
+If you are upgrading an older environment that previously used Keyword Finder, Product Keywords, Product SEO Audit, or Rank Tracking tables, also apply:
+
+- `apps/api/d1/010_remove_legacy_feature_tables.sql`
 
 ### Extension
 
@@ -68,4 +74,4 @@ Copy `extension/config.example.js` to `extension/config.js` and fill:
   - `billing_profiles`
   - `paddle_webhook_events`
   - `billing_events`
-- Keyword Finder works without AI: it extracts a live TPT search page, sends the snapshot to the Worker, scores keyword opportunities with rule-based logic, and stores the run in Cloudflare D1.
+- The current product workflow is centered on SEO Health, website-managed authentication, extension sessions, and billing.

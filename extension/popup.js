@@ -58,7 +58,7 @@ function render() {
   elements.connectView.classList.toggle("hidden", isConnected);
   elements.accountEmail.textContent = state.session?.user?.email || "Connected session";
   const planStatus = state.session?.billing?.status;
-  const isPremium = planStatus === "active" || planStatus === "trial";
+  const isPremium = planStatus === "active";
   elements.accountPlan.textContent = isPremium ? "Premium" : "Free";
   elements.accountPlan.className = `plan-badge${isPremium ? " premium" : ""}`;
 }
@@ -66,9 +66,6 @@ function render() {
 async function persistSession(session) {
   state.session = session;
   await storage.set({ knowlense_extension_session: session });
-  if (session?.sessionToken) {
-    chrome.runtime.sendMessage({ type: "knowlense.rankTracking.wakeup" }).catch(() => null);
-  }
   render();
 }
 
