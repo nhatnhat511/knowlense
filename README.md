@@ -21,6 +21,8 @@ Set these variables in Cloudflare Pages and local `.env.local`:
 Set these variables in Workers:
 
 - `CORS_ORIGIN`
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL` (optional, defaults to `gemini-2.5-flash`)
 - `PADDLE_ENVIRONMENT`
 - `PADDLE_API_KEY`
 - `PADDLE_CLIENT_SIDE_TOKEN`

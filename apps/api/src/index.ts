@@ -16,10 +16,13 @@ import {
   upsertPremiumBillingProfile
 } from "./lib/billingStore";
 import { analyzeProductSeoHealth, type ProductSeoAuditSnapshot } from "./lib/seoAuditor";
+import { generateProductRewrite } from "./lib/productRewriter";
 
 type Bindings = {
   CORS_ORIGIN?: string;
   DB: D1Database;
+  GEMINI_API_KEY?: string;
+  GEMINI_MODEL?: string;
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   PADDLE_ENVIRONMENT?: "sandbox" | "production";
@@ -1631,6 +1634,39 @@ async function recordSeoHealthUsage(db: D1Database, userId: string) {
   ).bind(crypto.randomUUID(), userId, new Date().toISOString()).run();
 }
 
+async function ensureAiRewriteUsageTable(db: D1Database) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS ai_rewrite_usage (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_rewrite_usage_user_created
+      ON ai_rewrite_usage (user_id, created_at DESC);
+  `);
+}
+
+async function countAiRewriteUsageLast24Hours(db: D1Database, userId: string) {
+  await ensureAiRewriteUsageTable(db);
+  const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const row = await db.prepare(
+    `SELECT COUNT(*) AS total
+     FROM ai_rewrite_usage
+     WHERE user_id = ?1
+       AND datetime(created_at) >= datetime(?2)`
+  ).bind(userId, sinceIso).first<{ total: number | string }>();
+
+  return Number(row?.total ?? 0);
+}
+
+async function recordAiRewriteUsage(db: D1Database, userId: string) {
+  await ensureAiRewriteUsageTable(db);
+  await db.prepare(
+    `INSERT INTO ai_rewrite_usage (id, user_id, created_at)
+     VALUES (?1, ?2, ?3)`
+  ).bind(crypto.randomUUID(), userId, new Date().toISOString()).run();
+}
+
 function getDefaultDashboardOverview(user: Variables["user"]) {
   return {
     overview: {
@@ -2722,6 +2758,68 @@ app.post("/v1/product-seo-health/analyze", async (c) => {
   }
 
   return c.json({ analysis });
+});
+
+app.post("/v1/product-seo-health/rewrite", async (c) => {
+  try {
+    const body = (await c.req.json().catch(() => null)) as {
+      snapshot?: ProductSeoAuditSnapshot | null;
+      primaryKeyword?: string | null;
+    } | null;
+    const snapshot = body?.snapshot ?? null;
+    const primaryKeyword = typeof body?.primaryKeyword === "string" ? body.primaryKeyword.trim() : "";
+
+    if (!snapshot?.productUrl || !snapshot?.title || !snapshot?.descriptionText) {
+      return c.json({ error: "Invalid rewrite payload." }, 400);
+    }
+
+    if (!c.env.GEMINI_API_KEY) {
+      return c.json({ error: "AI rewrite is not configured yet." }, 503);
+    }
+
+    const user = c.get("user");
+    const billing = await readBillingProfile(c.env, user.id);
+    const isPremium = billing.status === "active";
+    const freeLimit = 2;
+
+    if (!isPremium) {
+      const usageCount = await countAiRewriteUsageLast24Hours(c.env.DB, user.id);
+      if (usageCount >= freeLimit) {
+        return c.json(
+          {
+            error: "Free plan limit reached. AI Rewrite is available for up to 2 runs in a rolling 24-hour period. Upgrade to Premium for more rewrite capacity."
+          },
+          403
+        );
+      }
+    }
+
+    const rewrite = await generateProductRewrite({
+      apiKey: c.env.GEMINI_API_KEY,
+      model: c.env.GEMINI_MODEL || "gemini-2.5-flash",
+      snapshot,
+      primaryKeyword: primaryKeyword || null,
+      db: c.env.DB,
+      userId: user.id
+    });
+
+    if (!isPremium) {
+      await recordAiRewriteUsage(c.env.DB, user.id);
+    }
+
+    const usageCount = await countAiRewriteUsageLast24Hours(c.env.DB, user.id);
+
+    return c.json({
+      rewrite,
+      usage: {
+        used: usageCount,
+        limit: isPremium ? null : freeLimit,
+        premium: isPremium
+      }
+    });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Knowlense could not generate AI Rewrite." }, 500);
+  }
 });
 
 app.use("/v1/dashboard/*", async (c, next) => {

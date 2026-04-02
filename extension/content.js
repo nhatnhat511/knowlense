@@ -9,6 +9,11 @@ const PANEL_STATE = {
   healthAction: null,
   healthStatus: null,
   healthResults: null,
+  rewriteShell: null,
+  rewriteAction: null,
+  rewriteStatus: null,
+  rewriteResults: null,
+  rewriteKeywordInput: null,
   productMetaValue: null
 };
 
@@ -809,21 +814,20 @@ function injectStyles() {
       right: 0;
       transform: translateY(-50%);
       z-index: 2147483645;
-      width: 56px;
-      height: 128px;
+      width: 46px;
+      height: 164px;
       border: 1px solid rgba(15, 23, 42, 0.1);
       border-right: 0;
-      border-radius: 18px 0 0 18px;
+      border-radius: 20px 0 0 20px;
       background: rgba(255, 255, 255, 0.98);
       box-shadow: -16px 16px 40px rgba(15, 23, 42, 0.14);
       display: flex;
-      flex-direction: column;
-      gap: 10px;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: box-shadow 160ms ease, background 160ms ease;
+      transition: width 160ms ease, height 160ms ease, box-shadow 160ms ease, background 160ms ease, border-radius 160ms ease;
       backdrop-filter: blur(10px);
+      overflow: hidden;
     }
 
     #${BUBBLE_ID}:hover {
@@ -831,25 +835,50 @@ function injectStyles() {
       background: #ffffff;
     }
 
+    #${BUBBLE_ID}.is-open {
+      width: 28px;
+      height: 144px;
+      border-radius: 16px 0 0 16px;
+    }
+
     #${BUBBLE_ID} svg {
-      width: 22px;
-      height: 22px;
+      position: absolute;
+      left: 50%;
+      bottom: 14px;
+      width: 18px;
+      height: 18px;
+      margin-left: -9px;
       color: #6d5efc;
+      flex: 0 0 auto;
+      transition: transform 160ms ease, opacity 160ms ease, left 160ms ease, bottom 160ms ease, margin 160ms ease;
     }
 
     #${BUBBLE_ID} .knowlense-bubble-copy {
-      writing-mode: vertical-rl;
-      transform: rotate(180deg);
-      font-size: 11px;
+      position: absolute;
+      left: 50%;
+      top: calc(50% - 8px);
+      white-space: nowrap;
+      transform: translate(-50%, -50%) rotate(90deg);
+      transform-origin: center;
+      font-size: 13px;
       line-height: 1;
       font-weight: 800;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
       color: #0f172a;
+      transition: opacity 140ms ease;
+    }
+
+    #${BUBBLE_ID}.is-open .knowlense-bubble-copy {
+      opacity: 0;
     }
 
     #${BUBBLE_ID}.is-open svg {
       transform: rotate(180deg);
+      left: 50%;
+      bottom: 50%;
+      margin-left: -9px;
+      margin-bottom: -9px;
     }
 
     #${PANEL_ID} {
@@ -858,12 +887,13 @@ function injectStyles() {
       right: 0;
       bottom: 0;
       z-index: 2147483644;
-      width: clamp(340px, 20vw, 460px);
+      width: clamp(460px, 28vw, 620px);
       height: 100vh;
       border: 1px solid rgba(15, 23, 42, 0.08);
       border-right: 0;
-      border-radius: 24px 0 0 24px;
-      background: rgba(255, 255, 255, 0.98);
+      border-radius: 28px 0 0 28px;
+      background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(255, 255, 255, 0.98) 24%, rgba(255, 255, 255, 0.98) 100%);
       box-shadow: -24px 0 60px rgba(15, 23, 42, 0.16);
       backdrop-filter: blur(10px);
       font-family: Plus Jakarta Sans, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -892,8 +922,8 @@ function injectStyles() {
     }
 
     .knowlense-header {
-      padding: 22px 20px 16px;
-      border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+      padding: 26px 28px 14px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.14);
     }
 
     .knowlense-badge {
@@ -910,18 +940,18 @@ function injectStyles() {
     }
 
     .knowlense-title {
-      margin: 10px 0 0;
-      font-size: 22px;
-      line-height: 1.1;
+      margin: 12px 0 0;
+      font-size: 29px;
+      line-height: 1.02;
       font-weight: 800;
       letter-spacing: -0.04em;
     }
 
     .knowlense-body {
-      padding: 18px 20px 22px;
+      padding: 18px 28px 28px;
       display: grid;
       align-content: start;
-      gap: 16px;
+      gap: 18px;
       overflow-y: auto;
       overscroll-behavior: contain;
       flex: 1;
@@ -929,34 +959,31 @@ function injectStyles() {
 
     .knowlense-product-meta {
       display: grid;
-      gap: 8px;
-      padding: 16px;
-      border: 1px solid rgba(148, 163, 184, 0.14);
-      border-radius: 18px;
-      background: #ffffff;
+      gap: 10px;
+      padding: 0 0 6px;
     }
 
     .knowlense-meta-label {
-      font-size: 11px;
+      font-size: 12px;
       color: #64748b;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
     }
 
     .knowlense-meta-value {
-      font-size: 13px;
-      line-height: 1.45;
+      font-size: 16px;
+      line-height: 1.55;
       color: #0f172a;
       font-weight: 700;
     }
 
     .knowlense-tab-panel {
       display: block;
-      padding: 18px;
-      border: 1px solid rgba(148, 163, 184, 0.14);
-      border-radius: 18px;
-      background: #ffffff;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
     }
 
     .knowlense-tab-panel.is-active {
@@ -1012,13 +1039,13 @@ function injectStyles() {
 
     .knowlense-keyword-action {
       width: 100%;
-      margin-top: 10px;
-      min-height: 42px;
+      margin-top: 16px;
+      min-height: 48px;
       border: 0;
       border-radius: 999px;
       background: #111827;
       color: #ffffff;
-      font-size: 13px;
+      font-size: 15px;
       font-weight: 700;
       cursor: pointer;
       transition: transform 160ms ease, opacity 160ms ease, background 160ms ease;
@@ -1035,9 +1062,9 @@ function injectStyles() {
     }
 
     .knowlense-keyword-status {
-      margin-top: 10px;
-      font-size: 12px;
-      line-height: 1.5;
+      margin-top: 14px;
+      font-size: 14px;
+      line-height: 1.6;
       color: #64748b;
     }
 
@@ -1054,15 +1081,237 @@ function injectStyles() {
 
     .knowlense-health-results {
       display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .knowlense-rewrite-shell {
+      display: none;
+      margin-top: 24px;
+      padding-top: 22px;
+      border-top: 1px solid rgba(148, 163, 184, 0.16);
+    }
+
+    .knowlense-rewrite-shell.is-visible {
+      display: block;
+    }
+
+    .knowlense-rewrite-head {
+      display: grid;
+      gap: 8px;
+    }
+
+    .knowlense-rewrite-kicker {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #475569;
+    }
+
+    .knowlense-rewrite-title {
+      font-size: 22px;
+      line-height: 1.15;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+
+    .knowlense-rewrite-copy {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.65;
+      color: #64748b;
+    }
+
+    .knowlense-rewrite-controls {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .knowlense-rewrite-label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: #475569;
+      font-weight: 700;
+    }
+
+    .knowlense-rewrite-input {
+      width: 100%;
+      min-height: 46px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 16px;
+      padding: 11px 14px;
+      font: inherit;
+      font-size: 14px;
+      line-height: 1.4;
+      color: #0f172a;
+      outline: none;
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    .knowlense-rewrite-input:focus {
+      border-color: rgba(109, 94, 252, 0.36);
+      box-shadow: 0 0 0 4px rgba(109, 94, 252, 0.1);
+    }
+
+    .knowlense-rewrite-results {
+      display: grid;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .knowlense-rewrite-section {
+      display: grid;
+      gap: 12px;
+    }
+
+    .knowlense-rewrite-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .knowlense-rewrite-section-title {
+      font-size: 16px;
+      line-height: 1.3;
+      font-weight: 800;
+      color: #0f172a;
+    }
+
+    .knowlense-rewrite-section-meta {
+      font-size: 12px;
+      line-height: 1.4;
+      color: #64748b;
+      font-weight: 700;
+    }
+
+    .knowlense-rewrite-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .knowlense-rewrite-option {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border-radius: 20px;
+      background: linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(255, 255, 255, 0.98) 100%);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .knowlense-rewrite-option-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .knowlense-rewrite-option-title {
+      font-size: 15px;
+      line-height: 1.35;
+      font-weight: 800;
+      color: #0f172a;
+    }
+
+    .knowlense-rewrite-badges {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    .knowlense-rewrite-badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 11px;
+      line-height: 1.2;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .knowlense-rewrite-badge.score-up {
+      background: #ecfdf5;
+      color: #047857;
+    }
+
+    .knowlense-rewrite-badge.score-flat {
+      background: #f8fafc;
+      color: #475569;
+    }
+
+    .knowlense-rewrite-value {
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: #ffffff;
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      font-size: 14px;
+      line-height: 1.7;
+      color: #0f172a;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .knowlense-rewrite-rationale {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #64748b;
+    }
+
+    .knowlense-rewrite-validation-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .knowlense-rewrite-validation {
+      display: grid;
+      grid-template-columns: 18px 1fr;
       gap: 10px;
-      margin-top: 12px;
+      align-items: start;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #334155;
+    }
+
+    .knowlense-rewrite-validation strong {
+      color: #0f172a;
+    }
+
+    .knowlense-rewrite-actions {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .knowlense-rewrite-copy-action {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      background: #111827;
+      color: #ffffff;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 160ms ease, background 160ms ease, opacity 160ms ease;
+    }
+
+    .knowlense-rewrite-copy-action:hover {
+      background: #000000;
+      transform: translateY(-1px);
     }
 
     .knowlense-keyword-card {
-      border: 1px solid rgba(148, 163, 184, 0.14);
-      border-radius: 14px;
-      background: #ffffff;
-      padding: 12px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
     }
 
     .knowlense-keyword-card-head {
@@ -1070,11 +1319,11 @@ function injectStyles() {
       justify-content: space-between;
       gap: 10px;
       align-items: flex-start;
-      margin-bottom: 10px;
+      margin-bottom: 14px;
     }
 
     .knowlense-keyword-name {
-      font-size: 13px;
+      font-size: 18px;
       line-height: 1.4;
       font-weight: 800;
       color: #0f172a;
@@ -1084,25 +1333,25 @@ function injectStyles() {
       border-radius: 999px;
       background: #f8f7ff;
       color: #6d5efc;
-      padding: 5px 9px;
-      font-size: 11px;
+      padding: 6px 10px;
+      font-size: 12px;
       font-weight: 700;
       white-space: nowrap;
     }
 
     .knowlense-check-list {
       display: grid;
-      gap: 7px;
+      gap: 10px;
     }
 
     .knowlense-check-group {
       display: grid;
-      gap: 7px;
+      gap: 10px;
     }
 
     .knowlense-check-group + .knowlense-check-group {
-      margin-top: 14px;
-      padding-top: 14px;
+      margin-top: 18px;
+      padding-top: 18px;
       border-top: 1px solid rgba(148, 163, 184, 0.14);
     }
 
@@ -1115,9 +1364,9 @@ function injectStyles() {
     }
 
     .knowlense-check-group-title {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 800;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
       color: #475569;
     }
@@ -1128,8 +1377,8 @@ function injectStyles() {
       border-radius: 999px;
       background: #f8fafc;
       border: 1px solid rgba(148, 163, 184, 0.18);
-      padding: 3px 8px;
-      font-size: 10px;
+      padding: 4px 9px;
+      font-size: 11px;
       line-height: 1.2;
       font-weight: 700;
       color: #64748b;
@@ -1137,22 +1386,22 @@ function injectStyles() {
 
     .knowlense-check-row {
       display: grid;
-      grid-template-columns: 16px 1fr;
-      gap: 8px;
+      grid-template-columns: 18px 1fr;
+      gap: 10px;
       align-items: start;
-      font-size: 12px;
-      line-height: 1.45;
+      font-size: 14px;
+      line-height: 1.6;
       color: #334155;
     }
 
     .knowlense-check-mark {
-      width: 16px;
-      height: 16px;
+      width: 18px;
+      height: 18px;
       border-radius: 999px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 800;
       margin-top: 1px;
     }
@@ -1258,28 +1507,33 @@ function injectStyles() {
     }
 
     .knowlense-panel-heading {
-      font-size: 18px;
-      line-height: 1.3;
+      font-size: 25px;
+      line-height: 1.08;
       font-weight: 800;
       letter-spacing: -0.03em;
-      margin: 0 0 8px;
+      margin: 0 0 10px;
     }
 
     .knowlense-panel-copy {
       margin: 0;
-      font-size: 13px;
-      line-height: 1.55;
+      font-size: 16px;
+      line-height: 1.65;
       color: #64748b;
     }
 
     @media (max-width: 1180px) {
       #${BUBBLE_ID} {
-        width: 52px;
-        height: 112px;
+        width: 44px;
+        height: 152px;
+      }
+
+      #${BUBBLE_ID}.is-open {
+        width: 28px;
+        height: 136px;
       }
 
       #${PANEL_ID} {
-        width: min(420px, calc(100vw - 40px));
+        width: min(540px, calc(100vw - 36px));
       }
     }
 
@@ -1289,16 +1543,33 @@ function injectStyles() {
         bottom: 18px;
         right: 0;
         transform: none;
-        width: 124px;
-        height: 52px;
+        width: 132px;
+        height: 48px;
         border-right: 0;
         border-radius: 16px 0 0 16px;
       }
 
+      #${BUBBLE_ID}.is-open {
+        width: 52px;
+        height: 44px;
+      }
+
+      #${BUBBLE_ID} svg {
+        position: static;
+        width: 18px;
+        height: 18px;
+      }
+
       #${BUBBLE_ID} .knowlense-bubble-copy {
-        writing-mode: horizontal-tb;
+        position: static;
         transform: none;
         letter-spacing: 0.08em;
+      }
+
+      #${BUBBLE_ID}.is-open svg {
+        right: auto;
+        bottom: auto;
+        margin-bottom: 0;
       }
 
       #${PANEL_ID} {
@@ -1318,6 +1589,23 @@ function injectStyles() {
       .knowlense-shell {
         height: 100%;
       }
+
+      .knowlense-header {
+        padding: 22px 20px 12px;
+      }
+
+      .knowlense-body {
+        padding: 16px 20px 22px;
+      }
+
+      .knowlense-title,
+      .knowlense-panel-heading {
+        font-size: 22px;
+      }
+
+      .knowlense-panel-copy {
+        font-size: 15px;
+      }
     }
   `;
 
@@ -1335,6 +1623,100 @@ function setPanelStatus(node, message, tone = "info") {
 
 function setHealthStatus(message, tone = "info") {
   setPanelStatus(PANEL_STATE.healthStatus, message, tone);
+}
+
+function setRewriteStatus(message, tone = "info") {
+  setPanelStatus(PANEL_STATE.rewriteStatus, message, tone);
+}
+
+function setRewriteVisibility(isVisible) {
+  if (!PANEL_STATE.rewriteShell) {
+    return;
+  }
+
+  PANEL_STATE.rewriteShell.classList.toggle("is-visible", Boolean(isVisible));
+}
+
+function formatRewriteValue(value) {
+  return escapeHtml(String(value ?? "")).replace(/\n/g, "<br>");
+}
+
+function buildRewriteValidation(validation) {
+  return `
+    <div class="knowlense-rewrite-validation">
+      <span class="knowlense-check-mark ${validation.passed ? "good" : "bad"}">${validation.passed ? "&#10003;" : "&#215;"}</span>
+      <span><strong>${escapeHtml(validation.label)}:</strong> ${escapeHtml(validation.detail)}</span>
+    </div>
+  `;
+}
+
+function buildRewriteOption(option, label) {
+  const scoreClass = option.scoreDelta > 0 ? "score-up" : "score-flat";
+  const scoreLabel = option.scoreDelta > 0 ? `+${option.scoreDelta} SEO Health` : `${option.seoHealthScore}/100 checked`;
+  const validations = (option.validations || []).map(buildRewriteValidation).join("");
+
+  return `
+    <article class="knowlense-rewrite-option">
+      <div class="knowlense-rewrite-option-head">
+        <div class="knowlense-rewrite-option-title">${escapeHtml(label)}</div>
+        <div class="knowlense-rewrite-badges">
+          <span class="knowlense-rewrite-badge ${scoreClass}">${escapeHtml(scoreLabel)}</span>
+        </div>
+      </div>
+      <div class="knowlense-rewrite-value">${formatRewriteValue(option.value)}</div>
+      <p class="knowlense-rewrite-rationale">${escapeHtml(option.rationale)}</p>
+      <div class="knowlense-rewrite-validation-list">${validations}</div>
+      <div class="knowlense-rewrite-actions">
+        <button class="knowlense-rewrite-copy-action" data-copy-value="${escapeHtml(option.value)}" type="button">Copy</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderProductRewrite(rewrite) {
+  if (!PANEL_STATE.rewriteResults) {
+    return;
+  }
+
+  if (!rewrite) {
+    PANEL_STATE.rewriteResults.innerHTML = "";
+    return;
+  }
+
+  const titleOptions = (rewrite.titleOptions || [])
+    .map((option, index) => buildRewriteOption(option, `Title option ${index + 1}`))
+    .join("");
+  const descriptionOptions = (rewrite.descriptionOptions || [])
+    .map((option, index) => buildRewriteOption(option, `Description option ${index + 1}`))
+    .join("");
+  const sections = [
+    rewrite.titleOptions?.length
+      ? `
+        <section class="knowlense-rewrite-section">
+          <div class="knowlense-rewrite-section-head">
+            <div class="knowlense-rewrite-section-title">Title rewrites</div>
+            <div class="knowlense-rewrite-section-meta">${rewrite.titleOptions.length} option(s) checked</div>
+          </div>
+          <div class="knowlense-rewrite-grid">${titleOptions}</div>
+        </section>
+      `
+      : "",
+    rewrite.descriptionOptions?.length
+      ? `
+        <section class="knowlense-rewrite-section">
+          <div class="knowlense-rewrite-section-head">
+            <div class="knowlense-rewrite-section-title">Description rewrites</div>
+            <div class="knowlense-rewrite-section-meta">${rewrite.descriptionOptions.length} option(s) checked</div>
+          </div>
+          <div class="knowlense-rewrite-grid">${descriptionOptions}</div>
+        </section>
+      `
+      : ""
+  ]
+    .filter(Boolean)
+    .join("");
+
+  PANEL_STATE.rewriteResults.innerHTML = sections;
 }
 
 async function loadExtensionSession() {
@@ -1381,10 +1763,21 @@ async function refreshPanelConnectionState() {
     PANEL_STATE.healthAction.removeAttribute("title");
   }
 
+  if (PANEL_STATE.rewriteAction) {
+    PANEL_STATE.rewriteAction.disabled = false;
+    PANEL_STATE.rewriteAction.removeAttribute("title");
+  }
+
   if (PANEL_STATE.healthStatus && !isConnected && !PANEL_STATE.healthResults?.innerHTML) {
     setHealthStatus("Connect your account from the website before using SEO Health.", "error");
   } else if (PANEL_STATE.healthStatus && isConnected && !PANEL_STATE.healthResults?.innerHTML) {
     setHealthStatus("Check the full product quality, metadata, media, description, reviews, and store signals.");
+  }
+
+  if (PANEL_STATE.rewriteStatus && !isConnected && !PANEL_STATE.rewriteResults?.innerHTML) {
+    setRewriteStatus("Connect your account from the website before using AI Rewrite.", "error");
+  } else if (PANEL_STATE.rewriteStatus && isConnected && !PANEL_STATE.rewriteResults?.innerHTML) {
+    setRewriteStatus("Run SEO Health first, then generate validated title and description options.");
   }
 }
 
@@ -1425,6 +1818,8 @@ function renderSeoHealthResult(analysis) {
 
   if (!analysis?.health) {
     PANEL_STATE.healthResults.innerHTML = "";
+    renderProductRewrite(null);
+    setRewriteVisibility(false);
     return;
   }
 
@@ -1484,6 +1879,49 @@ function renderSeoHealthResult(analysis) {
       ${groupedChecks}
     </div>
   `;
+  setRewriteVisibility(true);
+}
+
+async function runProductRewrite(primaryKeyword) {
+  const fetchedDocument = await fetchProductPageDocument().catch(() => null);
+  const liveExtracted = extractProductSnapshot(document);
+  if (!liveExtracted.ok) {
+    throw new Error(liveExtracted.error);
+  }
+
+  const fetchedExtracted = fetchedDocument ? extractProductSnapshot(fetchedDocument) : null;
+  const snapshot = {
+    ...((fetchedExtracted && fetchedExtracted.ok ? fetchedExtracted.snapshot : {}) || {}),
+    ...liveExtracted.snapshot
+  };
+
+  snapshot.descriptionLinkDetails = await resolveDescriptionLinkDetails(snapshot.descriptionProductLinks || []);
+
+  const sessionState = await requireConnectedExtensionSession("AI Rewrite");
+  const baseUrl = sessionState.apiUrl.replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/v1/product-seo-health/rewrite`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${sessionState.session.sessionToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      snapshot,
+      primaryKeyword: primaryKeyword || ""
+    })
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (response.status === 401) {
+    await chrome.storage.local.remove("knowlense_extension_session");
+    throw new Error("Your extension session expired. Reconnect it from the website and try again.");
+  }
+
+  if (!response.ok || !payload?.rewrite) {
+    throw new Error(payload?.error || "Knowlense could not generate AI Rewrite.");
+  }
+
+  return payload;
 }
 
 async function runSeoHealthAudit() {
@@ -1566,7 +2004,8 @@ function createPanelShell() {
     <div class="knowlense-shell">
       <div class="knowlense-header">
         <div class="knowlense-badge">Knowlense</div>
-        <h3 class="knowlense-title">Product Analysis</h3>
+        <h3 class="knowlense-title">SEO Health Audit</h3>
+        <p class="knowlense-panel-copy">Review the full product page against the main TPT product SEO criteria.</p>
       </div>
       <div class="knowlense-body">
         <div class="knowlense-product-meta">
@@ -1576,11 +2015,25 @@ function createPanelShell() {
           </div>
         </div>
         <div class="knowlense-tab-panel is-active" data-panel="criteria-seo">
-          <h4 class="knowlense-panel-heading">SEO Health Audit</h4>
-          <p class="knowlense-panel-copy">Review the full product page against the main TPT product SEO criteria.</p>
           <button class="knowlense-keyword-action knowlense-health-action" type="button">Run SEO Health</button>
           <div class="knowlense-keyword-status knowlense-health-status">Check the full product quality, metadata, media, description, reviews, and store signals.</div>
           <div class="knowlense-health-results"></div>
+          <div class="knowlense-rewrite-shell">
+            <div class="knowlense-rewrite-head">
+              <div class="knowlense-rewrite-kicker">AI Rewrite</div>
+              <div class="knowlense-rewrite-title">Generate validated title and description options</div>
+              <p class="knowlense-rewrite-copy">Use Gemini to rewrite the current listing copy, then let Knowlense check each option against the active SEO Health rules before you copy it back into TPT.</p>
+            </div>
+            <div class="knowlense-rewrite-controls">
+              <div>
+                <label class="knowlense-rewrite-label" for="knowlense-rewrite-keyword">Primary keyword (optional)</label>
+                <input id="knowlense-rewrite-keyword" class="knowlense-rewrite-input" type="text" placeholder="Example: reading comprehension passages" />
+              </div>
+              <button class="knowlense-keyword-action knowlense-rewrite-action" type="button">Generate AI Rewrite</button>
+              <div class="knowlense-keyword-status knowlense-rewrite-status">Run SEO Health first, then generate validated title and description options.</div>
+            </div>
+            <div class="knowlense-rewrite-results"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1598,6 +2051,11 @@ function createPanelShell() {
   PANEL_STATE.healthAction = panel.querySelector(".knowlense-health-action");
   PANEL_STATE.healthStatus = panel.querySelector(".knowlense-health-status");
   PANEL_STATE.healthResults = panel.querySelector(".knowlense-health-results");
+  PANEL_STATE.rewriteShell = panel.querySelector(".knowlense-rewrite-shell");
+  PANEL_STATE.rewriteAction = panel.querySelector(".knowlense-rewrite-action");
+  PANEL_STATE.rewriteStatus = panel.querySelector(".knowlense-rewrite-status");
+  PANEL_STATE.rewriteResults = panel.querySelector(".knowlense-rewrite-results");
+  PANEL_STATE.rewriteKeywordInput = panel.querySelector(".knowlense-rewrite-input");
   PANEL_STATE.productMetaValue = panel.querySelector(".knowlense-meta-value");
   syncPanelVisibility(false);
   refreshMountedProductMeta();
@@ -1621,6 +2079,54 @@ function createPanelShell() {
     }
   });
 
+  PANEL_STATE.rewriteAction?.addEventListener("click", async () => {
+    if (!PANEL_STATE.healthResults?.innerHTML) {
+      setRewriteStatus("Run SEO Health first so Knowlense can validate the rewrite against the current page.", "error");
+      return;
+    }
+
+    renderProductRewrite(null);
+    PANEL_STATE.rewriteAction.disabled = true;
+    PANEL_STATE.rewriteAction.textContent = "Generating...";
+    setRewriteStatus("Generating AI rewrite options and checking them against SEO Health...");
+
+    try {
+      const payload = await runProductRewrite(PANEL_STATE.rewriteKeywordInput?.value || "");
+      renderProductRewrite(payload.rewrite);
+      if (payload.usage?.premium) {
+        setRewriteStatus("AI rewrite completed. Premium access includes expanded rewrite capacity.");
+      } else if (typeof payload.usage?.used === "number" && typeof payload.usage?.limit === "number") {
+        setRewriteStatus(`AI rewrite completed. ${payload.usage.used} of ${payload.usage.limit} free rewrite runs used in the last 24 hours.`);
+      } else {
+        setRewriteStatus("AI rewrite completed.");
+      }
+    } catch (error) {
+      setRewriteStatus(error instanceof Error ? error.message : "Knowlense could not generate AI Rewrite.", "error");
+    } finally {
+      PANEL_STATE.rewriteAction.disabled = false;
+      PANEL_STATE.rewriteAction.textContent = "Generate AI Rewrite";
+    }
+  });
+
+  PANEL_STATE.rewriteResults?.addEventListener("click", async (event) => {
+    const target = event.target?.closest?.("[data-copy-value]");
+    if (!target) {
+      return;
+    }
+
+    const value = target.getAttribute("data-copy-value") || "";
+    if (!value) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setRewriteStatus("Copied rewrite to clipboard.");
+    } catch {
+      setRewriteStatus("Knowlense could not copy this rewrite automatically. Copy it manually from the panel.", "error");
+    }
+  });
+
 }
 
 function unmountPanelShell() {
@@ -1637,6 +2143,11 @@ function unmountPanelShell() {
   PANEL_STATE.healthAction = null;
   PANEL_STATE.healthStatus = null;
   PANEL_STATE.healthResults = null;
+  PANEL_STATE.rewriteShell = null;
+  PANEL_STATE.rewriteAction = null;
+  PANEL_STATE.rewriteStatus = null;
+  PANEL_STATE.rewriteResults = null;
+  PANEL_STATE.rewriteKeywordInput = null;
   PANEL_STATE.productMetaValue = null;
 
   PANEL_STATE.mountedUrl = null;
