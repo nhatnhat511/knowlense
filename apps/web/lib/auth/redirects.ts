@@ -8,8 +8,18 @@ export function getSiteOrigin() {
   return window.location.origin;
 }
 
-function normalizeNextPath(nextPath?: string) {
-  if (!nextPath || !nextPath.startsWith("/")) {
+const ALLOWED_NEXT_PATH_PREFIXES = ["/dashboard", "/account", "/pricing", "/connect", "/auth"];
+
+export function normalizeNextPath(nextPath?: string) {
+  if (!nextPath || !nextPath.startsWith("/") || nextPath.startsWith("//")) {
+    return "/dashboard";
+  }
+
+  const isAllowed = ALLOWED_NEXT_PATH_PREFIXES.some((prefix) => {
+    return nextPath === prefix || nextPath.startsWith(`${prefix}/`) || nextPath.startsWith(`${prefix}?`) || nextPath.startsWith(`${prefix}#`);
+  });
+
+  if (!isAllowed) {
     return "/dashboard";
   }
 

@@ -656,14 +656,25 @@ function extractDiscountOfferDetails(root = document) {
   discountBlocks.forEach((block) => {
     const textRoot = block.querySelector("[data-testid='discount-text']") || block;
     const blockText = textFromNode(textRoot);
-    const hasFirstPurchaseCopy = /enjoy\s+\d+%\s+off your first purchase from this seller/i.test(blockText);
-    const hasFollowerCopy = /enjoy\s+\d+%\s+off as a thanks for following this seller/i.test(blockText);
-    const hasApplyCopy = /check to apply\.?/i.test(blockText);
+    const normalizedBlockText = normalizeText(blockText);
+    const hasFirstPurchaseCopy =
+      /(?:enjoy|new users can receive)\s+\d+%\s+off(?:\s+your|\s+their)?\s+first purchase from this seller/i.test(
+        normalizedBlockText
+      ) || /\bfirst purchase from this seller\b/i.test(normalizedBlockText);
+    const hasFollowerCopy =
+      /(?:enjoy|followers? can receive)\s+\d+%\s+off(?:\s+as a thanks)?\s+for following this seller/i.test(
+        normalizedBlockText
+      ) || /\bfollowing this seller\b/i.test(normalizedBlockText);
+    const hasApplyCopy = /check to apply\.?/i.test(normalizedBlockText);
     const hasCheckbox = Boolean(
       block.querySelector("button[role='checkbox'], input[type='checkbox'], [role='checkbox']")
     );
 
-    if (!hasApplyCopy || !hasCheckbox) {
+    if (!hasCheckbox) {
+      return;
+    }
+
+    if (!hasApplyCopy && !hasFirstPurchaseCopy && !hasFollowerCopy) {
       return;
     }
 
@@ -1272,6 +1283,11 @@ function injectStyles() {
       color: #64748b;
     }
 
+    .knowlense-keyword-status.is-error {
+      color: #dc2626;
+      font-weight: 600;
+    }
+
     .knowlense-keyword-results {
       display: grid;
       gap: 10px;
@@ -1548,16 +1564,25 @@ function setKeywordError(message) {
   PANEL_STATE.keywordError.classList.toggle("is-visible", Boolean(message));
 }
 
-function setKeywordStatus(message) {
-  if (PANEL_STATE.keywordStatus) {
-    PANEL_STATE.keywordStatus.textContent = message;
+function setPanelStatus(node, message, tone = "info") {
+  if (!node) {
+    return;
   }
+
+  node.textContent = message;
+  node.classList.toggle("is-error", tone === "error");
 }
 
-function setIndexingStatus(message) {
-  if (PANEL_STATE.indexingStatus) {
-    PANEL_STATE.indexingStatus.textContent = message;
-  }
+function setKeywordStatus(message, tone = "info") {
+  setPanelStatus(PANEL_STATE.keywordStatus, message, tone);
+}
+
+function setHealthStatus(message, tone = "info") {
+  setPanelStatus(PANEL_STATE.healthStatus, message, tone);
+}
+
+function setIndexingStatus(message, tone = "info") {
+  setPanelStatus(PANEL_STATE.indexingStatus, message, tone);
 }
 
 function isPremiumSession(session) {
@@ -1653,27 +1678,38 @@ async function refreshPanelConnectionState() {
   const isPremium = isPremiumSession(sessionState?.session);
 
   if (PANEL_STATE.healthAction) {
-    PANEL_STATE.healthAction.disabled = !isConnected;
+    PANEL_STATE.healthAction.disabled = false;
     PANEL_STATE.healthAction.removeAttribute("title");
   }
 
   if (PANEL_STATE.keywordAction) {
-    PANEL_STATE.keywordAction.disabled = !isConnected;
+    PANEL_STATE.keywordAction.disabled = false;
     PANEL_STATE.keywordAction.removeAttribute("title");
   }
 
-  if (PANEL_STATE.healthStatus && !isConnected) {
-    PANEL_STATE.healthStatus.textContent = "Connect the extension through the website to run SEO Health.";
-  } else if (PANEL_STATE.healthStatus && isConnected && !PANEL_STATE.healthResults?.innerHTML) {
-    PANEL_STATE.healthStatus.textContent = "Check the full product quality, metadata, media, description, reviews, and store signals.";
+  if (PANEL_STATE.indexingAction) {
+    PANEL_STATE.indexingAction.disabled = false;
+    PANEL_STATE.indexingAction.removeAttribute("title");
   }
 
-  if (PANEL_STATE.keywordStatus && !isConnected) {
-    PANEL_STATE.keywordStatus.textContent = "Connect the extension through the website to run Keyword SEO.";
+  if (PANEL_STATE.healthStatus && !isConnected && !PANEL_STATE.healthResults?.innerHTML) {
+    setHealthStatus("Connect your account from the website before using SEO Health.", "error");
+  } else if (PANEL_STATE.healthStatus && isConnected && !PANEL_STATE.healthResults?.innerHTML) {
+    setHealthStatus("Check the full product quality, metadata, media, description, reviews, and store signals.");
+  }
+
+  if (PANEL_STATE.keywordStatus && !isConnected && !PANEL_STATE.keywordResults?.innerHTML) {
+    setKeywordStatus("Connect your account from the website before using Keyword SEO.", "error");
   } else if (PANEL_STATE.keywordStatus && isConnected && !PANEL_STATE.keywordResults?.innerHTML) {
-    PANEL_STATE.keywordStatus.textContent = isPremium
+    setKeywordStatus(isPremium
       ? "Check rank, title placement, description placement, and related keyword suggestions for up to 3 keywords."
-      : "Check rank, title placement, description placement, and related keyword suggestions for 1 keyword at a time on Free.";
+      : "Check rank, title placement, description placement, and related keyword suggestions for 1 keyword at a time on Free.");
+  }
+
+  if (PANEL_STATE.indexingStatus && !isConnected && !PANEL_STATE.indexingResults?.innerHTML) {
+    setIndexingStatus("Connect your account from the website before using Search Indexing.", "error");
+  } else if (PANEL_STATE.indexingStatus && isConnected && !PANEL_STATE.indexingResults?.innerHTML) {
+    setIndexingStatus("Check this product across major search engines and see where it is indexed.");
   }
 
   if (PANEL_STATE.keywordInput) {
@@ -1688,6 +1724,15 @@ async function refreshPanelConnectionState() {
       ? "Use up to 3 concise keywords. Separate them with commas."
       : "Free plan supports 1 concise keyword at a time. Upgrade to Premium to analyze up to 3.";
   }
+}
+
+async function requireConnectedExtensionSession(featureName) {
+  const sessionState = await loadExtensionSession();
+  if (!sessionState.session?.sessionToken) {
+    throw new Error(`Connect your account from the website before using ${featureName}.`);
+  }
+
+  return sessionState;
 }
 
 function refreshMountedProductMeta() {
@@ -1745,6 +1790,8 @@ async function runSearchIndexingAudit() {
   if (!extracted.ok) {
     throw new Error(extracted.error);
   }
+
+  await requireConnectedExtensionSession("Search Indexing");
 
   const cacheKey = `knowlense_search_indexing_cache_${normalizeProductUrl(extracted.snapshot.productUrl)}`;
   const cached = await chrome.storage.local.get(cacheKey).catch(() => ({}));
@@ -2146,10 +2193,7 @@ async function runSeoHealthAudit() {
     extracted.snapshot.descriptionProductLinks || []
   );
 
-  const sessionState = await loadExtensionSession();
-  if (!sessionState.session?.sessionToken) {
-    throw new Error("Connect the extension through the website before running SEO Health.");
-  }
+  const sessionState = await requireConnectedExtensionSession("SEO Health");
 
   const baseUrl = sessionState.apiUrl.replace(/\/$/, "");
   const response = await fetch(`${baseUrl}/v1/product-seo-health/analyze`, {
@@ -2181,10 +2225,7 @@ async function runKeywordAudit() {
     throw new Error(extracted.error);
   }
 
-  const sessionState = await loadExtensionSession();
-  if (!sessionState.session?.sessionToken) {
-    throw new Error("Connect the extension through the website before running Keyword SEO.");
-  }
+  const sessionState = await requireConnectedExtensionSession("Keyword SEO");
 
   const parsed = parseKeywordInput(
     PANEL_STATE.keywordInput?.value ?? "",
@@ -2406,20 +2447,14 @@ function createPanelShell() {
     renderSeoHealthResult(null);
     PANEL_STATE.healthAction.disabled = true;
     PANEL_STATE.healthAction.textContent = "Analyzing...";
-    if (PANEL_STATE.healthStatus) {
-      PANEL_STATE.healthStatus.textContent = "Running SEO Health for this product...";
-    }
+    setHealthStatus("Running SEO Health for this product...");
 
     try {
       const analysis = await runSeoHealthAudit();
       renderSeoHealthResult(analysis);
-      if (PANEL_STATE.healthStatus) {
-        PANEL_STATE.healthStatus.textContent = "SEO Health audit completed.";
-      }
+      setHealthStatus("SEO Health audit completed.");
     } catch (error) {
-      if (PANEL_STATE.healthStatus) {
-        PANEL_STATE.healthStatus.textContent = error instanceof Error ? error.message : "Knowlense could not run SEO Health.";
-      }
+      setHealthStatus(error instanceof Error ? error.message : "Knowlense could not run SEO Health.", "error");
     } finally {
       PANEL_STATE.healthAction.disabled = false;
       PANEL_STATE.healthAction.textContent = "Run SEO Health";
@@ -2437,7 +2472,7 @@ function createPanelShell() {
       renderSearchIndexingResult(result);
       setIndexingStatus(`Search indexing check completed for ${result.checks.length} search engine${result.checks.length === 1 ? "" : "s"}.`);
     } catch (error) {
-      setIndexingStatus(error instanceof Error ? error.message : "Knowlense could not run the search indexing check.");
+      setIndexingStatus(error instanceof Error ? error.message : "Knowlense could not run the search indexing check.", "error");
     } finally {
       PANEL_STATE.indexingAction.disabled = false;
       PANEL_STATE.indexingAction.textContent = "Check search indexing";

@@ -1,6 +1,7 @@
 import { config } from "./config.js";
 
 const storage = chrome.storage.local;
+const EXTENSION_DEVICE_ID_KEY = "knowlense_extension_device_id";
 const state = {
   session: null,
   connectRequest: null
@@ -30,6 +31,19 @@ async function loadState() {
 
 function apiUrl() {
   return config.apiUrl.replace(/\/$/, "");
+}
+
+async function getExtensionDeviceId() {
+  const stored = await storage.get([EXTENSION_DEVICE_ID_KEY]);
+  const existingDeviceId = typeof stored[EXTENSION_DEVICE_ID_KEY] === "string" ? stored[EXTENSION_DEVICE_ID_KEY] : "";
+
+  if (existingDeviceId) {
+    return existingDeviceId;
+  }
+
+  const deviceId = crypto.randomUUID();
+  await storage.set({ [EXTENSION_DEVICE_ID_KEY]: deviceId });
+  return deviceId;
 }
 
 function setStatus(message, kind = "idle") {
@@ -110,9 +124,16 @@ async function fetchApiProfile(token) {
 }
 
 async function startConnectFlow() {
+  const deviceId = await getExtensionDeviceId();
   const response = await fetch(`${apiUrl()}/v1/extension/session/start`, {
     method: "POST",
-    cache: "no-store"
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      deviceId
+    })
   });
 
   const payload = await response.json().catch(() => null);

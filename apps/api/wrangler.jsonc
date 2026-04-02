@@ -9,7 +9,8 @@
 			"binding": "DB",
 			"database_name": "knowlense-db",
 			"database_id": "f41180d0-210c-4552-930a-85c60ed605d4",
-			"remote": true
+			"remote": true,
+			"migrations_dir": "d1"
 		}
 	],
 	"observability": {

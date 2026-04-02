@@ -1,13 +1,15 @@
 CREATE TABLE IF NOT EXISTS extension_connection_requests (
   id TEXT PRIMARY KEY,
   status TEXT NOT NULL DEFAULT 'pending',
+  fingerprint_hash TEXT,
   user_id TEXT,
   user_email TEXT,
   session_id TEXT,
   token_plaintext TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at TEXT NOT NULL,
-  claimed_at TEXT
+  claimed_at TEXT,
+  redeemed_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS extension_sessions (

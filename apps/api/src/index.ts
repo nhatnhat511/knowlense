@@ -227,6 +227,65 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
+function readWebsiteOrigin(env: Bindings) {
+  const fallbackOrigin = "https://knowlense.com";
+  const configuredOrigin = env.CORS_ORIGIN?.trim();
+
+  if (!configuredOrigin || configuredOrigin === "*") {
+    return fallbackOrigin;
+  }
+
+  try {
+    return new URL(configuredOrigin).origin;
+  } catch {
+    return fallbackOrigin;
+  }
+}
+
+function sanitizeAuthRedirectUrl(
+  env: Bindings,
+  candidate: string | undefined,
+  allowedPaths: string[]
+) {
+  if (!candidate) {
+    return null;
+  }
+
+  let parsed: URL;
+
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return null;
+  }
+
+  const websiteOrigin = readWebsiteOrigin(env);
+  if (parsed.origin !== websiteOrigin) {
+    return null;
+  }
+
+  if (!allowedPaths.includes(parsed.pathname)) {
+    return null;
+  }
+
+  if (parsed.pathname === "/auth/callback") {
+    const nextValue = parsed.searchParams.get("next");
+    const normalizedNext =
+      typeof nextValue === "string" && nextValue.startsWith("/")
+        ? nextValue
+        : "/dashboard";
+    const sanitized = new URL(`${websiteOrigin}/auth/callback`);
+    sanitized.searchParams.set("next", normalizedNext);
+    return sanitized.toString();
+  }
+
+  if (parsed.pathname === "/auth/update-password") {
+    return `${websiteOrigin}/auth/update-password`;
+  }
+
+  return null;
+}
+
 function parseJwtExpiry(token: string) {
   const parts = token.split(".");
   if (parts.length < 2) {
@@ -1118,6 +1177,266 @@ async function hashToken(token: string) {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
+type AuthRateLimitRow = {
+  rate_key: string;
+  scope: string;
+  attempts: number | string;
+  window_started_at: string;
+  last_attempt_at: string;
+  blocked_until: string | null;
+};
+
+async function ensureAuthProtectionSupport(db: D1Database) {
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS auth_rate_limits (
+      rate_key TEXT PRIMARY KEY,
+      scope TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      window_started_at TEXT NOT NULL,
+      last_attempt_at TEXT NOT NULL,
+      blocked_until TEXT
+    )`
+  ).run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_auth_rate_limits_scope_last_attempt ON auth_rate_limits(scope, last_attempt_at DESC)").run();
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS auth_security_events (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      ip_hash TEXT,
+      email_hash TEXT,
+      detail TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  ).run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_auth_security_events_created_at ON auth_security_events(created_at DESC)").run();
+}
+
+function getRequestIp(c: Parameters<typeof authenticateRequest>[0]) {
+  return (
+    c.req.header("CF-Connecting-IP")
+    ?? c.req.header("X-Forwarded-For")?.split(",")[0]?.trim()
+    ?? "unknown"
+  );
+}
+
+function normalizeAuthEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function addSeconds(date: Date, seconds: number) {
+  return new Date(date.getTime() + seconds * 1000).toISOString();
+}
+
+function secondsUntil(dateValue: string | null, now: Date) {
+  if (!dateValue) {
+    return 0;
+  }
+
+  const targetTime = new Date(dateValue).getTime();
+  if (!Number.isFinite(targetTime)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.ceil((targetTime - now.getTime()) / 1000));
+}
+
+async function readAuthRateLimit(db: D1Database, rateKey: string) {
+  return db.prepare(
+    `SELECT rate_key, scope, attempts, window_started_at, last_attempt_at, blocked_until
+     FROM auth_rate_limits
+     WHERE rate_key = ?1
+     LIMIT 1`
+  )
+    .bind(rateKey)
+    .first<AuthRateLimitRow>()
+    .catch(() => null);
+}
+
+async function writeAuthRateLimit(db: D1Database, row: { rateKey: string; scope: string; attempts: number; windowStartedAt: string; lastAttemptAt: string; blockedUntil: string | null }) {
+  await db.prepare(
+    `INSERT INTO auth_rate_limits (rate_key, scope, attempts, window_started_at, last_attempt_at, blocked_until)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+     ON CONFLICT(rate_key) DO UPDATE SET
+       scope = excluded.scope,
+       attempts = excluded.attempts,
+       window_started_at = excluded.window_started_at,
+       last_attempt_at = excluded.last_attempt_at,
+       blocked_until = excluded.blocked_until`
+  )
+    .bind(row.rateKey, row.scope, row.attempts, row.windowStartedAt, row.lastAttemptAt, row.blockedUntil)
+    .run();
+}
+
+async function clearAuthRateLimit(db: D1Database, rateKey: string) {
+  await db.prepare("DELETE FROM auth_rate_limits WHERE rate_key = ?1").bind(rateKey).run().catch(() => null);
+}
+
+async function logAuthSecurityEvent(
+  env: Bindings,
+  eventType: string,
+  scope: string,
+  details: {
+    ipHash?: string | null;
+    emailHash?: string | null;
+    detail?: string | null;
+  }
+) {
+  await ensureAuthProtectionSupport(env.DB);
+  await env.DB.prepare(
+    `INSERT INTO auth_security_events (id, event_type, scope, ip_hash, email_hash, detail)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+  )
+    .bind(crypto.randomUUID(), eventType, scope, details.ipHash ?? null, details.emailHash ?? null, details.detail ?? null)
+    .run()
+    .catch(() => null);
+}
+
+async function getAuthRateKey(scope: string, dimension: "ip" | "email", rawValue: string) {
+  return `${scope}:${dimension}:${await hashToken(rawValue)}`;
+}
+
+async function enforceAuthFixedWindowLimit(
+  env: Bindings,
+  params: {
+    scope: string;
+    dimension: "ip" | "email";
+    rawValue: string;
+    maxAttempts: number;
+    windowSeconds: number;
+    cooldownSeconds?: number;
+    blockSeconds?: number;
+    ipHash?: string | null;
+    emailHash?: string | null;
+    reason: string;
+  }
+) {
+  await ensureAuthProtectionSupport(env.DB);
+
+  const now = new Date();
+  const rateKey = await getAuthRateKey(params.scope, params.dimension, params.rawValue);
+  const row = await readAuthRateLimit(env.DB, rateKey);
+  const retryAfterBlocked = secondsUntil(row?.blocked_until ?? null, now);
+
+  if (retryAfterBlocked > 0) {
+    await logAuthSecurityEvent(env, "auth_rate_limit_blocked", params.scope, {
+      ipHash: params.ipHash,
+      emailHash: params.emailHash,
+      detail: `${params.dimension}:${params.reason}`
+    });
+    return { limited: true as const, retryAfterSeconds: retryAfterBlocked };
+  }
+
+  if (row?.last_attempt_at && params.cooldownSeconds) {
+    const secondsSinceLastAttempt = Math.floor((now.getTime() - new Date(row.last_attempt_at).getTime()) / 1000);
+    if (Number.isFinite(secondsSinceLastAttempt) && secondsSinceLastAttempt < params.cooldownSeconds) {
+      const retryAfterSeconds = params.cooldownSeconds - secondsSinceLastAttempt;
+      await logAuthSecurityEvent(env, "auth_rate_limit_cooldown", params.scope, {
+        ipHash: params.ipHash,
+        emailHash: params.emailHash,
+        detail: `${params.dimension}:${params.reason}`
+      });
+      return { limited: true as const, retryAfterSeconds };
+    }
+  }
+
+  if (row?.window_started_at) {
+    const windowAgeSeconds = Math.floor((now.getTime() - new Date(row.window_started_at).getTime()) / 1000);
+    const attempts = Number(row.attempts ?? 0);
+    if (Number.isFinite(windowAgeSeconds) && windowAgeSeconds < params.windowSeconds && attempts >= params.maxAttempts) {
+      const retryAfterSeconds = params.blockSeconds
+        ? params.blockSeconds
+        : Math.max(1, params.windowSeconds - windowAgeSeconds);
+      const blockedUntil = addSeconds(now, retryAfterSeconds);
+      await writeAuthRateLimit(env.DB, {
+        rateKey,
+        scope: params.scope,
+        attempts,
+        windowStartedAt: row.window_started_at,
+        lastAttemptAt: row.last_attempt_at,
+        blockedUntil
+      });
+      await logAuthSecurityEvent(env, "auth_rate_limit_window", params.scope, {
+        ipHash: params.ipHash,
+        emailHash: params.emailHash,
+        detail: `${params.dimension}:${params.reason}`
+      });
+      return { limited: true as const, retryAfterSeconds };
+    }
+  }
+
+  return { limited: false as const, rateKey, row };
+}
+
+async function consumeAuthFixedWindowLimit(
+  env: Bindings,
+  params: {
+    scope: string;
+    rateKey: string;
+    existingRow: AuthRateLimitRow | null | undefined;
+    windowSeconds: number;
+    blockSeconds?: number;
+  }
+) {
+  await ensureAuthProtectionSupport(env.DB);
+
+  const now = new Date();
+  const currentRow = params.existingRow ?? await readAuthRateLimit(env.DB, params.rateKey);
+  const windowAgeSeconds = currentRow?.window_started_at
+    ? Math.floor((now.getTime() - new Date(currentRow.window_started_at).getTime()) / 1000)
+    : Number.POSITIVE_INFINITY;
+  const shouldResetWindow = !currentRow || !Number.isFinite(windowAgeSeconds) || windowAgeSeconds >= params.windowSeconds;
+  const attempts = shouldResetWindow ? 1 : Number(currentRow.attempts ?? 0) + 1;
+
+  await writeAuthRateLimit(env.DB, {
+    rateKey: params.rateKey,
+    scope: params.scope,
+    attempts,
+    windowStartedAt: shouldResetWindow ? now.toISOString() : currentRow.window_started_at,
+    lastAttemptAt: now.toISOString(),
+    blockedUntil: currentRow?.blocked_until ?? null
+  });
+}
+
+async function registerFailedSignInAttempt(
+  env: Bindings,
+  params: {
+    scope: string;
+    dimension: "ip" | "email";
+    rawValue: string;
+    windowSeconds: number;
+    ipHash: string;
+    emailHash: string;
+  }
+) {
+  await ensureAuthProtectionSupport(env.DB);
+
+  const rateKey = await getAuthRateKey(params.scope, params.dimension, params.rawValue);
+  const now = new Date();
+  const existing = await readAuthRateLimit(env.DB, rateKey);
+  const windowAgeSeconds = existing?.window_started_at
+    ? Math.floor((now.getTime() - new Date(existing.window_started_at).getTime()) / 1000)
+    : Number.POSITIVE_INFINITY;
+  const shouldResetWindow = !existing || !Number.isFinite(windowAgeSeconds) || windowAgeSeconds >= params.windowSeconds;
+  const attempts = shouldResetWindow ? 1 : Number(existing.attempts ?? 0) + 1;
+  const backoffSeconds = attempts >= 3 ? Math.min(300, 5 * 2 ** (attempts - 3)) : 0;
+
+  await writeAuthRateLimit(env.DB, {
+    rateKey,
+    scope: params.scope,
+    attempts,
+    windowStartedAt: shouldResetWindow ? now.toISOString() : existing.window_started_at,
+    lastAttemptAt: now.toISOString(),
+    blockedUntil: backoffSeconds > 0 ? addSeconds(now, backoffSeconds) : null
+  });
+
+  await logAuthSecurityEvent(env, "auth_sign_in_failed", params.scope, {
+    ipHash: params.ipHash,
+    emailHash: params.emailHash,
+    detail: `${params.dimension}:attempt_${attempts}`
+  });
+}
+
 function createExtensionToken() {
   const randomValues = crypto.getRandomValues(new Uint8Array(24));
   const tokenBody = btoa(String.fromCharCode(...randomValues)).replace(/[+/=]/g, "").slice(0, 32);
@@ -1193,8 +1512,12 @@ function mergeExtensionDevices<T extends { id: string; label: string; createdAt:
 
 async function ensureExtensionSessionSupport(db: D1Database) {
   await db.prepare("ALTER TABLE extension_sessions ADD COLUMN device_label TEXT").run().catch(() => null);
+  await db.prepare("ALTER TABLE extension_sessions ADD COLUMN device_id TEXT").run().catch(() => null);
   await db.prepare("ALTER TABLE extension_sessions ADD COLUMN user_agent TEXT").run().catch(() => null);
   await db.prepare("ALTER TABLE extension_sessions ADD COLUMN last_seen_at TEXT").run().catch(() => null);
+  await db.prepare("ALTER TABLE extension_connection_requests ADD COLUMN fingerprint_hash TEXT").run().catch(() => null);
+  await db.prepare("ALTER TABLE extension_connection_requests ADD COLUMN device_id TEXT").run().catch(() => null);
+  await db.prepare("ALTER TABLE extension_connection_requests ADD COLUMN redeemed_at TEXT").run().catch(() => null);
   await db.prepare(
     `CREATE TABLE IF NOT EXISTS extension_connection_attempts (
       id TEXT PRIMARY KEY,
@@ -1207,6 +1530,7 @@ async function ensureExtensionSessionSupport(db: D1Database) {
     `CREATE INDEX IF NOT EXISTS idx_extension_connection_attempts_fingerprint_expires
      ON extension_connection_attempts(fingerprint_hash, expires_at DESC)`
   ).run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_extension_sessions_user_device ON extension_sessions(user_id, device_id)").run().catch(() => null);
 }
 
 function isoFromNow(minutes: number) {
@@ -1671,23 +1995,78 @@ app.post("/v1/contact", async (c) => {
 app.post("/v1/auth/sign-in", async (c) => {
   try {
     const body = await c.req.json().catch(() => null);
-    const email = typeof body?.email === "string" ? body.email.trim() : "";
+    const email = typeof body?.email === "string" ? normalizeAuthEmail(body.email) : "";
     const password = typeof body?.password === "string" ? body.password : "";
 
     if (!email || !password) {
       return c.json({ error: "Email and password are required." }, 400);
     }
 
+    const requestIp = getRequestIp(c);
+    const ipHash = await hashToken(requestIp);
+    const emailHash = await hashToken(email);
+    const [ipLimit, emailLimit] = await Promise.all([
+      enforceAuthFixedWindowLimit(c.env, {
+        scope: "sign-in",
+        dimension: "ip",
+        rawValue: requestIp,
+        maxAttempts: 20,
+        windowSeconds: 15 * 60,
+        ipHash,
+        emailHash,
+        reason: "precheck"
+      }),
+      enforceAuthFixedWindowLimit(c.env, {
+        scope: "sign-in",
+        dimension: "email",
+        rawValue: email,
+        maxAttempts: 10,
+        windowSeconds: 15 * 60,
+        ipHash,
+        emailHash,
+        reason: "precheck"
+      })
+    ]);
+
+    if (ipLimit.limited || emailLimit.limited) {
+      const retryAfterSeconds = Math.max(ipLimit.retryAfterSeconds ?? 0, emailLimit.retryAfterSeconds ?? 0);
+      c.header("Retry-After", String(retryAfterSeconds));
+      return c.json({ error: "Too many sign-in attempts. Please wait a moment and try again." }, 429);
+    }
+
     const supabase = createAuthClient(c.env);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
+      await Promise.all([
+        registerFailedSignInAttempt(c.env, {
+          scope: "sign-in",
+          dimension: "ip",
+          rawValue: requestIp,
+          windowSeconds: 15 * 60,
+          ipHash,
+          emailHash
+        }),
+        registerFailedSignInAttempt(c.env, {
+          scope: "sign-in",
+          dimension: "email",
+          rawValue: email,
+          windowSeconds: 15 * 60,
+          ipHash,
+          emailHash
+        })
+      ]);
       return c.json({ error: error.message }, 400);
     }
 
     if (!data.session || !data.user) {
       return c.json({ error: "Supabase did not return a session." }, 500);
     }
+
+    await Promise.all([
+      clearAuthRateLimit(c.env.DB, await getAuthRateKey("sign-in", "ip", requestIp)),
+      clearAuthRateLimit(c.env.DB, await getAuthRateKey("sign-in", "email", email))
+    ]);
 
     return c.json({
       session: {
@@ -1705,10 +2084,14 @@ app.post("/v1/auth/sign-in", async (c) => {
 app.post("/v1/auth/sign-up", async (c) => {
   try {
     const body = await c.req.json().catch(() => null);
-    const email = typeof body?.email === "string" ? body.email.trim() : "";
+    const email = typeof body?.email === "string" ? normalizeAuthEmail(body.email) : "";
     const password = typeof body?.password === "string" ? body.password : "";
     const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : "";
-    const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : undefined;
+    const redirectTo = sanitizeAuthRedirectUrl(
+      c.env,
+      typeof body?.redirectTo === "string" ? body.redirectTo : undefined,
+      ["/auth/callback"]
+    );
 
     if (!email || !password || !displayName) {
       return c.json({ error: "Email, password, and display name are required." }, 400);
@@ -1716,6 +2099,44 @@ app.post("/v1/auth/sign-up", async (c) => {
 
     if (password.length < 8) {
       return c.json({ error: "Password must be at least 8 characters long." }, 400);
+    }
+
+    if (!redirectTo) {
+      return c.json({ error: "Invalid redirect URL." }, 400);
+    }
+
+    const requestIp = getRequestIp(c);
+    const ipHash = await hashToken(requestIp);
+    const emailHash = await hashToken(email);
+    const [ipLimit, emailLimit] = await Promise.all([
+      enforceAuthFixedWindowLimit(c.env, {
+        scope: "sign-up",
+        dimension: "ip",
+        rawValue: requestIp,
+        maxAttempts: 8,
+        windowSeconds: 60 * 60,
+        blockSeconds: 15 * 60,
+        ipHash,
+        emailHash,
+        reason: "precheck"
+      }),
+      enforceAuthFixedWindowLimit(c.env, {
+        scope: "sign-up",
+        dimension: "email",
+        rawValue: email,
+        maxAttempts: 3,
+        windowSeconds: 60 * 60,
+        blockSeconds: 30 * 60,
+        ipHash,
+        emailHash,
+        reason: "precheck"
+      })
+    ]);
+
+    if (ipLimit.limited || emailLimit.limited) {
+      const retryAfterSeconds = Math.max(ipLimit.retryAfterSeconds ?? 0, emailLimit.retryAfterSeconds ?? 0);
+      c.header("Retry-After", String(retryAfterSeconds));
+      return c.json({ error: "Too many sign-up attempts. Please wait before trying again." }, 429);
     }
 
     const supabase = createAuthClient(c.env);
@@ -1730,7 +2151,29 @@ app.post("/v1/auth/sign-up", async (c) => {
       }
     });
 
+    await Promise.all([
+      consumeAuthFixedWindowLimit(c.env, {
+        scope: "sign-up",
+        rateKey: ipLimit.rateKey!,
+        existingRow: ipLimit.row,
+        windowSeconds: 60 * 60,
+        blockSeconds: 15 * 60
+      }),
+      consumeAuthFixedWindowLimit(c.env, {
+        scope: "sign-up",
+        rateKey: emailLimit.rateKey!,
+        existingRow: emailLimit.row,
+        windowSeconds: 60 * 60,
+        blockSeconds: 30 * 60
+      })
+    ]);
+
     if (error) {
+      await logAuthSecurityEvent(c.env, "auth_sign_up_failed", "sign-up", {
+        ipHash,
+        emailHash,
+        detail: "supabase_error"
+      });
       return c.json({ error: error.message }, 400);
     }
 
@@ -1755,7 +2198,11 @@ app.post("/v1/auth/oauth/start", async (c) => {
   try {
     const body = await c.req.json().catch(() => null);
     const provider = body?.provider;
-    const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : "";
+    const redirectTo = sanitizeAuthRedirectUrl(
+      c.env,
+      typeof body?.redirectTo === "string" ? body.redirectTo : undefined,
+      ["/auth/callback"]
+    );
 
     if (provider !== "google" && provider !== "github") {
       return c.json({ error: "Unsupported OAuth provider." }, 400);
@@ -1820,11 +2267,50 @@ app.post("/v1/auth/exchange-code", async (c) => {
 app.post("/v1/auth/forgot-password", async (c) => {
   try {
     const body = await c.req.json().catch(() => null);
-    const email = typeof body?.email === "string" ? body.email.trim() : "";
-    const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : "";
+    const email = typeof body?.email === "string" ? normalizeAuthEmail(body.email) : "";
+    const redirectTo = sanitizeAuthRedirectUrl(
+      c.env,
+      typeof body?.redirectTo === "string" ? body.redirectTo : undefined,
+      ["/auth/update-password"]
+    );
 
     if (!email || !redirectTo) {
       return c.json({ error: "Email and redirect URL are required." }, 400);
+    }
+
+    const requestIp = getRequestIp(c);
+    const ipHash = await hashToken(requestIp);
+    const emailHash = await hashToken(email);
+    const [ipLimit, emailLimit] = await Promise.all([
+      enforceAuthFixedWindowLimit(c.env, {
+        scope: "forgot-password",
+        dimension: "ip",
+        rawValue: requestIp,
+        maxAttempts: 5,
+        windowSeconds: 15 * 60,
+        blockSeconds: 15 * 60,
+        ipHash,
+        emailHash,
+        reason: "precheck"
+      }),
+      enforceAuthFixedWindowLimit(c.env, {
+        scope: "forgot-password",
+        dimension: "email",
+        rawValue: email,
+        maxAttempts: 3,
+        windowSeconds: 15 * 60,
+        cooldownSeconds: 60,
+        blockSeconds: 15 * 60,
+        ipHash,
+        emailHash,
+        reason: "precheck"
+      })
+    ]);
+
+    if (ipLimit.limited || emailLimit.limited) {
+      const retryAfterSeconds = Math.max(ipLimit.retryAfterSeconds ?? 0, emailLimit.retryAfterSeconds ?? 0);
+      c.header("Retry-After", String(retryAfterSeconds));
+      return c.json({ error: "Too many password reset requests. Please wait before trying again." }, 429);
     }
 
     const supabase = createAuthClient(c.env);
@@ -1832,7 +2318,29 @@ app.post("/v1/auth/forgot-password", async (c) => {
       redirectTo
     });
 
+    await Promise.all([
+      consumeAuthFixedWindowLimit(c.env, {
+        scope: "forgot-password",
+        rateKey: ipLimit.rateKey!,
+        existingRow: ipLimit.row,
+        windowSeconds: 15 * 60,
+        blockSeconds: 15 * 60
+      }),
+      consumeAuthFixedWindowLimit(c.env, {
+        scope: "forgot-password",
+        rateKey: emailLimit.rateKey!,
+        existingRow: emailLimit.row,
+        windowSeconds: 15 * 60,
+        blockSeconds: 15 * 60
+      })
+    ]);
+
     if (error) {
+      await logAuthSecurityEvent(c.env, "auth_forgot_password_failed", "forgot-password", {
+        ipHash,
+        emailHash,
+        detail: "supabase_error"
+      });
       return c.json({ error: error.message }, 400);
     }
 
@@ -1845,11 +2353,50 @@ app.post("/v1/auth/forgot-password", async (c) => {
 app.post("/v1/auth/resend-verification", async (c) => {
   try {
     const body = await c.req.json().catch(() => null);
-    const email = typeof body?.email === "string" ? body.email.trim() : "";
-    const redirectTo = typeof body?.redirectTo === "string" ? body.redirectTo : "";
+    const email = typeof body?.email === "string" ? normalizeAuthEmail(body.email) : "";
+    const redirectTo = sanitizeAuthRedirectUrl(
+      c.env,
+      typeof body?.redirectTo === "string" ? body.redirectTo : undefined,
+      ["/auth/callback"]
+    );
 
     if (!email || !redirectTo) {
       return c.json({ error: "Email and redirect URL are required." }, 400);
+    }
+
+    const requestIp = getRequestIp(c);
+    const ipHash = await hashToken(requestIp);
+    const emailHash = await hashToken(email);
+    const [ipLimit, emailLimit] = await Promise.all([
+      enforceAuthFixedWindowLimit(c.env, {
+        scope: "resend-verification",
+        dimension: "ip",
+        rawValue: requestIp,
+        maxAttempts: 5,
+        windowSeconds: 15 * 60,
+        blockSeconds: 15 * 60,
+        ipHash,
+        emailHash,
+        reason: "precheck"
+      }),
+      enforceAuthFixedWindowLimit(c.env, {
+        scope: "resend-verification",
+        dimension: "email",
+        rawValue: email,
+        maxAttempts: 3,
+        windowSeconds: 15 * 60,
+        cooldownSeconds: 60,
+        blockSeconds: 15 * 60,
+        ipHash,
+        emailHash,
+        reason: "precheck"
+      })
+    ]);
+
+    if (ipLimit.limited || emailLimit.limited) {
+      const retryAfterSeconds = Math.max(ipLimit.retryAfterSeconds ?? 0, emailLimit.retryAfterSeconds ?? 0);
+      c.header("Retry-After", String(retryAfterSeconds));
+      return c.json({ error: "Too many verification email requests. Please wait before trying again." }, 429);
     }
 
     const supabase = createAuthClient(c.env);
@@ -1861,7 +2408,29 @@ app.post("/v1/auth/resend-verification", async (c) => {
       }
     });
 
+    await Promise.all([
+      consumeAuthFixedWindowLimit(c.env, {
+        scope: "resend-verification",
+        rateKey: ipLimit.rateKey!,
+        existingRow: ipLimit.row,
+        windowSeconds: 15 * 60,
+        blockSeconds: 15 * 60
+      }),
+      consumeAuthFixedWindowLimit(c.env, {
+        scope: "resend-verification",
+        rateKey: emailLimit.rateKey!,
+        existingRow: emailLimit.row,
+        windowSeconds: 15 * 60,
+        blockSeconds: 15 * 60
+      })
+    ]);
+
     if (error) {
+      await logAuthSecurityEvent(c.env, "auth_resend_verification_failed", "resend-verification", {
+        ipHash,
+        emailHash,
+        detail: "supabase_error"
+      });
       return c.json({ error: error.message }, 400);
     }
 
@@ -1921,21 +2490,13 @@ app.post("/v1/auth/sign-out", async (c) => {
     return c.json({ ok: true });
   }
 
-  await c.env.DB.prepare(
-    `UPDATE extension_sessions
-     SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
-     WHERE user_id = ?1
-       AND revoked_at IS NULL`
-  )
-    .bind(user.id)
-    .run()
-    .catch(() => null);
-
   return c.json({ ok: true });
 });
 
 app.post("/v1/extension/session/start", async (c) => {
   await ensureExtensionSessionSupport(c.env.DB);
+  const body = await c.req.json().catch(() => null);
+  const deviceId = typeof body?.deviceId === "string" ? body.deviceId.trim() : "";
 
   const userAgent = c.req.header("User-Agent") ?? "";
   const connectingIp =
@@ -1952,6 +2513,10 @@ app.post("/v1/extension/session/start", async (c) => {
     .bind(fingerprintHash)
     .first<{ total: number | string }>();
 
+  if (!deviceId || deviceId.length > 128) {
+    return c.json({ error: "Missing extension device identity." }, 400);
+  }
+
   if (Number(recentAttemptCount?.total ?? 0) >= 5) {
     return c.json({ error: "Too many extension connection attempts were started from this browser. Wait a few minutes and try again." }, 429);
   }
@@ -1963,9 +2528,9 @@ app.post("/v1/extension/session/start", async (c) => {
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO extension_connection_requests (id, status, expires_at)
-         VALUES (?1, 'pending', ?2)`
-      ).bind(requestId, expiresAt),
+        `INSERT INTO extension_connection_requests (id, status, fingerprint_hash, device_id, expires_at)
+         VALUES (?1, 'pending', ?2, ?3, ?4)`
+      ).bind(requestId, fingerprintHash, deviceId, expiresAt),
       c.env.DB.prepare(
         `INSERT INTO extension_connection_attempts (id, fingerprint_hash, expires_at)
          VALUES (?1, ?2, ?3)`
@@ -1987,13 +2552,19 @@ app.get("/v1/extension/session/poll", async (c) => {
   c.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   c.header("Pragma", "no-cache");
   const requestId = c.req.query("requestId");
+  const userAgent = c.req.header("User-Agent") ?? "";
+  const connectingIp =
+    c.req.header("CF-Connecting-IP")
+    ?? c.req.header("X-Forwarded-For")?.split(",")[0]?.trim()
+    ?? "unknown";
+  const fingerprintHash = await hashToken(`${connectingIp}|${userAgent}`);
 
   if (!requestId) {
     return c.json({ error: "Missing requestId." }, 400);
   }
 
   const request = await c.env.DB.prepare(
-    `SELECT id, status, user_id, user_email, session_id, expires_at, claimed_at, token_plaintext
+    `SELECT id, status, fingerprint_hash, user_id, user_email, session_id, expires_at, claimed_at, redeemed_at, token_plaintext
      FROM extension_connection_requests
      WHERE id = ?1
      LIMIT 1`
@@ -2002,11 +2573,13 @@ app.get("/v1/extension/session/poll", async (c) => {
     .first<{
       id: string;
       status: string;
+      fingerprint_hash: string | null;
       user_id: string | null;
       user_email: string | null;
       session_id: string | null;
       expires_at: string;
       claimed_at: string | null;
+      redeemed_at: string | null;
       token_plaintext: string | null;
     }>();
 
@@ -2015,6 +2588,14 @@ app.get("/v1/extension/session/poll", async (c) => {
   }
 
   if (new Date(request.expires_at).getTime() <= Date.now()) {
+    return c.json({ status: "expired" });
+  }
+
+  if (request.fingerprint_hash && request.fingerprint_hash !== fingerprintHash) {
+    return c.json({ error: "This connection request belongs to a different browser session." }, 403);
+  }
+
+  if (request.redeemed_at) {
     return c.json({ status: "expired" });
   }
 
@@ -2037,13 +2618,24 @@ app.get("/v1/extension/session/poll", async (c) => {
     .first<{ user_id: string; user_email: string | null; expires_at: string }>()
     .catch(() => null);
 
-  await c.env.DB.prepare(
+  const redeemResult = await c.env.DB.prepare(
     `UPDATE extension_connection_requests
-     SET claimed_at = COALESCE(claimed_at, CURRENT_TIMESTAMP)
-     WHERE id = ?1`
+     SET claimed_at = COALESCE(claimed_at, CURRENT_TIMESTAMP),
+         redeemed_at = COALESCE(redeemed_at, CURRENT_TIMESTAMP),
+         token_plaintext = NULL
+     WHERE id = ?1
+       AND status = 'authorized'
+       AND redeemed_at IS NULL
+       AND token_plaintext = ?2
+       AND (fingerprint_hash IS NULL OR fingerprint_hash = ?3)`
   )
-    .bind(requestId)
-    .run();
+    .bind(requestId, request.token_plaintext, fingerprintHash)
+    .run()
+    .catch(() => null);
+
+  if (Number(redeemResult?.meta.changes ?? 0) !== 1) {
+    return c.json({ status: "expired" });
+  }
 
   const billing = await readBillingProfile(c.env, request.user_id).catch(() => null);
 
@@ -2084,13 +2676,13 @@ app.post("/v1/extension/session/authorize", async (c) => {
   }
 
   const request = await c.env.DB.prepare(
-    `SELECT id, status, expires_at
+    `SELECT id, status, fingerprint_hash, device_id, expires_at
      FROM extension_connection_requests
      WHERE id = ?1
      LIMIT 1`
   )
     .bind(requestId)
-    .first<{ id: string; status: string; expires_at: string }>();
+    .first<{ id: string; status: string; fingerprint_hash: string | null; device_id: string | null; expires_at: string }>();
 
   if (!request) {
     return c.json({ error: "Unknown connection request." }, 404);
@@ -2100,21 +2692,29 @@ app.post("/v1/extension/session/authorize", async (c) => {
     return c.json({ error: "Connection request expired." }, 410);
   }
 
+  if (request.status !== "pending") {
+    return c.json({ error: "This connection request has already been processed." }, 409);
+  }
+
   const user = c.get("user");
   const sessionToken = createExtensionToken();
   const tokenHash = await hashToken(sessionToken);
   const sessionExpiresAt = isoFromNow(60 * 24 * 365);
   const userAgent = c.req.header("User-Agent") ?? null;
   const deviceLabel = deriveExtensionDeviceLabel(userAgent);
+  const deviceId = request.device_id?.trim() || null;
   const existingSession = await c.env.DB.prepare(
     `SELECT id
      FROM extension_sessions
      WHERE user_id = ?1
-       AND COALESCE(user_agent, '') = ?2
+       AND (
+         (?2 IS NOT NULL AND device_id = ?2)
+         OR (?2 IS NULL AND COALESCE(user_agent, '') = ?3)
+       )
      ORDER BY datetime(COALESCE(last_seen_at, created_at)) DESC
      LIMIT 1`
   )
-    .bind(user.id, userAgent ?? "")
+    .bind(user.id, deviceId, userAgent ?? "")
     .first<{ id: string }>();
   const sessionId = existingSession?.id ?? crypto.randomUUID();
 
@@ -2128,31 +2728,37 @@ app.post("/v1/extension/session/authorize", async (c) => {
                  expires_at = ?4,
                  revoked_at = NULL,
                  device_label = ?5,
-                 user_agent = ?6,
+                 device_id = ?6,
+                 user_agent = ?7,
                  last_seen_at = CURRENT_TIMESTAMP
              WHERE id = ?1`
-          ).bind(sessionId, user.email, tokenHash, sessionExpiresAt, deviceLabel, userAgent)
+          ).bind(sessionId, user.email, tokenHash, sessionExpiresAt, deviceLabel, deviceId, userAgent)
         : c.env.DB.prepare(
-            `INSERT INTO extension_sessions (id, user_id, user_email, token_hash, expires_at, device_label, user_agent, last_seen_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP)`
-          ).bind(sessionId, user.id, user.email, tokenHash, sessionExpiresAt, deviceLabel, userAgent),
+            `INSERT INTO extension_sessions (id, user_id, user_email, token_hash, expires_at, device_label, device_id, user_agent, last_seen_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, CURRENT_TIMESTAMP)`
+          ).bind(sessionId, user.id, user.email, tokenHash, sessionExpiresAt, deviceLabel, deviceId, userAgent),
       c.env.DB.prepare(
         `UPDATE extension_sessions
          SET revoked_at = CURRENT_TIMESTAMP
          WHERE user_id = ?1
-           AND COALESCE(user_agent, '') = ?2
-           AND id <> ?3
+           AND (
+             (?2 IS NOT NULL AND device_id = ?2)
+             OR (?2 IS NULL AND COALESCE(user_agent, '') = ?3)
+           )
+           AND id <> ?4
            AND revoked_at IS NULL`
-      ).bind(user.id, userAgent ?? "", sessionId),
+      ).bind(user.id, deviceId, userAgent ?? "", sessionId),
       c.env.DB.prepare(
         `UPDATE extension_connection_requests
          SET status = 'authorized',
+             fingerprint_hash = COALESCE(fingerprint_hash, ?6),
+             device_id = COALESCE(device_id, ?7),
              user_id = ?2,
              user_email = ?3,
              session_id = ?4,
              token_plaintext = ?5
          WHERE id = ?1`
-      ).bind(requestId, user.id, user.email, sessionId, sessionToken)
+      ).bind(requestId, user.id, user.email, sessionId, sessionToken, request.fingerprint_hash, deviceId)
     ];
 
     await c.env.DB.batch(statements);

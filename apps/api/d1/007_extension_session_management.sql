@@ -1,7 +1,3 @@
-ALTER TABLE extension_sessions ADD COLUMN device_label TEXT;
-ALTER TABLE extension_sessions ADD COLUMN user_agent TEXT;
-ALTER TABLE extension_sessions ADD COLUMN last_seen_at TEXT;
-
 CREATE TABLE IF NOT EXISTS extension_connection_attempts (
   id TEXT PRIMARY KEY,
   fingerprint_hash TEXT NOT NULL,

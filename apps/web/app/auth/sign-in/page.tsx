@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { signInWithPassword, startOAuth } from "@/lib/api/auth";
 import { fetchApiProfile } from "@/lib/api/profile";
 import { mapSignInError } from "@/lib/auth/errors";
-import { getAuthCallbackUrl } from "@/lib/auth/redirects";
+import { getAuthCallbackUrl, normalizeNextPath } from "@/lib/auth/redirects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   AuthDivider,
@@ -22,7 +22,7 @@ function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
-  const nextPath = searchParams.get("next") || "/dashboard";
+  const nextPath = normalizeNextPath(searchParams.get("next") ?? undefined);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);

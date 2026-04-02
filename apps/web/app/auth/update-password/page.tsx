@@ -1,13 +1,30 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { validatePassword } from "@/lib/auth/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthField, AuthPasswordToggleIcon, AuthShell, AuthTextLink } from "@/components/auth/auth-shell";
 
+function hasRecoveryContext(searchParams: ReturnType<typeof useSearchParams>) {
+  const queryType = searchParams.get("type");
+  if (queryType === "recovery" || Boolean(searchParams.get("token_hash")) || Boolean(searchParams.get("code"))) {
+    return true;
+  }
+
+  if (typeof window === "undefined" || !window.location.hash) {
+    return false;
+  }
+
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const hashType = hashParams.get("type");
+
+  return hashType === "recovery" || (Boolean(hashParams.get("access_token")) && Boolean(hashParams.get("refresh_token")));
+}
+
 export default function UpdatePasswordPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -17,6 +34,7 @@ export default function UpdatePasswordPage() {
   const [statusKind, setStatusKind] = useState<"idle" | "error" | "success">("idle");
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
+  const recoveryContext = hasRecoveryContext(searchParams);
 
   useEffect(() => {
     if (!supabase) {
@@ -35,11 +53,23 @@ export default function UpdatePasswordPage() {
         return;
       }
 
+      if (!recoveryContext) {
+        setReady(false);
+        setStatus("A valid recovery link was not detected. Open this page from the password reset email again.");
+        setStatusKind("error");
+        return;
+      }
+
       if (session?.access_token) {
         setReady(true);
         setStatus("Recovery session detected. Set your new password.");
         setStatusKind("success");
+        return;
       }
+
+      setReady(false);
+      setStatus("Waiting for the recovery session from your reset email.");
+      setStatusKind("idle");
     }
 
     void hydrate();
@@ -51,7 +81,7 @@ export default function UpdatePasswordPage() {
         return;
       }
 
-      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+      if (event === "PASSWORD_RECOVERY") {
         setReady(true);
         setStatus("Recovery session detected. Set your new password.");
         setStatusKind("success");
@@ -62,7 +92,7 @@ export default function UpdatePasswordPage() {
       active = false;
       subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, [recoveryContext, supabase]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
