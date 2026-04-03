@@ -296,7 +296,7 @@ function buildSystemInstruction() {
     "7. For descriptions, use the current description and the provided product fields as the source material, and do not invent missing details.",
     "8. Description rewrites must be publication-ready so the seller can paste them directly into a TPT listing with little or no editing.",
     "9. Description rewrites should feel natural and human-written while still following the requested structure.",
-    "10. Return HTML-ready copy for descriptions when helpful, using simple formatting such as headings, bold, and italics only where they improve readability.",
+    "10. Return HTML-ready copy for descriptions when helpful, using simple formatting such as bold, italics, underline, and simple lists only where they improve readability.",
     "11. Return JSON only."
   ].join("\n");
 }
@@ -342,8 +342,8 @@ function buildUserPrompt(snapshot: ProductSeoAuditSnapshot, primaryKeyword: stri
     "  4. How the product helps students.",
     "  5. How easy the product is to use and prepare.",
     "- Use clean formatting that is ready for a TPT product description.",
-    "- You may use simple HTML formatting such as <h3>, <strong>, <em>, <p>, <br>, and simple lists when useful.",
-    "- Add section headings where helpful, for example a heading like <h3>What's Included</h3>.",
+    "- You may use simple HTML formatting such as <strong>, <em>, <u>, <p>, <br>, <ul>, <ol>, and <li> when useful.",
+    "- Do not use heading tags such as <h1>, <h2>, <h3>, <h4>, <h5>, or <h6> because the TPT description editor does not rely on heading formatting.",
     "- Use bold or italics only where they genuinely improve readability.",
     "- Return the full final description, not notes about the description.",
     "Product data:",
