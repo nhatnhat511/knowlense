@@ -42,6 +42,12 @@ type GenerateContentErrorResponse = {
   promptFeedback?: {
     blockReason?: string;
   };
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
+  modelVersion?: string;
 };
 
 type RawRewriteResponse = {
@@ -69,11 +75,43 @@ type RewriteCandidate = {
   validations: RewriteValidation[];
 };
 
+type VertexUsageSummary = {
+  promptTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number | null;
+  finishReason: string | null;
+  model: string;
+  modelVersion: string | null;
+};
+
+type RawProviderRewriteResult = {
+  titleOptions: Array<{ value: string; rationale: string }>;
+  descriptionOptions: Array<{ value: string; rationale: string }>;
+  usage: VertexUsageSummary;
+};
+
 export type ProductRewriteResult = {
   primaryKeyword: string | null;
   titleOptions: RewriteCandidate[];
   descriptionOptions: RewriteCandidate[];
   note: string;
+};
+
+type AiRewriteRequestLogRecord = {
+  userId: string;
+  productUrl: string;
+  productTitle: string;
+  primaryKeyword: string | null;
+  model: string;
+  modelVersion: string | null;
+  promptTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number | null;
+  finishReason: string | null;
+  status: "success" | "error";
+  errorMessage: string | null;
 };
 
 function normalizeText(value: string) {
@@ -123,6 +161,47 @@ function countWords(value: string) {
   }
 
   return normalized.split(/\s+/).filter(Boolean).length;
+}
+
+function toFiniteNumber(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function roundUsd(value: number) {
+  return Math.round(value * 1_000_000_00) / 1_000_000_00;
+}
+
+function resolveModelPricing(model: string) {
+  const normalized = String(model || "").trim().toLowerCase();
+
+  if (normalized === "gemini-2.5-flash") {
+    return {
+      inputUsdPerMillionTokens: 0.3,
+      outputUsdPerMillionTokens: 2.5
+    };
+  }
+
+  if (normalized === "gemini-2.5-flash-lite") {
+    return {
+      inputUsdPerMillionTokens: 0.1,
+      outputUsdPerMillionTokens: 0.4
+    };
+  }
+
+  return null;
+}
+
+function estimateUsageCostUsd(model: string, promptTokens: number, outputTokens: number) {
+  const pricing = resolveModelPricing(model);
+  if (!pricing) {
+    return null;
+  }
+
+  return roundUsd(
+    (promptTokens / 1_000_000) * pricing.inputUsdPerMillionTokens +
+      (outputTokens / 1_000_000) * pricing.outputUsdPerMillionTokens
+  );
 }
 
 function tokenizeForSimilarity(value: string) {
@@ -573,6 +652,95 @@ function buildGenerateContentBody(snapshot: ProductSeoAuditSnapshot, primaryKeyw
   };
 }
 
+async function ensureAiRewriteRequestLogTable(db: D1Database) {
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS ai_rewrite_request_logs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      product_url TEXT NOT NULL,
+      product_title TEXT NOT NULL,
+      primary_keyword TEXT,
+      model TEXT NOT NULL,
+      model_version TEXT,
+      prompt_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      total_tokens INTEGER NOT NULL DEFAULT 0,
+      estimated_cost_usd REAL,
+      finish_reason TEXT,
+      status TEXT NOT NULL,
+      error_message TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  ).run();
+  await db.prepare(
+    `CREATE INDEX IF NOT EXISTS idx_ai_rewrite_request_logs_user_created
+      ON ai_rewrite_request_logs (user_id, created_at DESC)`
+  ).run();
+}
+
+async function recordAiRewriteRequestLog(db: D1Database, record: AiRewriteRequestLogRecord) {
+  await ensureAiRewriteRequestLogTable(db);
+  await db.prepare(
+    `INSERT INTO ai_rewrite_request_logs (
+      id,
+      user_id,
+      product_url,
+      product_title,
+      primary_keyword,
+      model,
+      model_version,
+      prompt_tokens,
+      output_tokens,
+      total_tokens,
+      estimated_cost_usd,
+      finish_reason,
+      status,
+      error_message,
+      created_at
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`
+  ).bind(
+    crypto.randomUUID(),
+    record.userId,
+    record.productUrl,
+    record.productTitle,
+    record.primaryKeyword,
+    record.model,
+    record.modelVersion,
+    record.promptTokens,
+    record.outputTokens,
+    record.totalTokens,
+    record.estimatedCostUsd,
+    record.finishReason,
+    record.status,
+    record.errorMessage,
+    new Date().toISOString()
+  ).run();
+}
+
+async function recordAiRewriteRequestLogSafe(db: D1Database, record: AiRewriteRequestLogRecord) {
+  try {
+    await recordAiRewriteRequestLog(db, record);
+  } catch (error) {
+    console.error("Failed to record AI rewrite usage log", error);
+  }
+}
+
+function summarizeVertexUsage(model: string, payload: GenerateContentErrorResponse | null): VertexUsageSummary {
+  const promptTokens = toFiniteNumber(payload?.usageMetadata?.promptTokenCount);
+  const outputTokens = toFiniteNumber(payload?.usageMetadata?.candidatesTokenCount);
+  const totalTokens = toFiniteNumber(payload?.usageMetadata?.totalTokenCount) || promptTokens + outputTokens;
+
+  return {
+    promptTokens,
+    outputTokens,
+    totalTokens,
+    estimatedCostUsd: estimateUsageCostUsd(model, promptTokens, outputTokens),
+    finishReason: payload?.candidates?.[0]?.finishReason?.trim() || null,
+    model,
+    modelVersion: payload?.modelVersion?.trim() || null
+  };
+}
+
 async function callVertexAi(options: RewriteOptions) {
   if (!options.vertex) {
     throw new GeminiRequestError("Vertex AI is not configured for AI Rewrite.", 503);
@@ -591,9 +759,25 @@ async function callVertexAi(options: RewriteOptions) {
   });
 
   const payload = (await response.json().catch(() => null)) as GenerateContentErrorResponse | null;
+  const usage = summarizeVertexUsage(model, payload);
 
   if (!response.ok) {
     const message = payload?.error?.message?.trim();
+    await recordAiRewriteRequestLogSafe(options.db, {
+      userId: options.userId,
+      productUrl: options.snapshot.productUrl,
+      productTitle: options.snapshot.title,
+      primaryKeyword: options.primaryKeyword?.trim() || null,
+      model: usage.model,
+      modelVersion: usage.modelVersion,
+      promptTokens: usage.promptTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.totalTokens,
+      estimatedCostUsd: usage.estimatedCostUsd,
+      finishReason: usage.finishReason,
+      status: "error",
+      errorMessage: message || "Knowlense could not reach Vertex AI for this rewrite."
+    });
     if (message) {
       throw new GeminiRequestError(message, response.status);
     }
@@ -602,18 +786,65 @@ async function callVertexAi(options: RewriteOptions) {
   }
 
   if (payload?.promptFeedback?.blockReason) {
+    await recordAiRewriteRequestLogSafe(options.db, {
+      userId: options.userId,
+      productUrl: options.snapshot.productUrl,
+      productTitle: options.snapshot.title,
+      primaryKeyword: options.primaryKeyword?.trim() || null,
+      model: usage.model,
+      modelVersion: usage.modelVersion,
+      promptTokens: usage.promptTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.totalTokens,
+      estimatedCostUsd: usage.estimatedCostUsd,
+      finishReason: usage.finishReason,
+      status: "error",
+      errorMessage: "Vertex AI blocked this rewrite request."
+    });
     throw new GeminiRequestError("Vertex AI blocked this rewrite request.", 400);
   }
 
   const rawText = payload?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim();
   if (!rawText) {
+    await recordAiRewriteRequestLogSafe(options.db, {
+      userId: options.userId,
+      productUrl: options.snapshot.productUrl,
+      productTitle: options.snapshot.title,
+      primaryKeyword: options.primaryKeyword?.trim() || null,
+      model: usage.model,
+      modelVersion: usage.modelVersion,
+      promptTokens: usage.promptTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.totalTokens,
+      estimatedCostUsd: usage.estimatedCostUsd,
+      finishReason: usage.finishReason,
+      status: "error",
+      errorMessage: "Vertex AI did not return rewrite content."
+    });
     throw new GeminiRequestError("Vertex AI did not return rewrite content.", 502);
   }
 
   const parsed = JSON.parse(rawText) as RawRewriteResponse;
+  await recordAiRewriteRequestLogSafe(options.db, {
+    userId: options.userId,
+    productUrl: options.snapshot.productUrl,
+    productTitle: options.snapshot.title,
+    primaryKeyword: options.primaryKeyword?.trim() || null,
+    model: usage.model,
+    modelVersion: usage.modelVersion,
+    promptTokens: usage.promptTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    estimatedCostUsd: usage.estimatedCostUsd,
+    finishReason: usage.finishReason,
+    status: "success",
+    errorMessage: null
+  });
+
   return {
     titleOptions: dedupeCandidates(parsed.titleOptions ?? [], 3),
-    descriptionOptions: dedupeDescriptionCandidates(parsed.descriptionOptions ?? [], 3)
+    descriptionOptions: dedupeDescriptionCandidates(parsed.descriptionOptions ?? [], 3),
+    usage
   };
 }
 
