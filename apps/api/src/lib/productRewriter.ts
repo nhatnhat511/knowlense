@@ -291,8 +291,13 @@ function buildSystemInstruction() {
     "2. Keep the copy accurate to the provided product data only.",
     "3. Write for both search discoverability and buyer conversion.",
     "4. For titles, keep them natural, specific, and within Teachers Pay Teachers style expectations.",
-    "5. For descriptions, keep them scannable, persuasive, and keyword-aware without sounding stuffed.",
-    "6. Return JSON only."
+    "5. When rewriting a title, use the current title and current description as the primary source of truth.",
+    "6. Do not rewrite the title by merely shuffling, reordering, or lightly rephrasing the same words. Produce a meaningfully improved version that stays faithful to the product.",
+    "7. For descriptions, use the current description and the provided product fields as the source material, and do not invent missing details.",
+    "8. Description rewrites must be publication-ready so the seller can paste them directly into a TPT listing with little or no editing.",
+    "9. Description rewrites should feel natural and human-written while still following the requested structure.",
+    "10. Return HTML-ready copy for descriptions when helpful, using simple formatting such as headings, bold, and italics only where they improve readability.",
+    "11. Return JSON only."
   ].join("\n");
 }
 
@@ -318,13 +323,29 @@ function buildUserPrompt(snapshot: ProductSeoAuditSnapshot, primaryKeyword: stri
     "Return 3 title options and 2 description options.",
     "Title requirements:",
     "- Aim for 60 to 80 characters.",
+    "- Base each rewritten title on the current title and current description.",
+    "- Preserve the real meaning and core product identity of the current title.",
+    "- Do not simply reshuffle the existing words or change their order with minimal improvement.",
+    "- Make each title feel intentionally rewritten, clearer, more specific, and more compelling for search and clicks.",
     primaryKeyword ? `- Include the exact primary keyword "${primaryKeyword}" once when it fits naturally.` : "- Improve search clarity even without a fixed keyword.",
     "- Avoid keyword stuffing and awkward punctuation.",
     "Description requirements:",
     "- Aim for at least 300 words.",
     primaryKeyword ? `- Include the exact primary keyword "${primaryKeyword}" naturally near the opening.` : "- Keep the opening search-friendly and clear.",
-    "- Use a clean structure that helps conversion.",
-    "- Do not use markdown, bullets are allowed as plain text lines if helpful.",
+    "- Base the description on the current description plus the provided product data fields only.",
+    "- Write a complete, publication-ready TPT description that can be copied and pasted directly by the seller.",
+    "- Keep the writing natural, polished, persuasive, and human.",
+    "- The description must include these sections in this logical order:",
+    "  1. A short, simple introduction.",
+    "  2. What is included in the product, stated accurately and specifically from the provided information only.",
+    "  3. How the product saves teachers time, money, or effort in lesson planning or classroom preparation.",
+    "  4. How the product helps students.",
+    "  5. How easy the product is to use and prepare.",
+    "- Use clean formatting that is ready for a TPT product description.",
+    "- You may use simple HTML formatting such as <h3>, <strong>, <em>, <p>, <br>, and simple lists when useful.",
+    "- Add section headings where helpful, for example a heading like <h3>What's Included</h3>.",
+    "- Use bold or italics only where they genuinely improve readability.",
+    "- Return the full final description, not notes about the description.",
     "Product data:",
     ...metadata
   ].join("\n");
