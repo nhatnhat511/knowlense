@@ -297,7 +297,10 @@ function buildSystemInstruction() {
     "8. Description rewrites must be publication-ready so the seller can paste them directly into a TPT listing with little or no editing.",
     "9. Description rewrites should feel natural and human-written while still following the requested structure.",
     "10. Return HTML-ready copy for descriptions when helpful, using simple formatting such as bold, italics, underline, and simple lists only where they improve readability.",
-    "11. Return JSON only."
+    "11. Keep the description direct, concise, and focused on the strongest selling points.",
+    "12. Avoid filler, hype, repeated claims, and unnecessary transitions.",
+    "13. Do not sound wordy, generic, or overly promotional.",
+    "14. Return JSON only."
   ].join("\n");
 }
 
@@ -335,6 +338,8 @@ function buildUserPrompt(snapshot: ProductSeoAuditSnapshot, primaryKeyword: stri
     "- Base the description on the current description plus the provided product data fields only.",
     "- Write a complete, publication-ready TPT description that can be copied and pasted directly by the seller.",
     "- Keep the writing natural, polished, persuasive, and human.",
+    "- Keep the writing concise and on-topic. Do not pad the description with generic or repetitive statements.",
+    "- Each section should stay focused on useful product information and practical benefits.",
     "- The description must include these sections in this logical order:",
     "  1. A short, simple introduction.",
     "  2. What is included in the product, stated accurately and specifically from the provided information only.",
