@@ -125,6 +125,33 @@ function countWords(value: string) {
   return normalized.split(/\s+/).filter(Boolean).length;
 }
 
+function tokenizeForSimilarity(value: string) {
+  return new Set(
+    normalizeText(value)
+      .split(" ")
+      .filter((token) => token.length >= 4)
+  );
+}
+
+function calculateSimilarity(left: string, right: string) {
+  const leftTokens = tokenizeForSimilarity(left);
+  const rightTokens = tokenizeForSimilarity(right);
+
+  if (!leftTokens.size || !rightTokens.size) {
+    return 0;
+  }
+
+  let intersection = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) {
+      intersection += 1;
+    }
+  }
+
+  const union = new Set([...leftTokens, ...rightTokens]).size;
+  return union ? intersection / union : 0;
+}
+
 function dedupeCandidates(items: Array<{ value?: string; rationale?: string }>, limit: number) {
   const seen = new Set<string>();
   const output: Array<{ value: string; rationale: string }> = [];
@@ -147,6 +174,36 @@ function dedupeCandidates(items: Array<{ value?: string; rationale?: string }>, 
       rationale: rationale || "Generated to better align the product copy with the current SEO Health findings."
     });
 
+    if (output.length >= limit) {
+      break;
+    }
+  }
+
+  return output;
+}
+
+function dedupeDescriptionCandidates(items: Array<{ value?: string; rationale?: string }>, limit: number) {
+  const exactUnique = dedupeCandidates(items, items.length);
+  const output: Array<{ value: string; rationale: string }> = [];
+
+  for (const candidate of exactUnique) {
+    const isTooSimilar = output.some((existing) => calculateSimilarity(existing.value, candidate.value) >= 0.82);
+    if (isTooSimilar) {
+      continue;
+    }
+
+    output.push(candidate);
+    if (output.length >= limit) {
+      return output;
+    }
+  }
+
+  for (const candidate of exactUnique) {
+    if (output.some((existing) => normalizeText(existing.value) === normalizeText(candidate.value))) {
+      continue;
+    }
+
+    output.push(candidate);
     if (output.length >= limit) {
       break;
     }
@@ -300,7 +357,8 @@ function buildSystemInstruction() {
     "11. Keep the description direct, concise, and focused on the strongest selling points.",
     "12. Avoid filler, hype, repeated claims, and unnecessary transitions.",
     "13. Do not sound wordy, generic, or overly promotional.",
-    "14. Return JSON only."
+    "14. When returning multiple description options, make them meaningfully different from one another in wording, flow, emphasis, and angle while keeping the same factual accuracy.",
+    "15. Return JSON only."
   ].join("\n");
 }
 
@@ -323,7 +381,7 @@ function buildUserPrompt(snapshot: ProductSeoAuditSnapshot, primaryKeyword: stri
 
   return [
     "Create better product copy for this TPT listing.",
-    "Return 3 title options and 2 description options.",
+    "Return 3 title options and 3 description options.",
     "Title requirements:",
     "- Aim for 60 to 80 characters.",
     "- Base each rewritten title on the current title and current description.",
@@ -351,6 +409,13 @@ function buildUserPrompt(snapshot: ProductSeoAuditSnapshot, primaryKeyword: stri
     "- Do not use heading tags such as <h1>, <h2>, <h3>, <h4>, <h5>, or <h6> because the TPT description editor does not rely on heading formatting.",
     "- Use bold or italics only where they genuinely improve readability.",
     "- Return the full final description, not notes about the description.",
+    "- All 3 description options must be clearly different from each other, not minor rewrites of the same draft.",
+    "- Keep the same required section order in all 3 descriptions, but vary the voice, sentence flow, emphasis, and phrasing so the seller has genuinely different choices.",
+    "- Make the 3 descriptions different in strategy:",
+    "  1. One balanced and polished option.",
+    "  2. One more classroom-practical and teacher-efficiency focused option.",
+    "  3. One more student-benefit and conversion-focused option.",
+    "- Do not repeat the same opening, the same bullet phrasing, or the same section wording across the 3 descriptions.",
     "Product data:",
     ...metadata
   ].join("\n");
@@ -470,7 +535,7 @@ function buildGenerateContentBody(snapshot: ProductSeoAuditSnapshot, primaryKeyw
       }
     ],
     generationConfig: {
-      temperature: 0.7,
+      temperature: 0.85,
       responseMimeType: "application/json",
       responseSchema: {
         type: "OBJECT",
@@ -490,8 +555,8 @@ function buildGenerateContentBody(snapshot: ProductSeoAuditSnapshot, primaryKeyw
           },
           descriptionOptions: {
             type: "ARRAY",
-            minItems: 2,
-            maxItems: 2,
+            minItems: 3,
+            maxItems: 3,
             items: {
               type: "OBJECT",
               properties: {
@@ -548,7 +613,7 @@ async function callVertexAi(options: RewriteOptions) {
   const parsed = JSON.parse(rawText) as RawRewriteResponse;
   return {
     titleOptions: dedupeCandidates(parsed.titleOptions ?? [], 3),
-    descriptionOptions: dedupeCandidates(parsed.descriptionOptions ?? [], 2)
+    descriptionOptions: dedupeDescriptionCandidates(parsed.descriptionOptions ?? [], 3)
   };
 }
 
