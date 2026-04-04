@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:education-standards-seed": "node ./scripts/build-education-standards-seed.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.56.0",
