@@ -16,6 +16,7 @@ import {
   upsertPremiumBillingProfile
 } from "./lib/billingStore";
 import { matchEducationStandards } from "./lib/educationStandardsMatcher";
+import { recommendKeywordOpportunities } from "./lib/keywordOpportunitiesMatcher";
 import { listEducationStandardsSummary, searchEducationStandards } from "./lib/educationStandardsStore";
 import { analyzeProductSeoHealth, type ProductSeoAuditSnapshot } from "./lib/seoAuditor";
 import { GeminiRequestError, generateProductRewrite } from "./lib/productRewriter";
@@ -26,6 +27,7 @@ type Bindings = {
   VERTEX_AI_LOCATION?: string;
   VERTEX_AI_MODEL?: string;
   VERTEX_AI_EDUCATION_STANDARDS_MODEL?: string;
+  VERTEX_AI_KEYWORD_MODEL?: string;
   VERTEX_SERVICE_ACCOUNT_JSON?: string;
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
@@ -2830,7 +2832,7 @@ app.post("/v1/product-seo-health/rewrite", async (c) => {
     }
 
     const rewrite = await generateProductRewrite({
-      model: c.env.VERTEX_AI_MODEL || "gemini-2.5-flash",
+      model: c.env.VERTEX_AI_MODEL || "gemini-2.5-flash-lite",
       snapshot,
       primaryKeyword: primaryKeyword || null,
       db: c.env.DB,
@@ -2953,6 +2955,73 @@ app.post("/v1/education-standards/match", async (c) => {
     }
 
     return c.json({ error: error instanceof Error ? error.message : "Knowlense could not match Education Standards." }, 500);
+  }
+});
+
+app.use("/v1/product-keywords/*", async (c, next) => {
+  const authResult = await authenticateRequest(c);
+  if (authResult) {
+    return c.json({ error: authResult.error }, authResult.status);
+  }
+
+  await next();
+});
+
+app.post("/v1/product-keywords/recommend", async (c) => {
+  try {
+    const snapshot = (await c.req.json().catch(() => null)) as ProductSeoAuditSnapshot | null;
+
+    if (!snapshot?.productUrl || !snapshot?.title || !snapshot?.descriptionText) {
+      return c.json({ error: "Invalid Keyword Opportunities payload." }, 400);
+    }
+
+    let vertexConfig: {
+      projectId: string;
+      clientEmail: string;
+      privateKey: string;
+      location: string;
+      tokenUri?: string;
+    } | null = null;
+
+    if (c.env.VERTEX_SERVICE_ACCOUNT_JSON?.trim()) {
+      const parsed = JSON.parse(c.env.VERTEX_SERVICE_ACCOUNT_JSON) as {
+        project_id?: string;
+        client_email?: string;
+        private_key?: string;
+        token_uri?: string;
+      };
+
+      if (parsed.project_id && parsed.client_email && parsed.private_key) {
+        vertexConfig = {
+          projectId: parsed.project_id,
+          clientEmail: parsed.client_email,
+          privateKey: parsed.private_key,
+          tokenUri: parsed.token_uri,
+          location: c.env.VERTEX_AI_LOCATION || "us-central1"
+        };
+      }
+    }
+
+    if (!vertexConfig) {
+      return c.json({ error: "Keyword Opportunities AI is not configured yet." }, 503);
+    }
+
+    const user = c.get("user");
+    const recommendations = await recommendKeywordOpportunities({
+      snapshot,
+      db: c.env.DB,
+      userId: user.id,
+      vertex: vertexConfig,
+      model: c.env.VERTEX_AI_KEYWORD_MODEL?.trim() || "gemini-2.5-flash-lite"
+    });
+
+    return c.json({ recommendations });
+  } catch (error) {
+    if (error instanceof GeminiRequestError) {
+      return c.json({ error: error.message }, { status: error.status as 400 | 401 | 403 | 429 | 500 | 502 | 503 });
+    }
+
+    return c.json({ error: error instanceof Error ? error.message : "Knowlense could not generate keyword opportunities." }, 500);
   }
 });
 
